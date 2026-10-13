@@ -22,6 +22,7 @@ JS는 `/* ═══ 섹션명 ═══ */` 주석으로 구획되어 있다. Gr
 | PDF 영역 에디터 | `PDFED` 상태, `openPdfEditor`, `detectRegionsByAnchors`, `detectRegionsByPixels`, `pdfedFinish` |
 | 검색·작업 | `problemsFiltered`, `renderDB`(30/페이지), `renderTree`, `semanticSearch`(bigram), `imgHash`(aHash 이미지검색), 프리셋 |
 | 일괄 작업 | `openBatchTag`, `batchAutoTag`, `batchReviewed`, `batchDelete` |
+| AI 변환 | `aiTranscribeImage`(Claude 비전, 사용자 키 `sp-lab-apikey`, `anthropic-dangerous-direct-browser-access` 헤더), `aiTranscribeDrafts`, `batchAiTranscribe` — 테스트는 page에서 window.fetch 스텁 |
 | 학습지 | `renderSheet`, `autoCompose`, `printSheet`(doctype 4종), `setPoint` |
 | HWPX 생성 | `latexToHwpEq`, `eqMeasure`(수식 크기), `hwpxEquation`, `hwpxPic`/`registerHwpxBin`, `saveHwpxFile`, `downloadHWPX` |
 

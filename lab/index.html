@@ -464,6 +464,10 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
     </div>
     <div class="card" id="bulk-preview-card" style="display:none">
       <h3>② 분할 결과 확인 후 일괄 저장</h3>
+      <div class="row" style="margin-bottom:.6rem">
+        <button class="btn" id="btn-ai-drafts" onclick="aiTranscribeDrafts()">🤖 AI 텍스트 변환 (이미지 문항)</button>
+        <span class="hint">이미지 문항을 편집 가능한 텍스트·수식으로 바꾸고 단원·난이도를 추천합니다. API 키 필요 — [백업·데이터]에서 설정</span>
+      </div>
       <div class="grid4">
         <div class="field"><label>공통 과목</label><select id="b-subject"></select></div>
         <div class="field"><label>공통 출처 이름</label><input id="b-srcname" placeholder="예) 2024 6월 모평"></div>
@@ -637,6 +641,26 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
     </div>
   </div>
   <div class="card">
+    <h3>🤖 AI 변환 설정 — 이미지 문항을 텍스트·수식으로</h3>
+    <p class="hint" style="margin-bottom:.6rem">
+      Anthropic API 키를 저장하면 PDF에서 잘라낸 이미지 문항을 AI가 읽어 <b>편집 가능한 텍스트와 수식($...$ LaTeX)</b>으로 변환하고 단원 태그·난이도까지 추천합니다.
+      키는 <b>이 브라우저에만</b> 저장되며 비용은 본인 API 계정에 과금됩니다. 키 발급: console.anthropic.com → API Keys
+    </p>
+    <div class="grid2">
+      <div class="field"><label>Anthropic API 키</label><input id="ai-key" type="password" placeholder="sk-ant-api03-..."></div>
+      <div class="field"><label>모델</label>
+        <select id="ai-model">
+          <option value="claude-haiku-5-5">Claude Haiku 5.5 — 빠르고 저렴 (권장)</option>
+          <option value="claude-sonnet-5-5">Claude Sonnet 5.5 — 더 정확</option>
+        </select></div>
+    </div>
+    <div class="row">
+      <button class="btn" onclick="saveAiSettings()">저장</button>
+      <button class="btn ghost" onclick="clearAiSettings()">키 삭제</button>
+      <span class="hint" id="ai-status"></span>
+    </div>
+  </div>
+  <div class="card">
     <h3 style="color:var(--danger)">전체 삭제</h3>
     <p class="hint" style="margin-bottom:.6rem">모든 문제와 학습지를 삭제합니다. 되돌릴 수 없으니 먼저 백업하세요.</p>
     <button class="btn danger" onclick="wipeAll()">전체 데이터 삭제</button>
@@ -652,6 +676,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
   <b>🧺 <span id="cart-n2">0</span>개 선택됨</b>
   <button class="btn sm cb" onclick="openBatchTag()">🏷 일괄 태그</button>
   <button class="btn sm cb" onclick="batchAutoTag()">✨ 자동 태그 적용</button>
+  <button class="btn sm cb" onclick="batchAiTranscribe()">🤖 AI 변환</button>
   <button class="btn sm cb" onclick="batchReviewed(true)">✓ 일괄 검수 승인</button>
   <button class="btn sm cb" onclick="downloadHWPX()">📥 한글 다운로드</button>
   <button class="btn sm cb" style="color:#ffb4a4" onclick="batchDelete()">🗑 삭제</button>
@@ -1280,7 +1305,13 @@ function splitBulk(){
       return;
     }
   }
-  const parts = splitProblemsText(raw);
+  let parts = splitProblemsText(raw);
+  // 번호가 자동 번호(문단 번호)라 텍스트에 없는 파일: ⑤ 선택지 끝을 경계로 분할
+  if(parts.length<=1 && (raw.match(/⑤/g)||[]).length>=2){
+    parts = raw.replace(/\r/g,'').replace(/^([^\n]*⑤[^\n]*)$/gm, '$1\n⟪SPLIT⟫')
+      .split('⟪SPLIT⟫').map(s=>s.trim()).filter(s=>s.length>3);
+    if(parts.length>1) toast('문항 번호가 없어 ⑤ 선택지 끝을 기준으로 분할했습니다. 결과를 확인하세요.');
+  }
   // 해설 textarea 매칭: 같은 번호(1. 2. 3))끼리 짝지음
   const solMap = {}, ansMap = {};
   const solRaw = $('#bulk-sol').value;
@@ -1334,7 +1365,7 @@ function rerenderBulk(){
         ${d.img?`<div class="pimgs"><img src="${d.img}" style="max-height:170px" alt="문항 ${esc(d.num||'')} 이미지"></div>`:''}
         ${d.sol||d.ans?`<div class="pmeta">${d.ans?`<span class="tag">정답 ${esc(d.ans.slice(0,12))} ✓</span>`:''}${d.sol?`<span class="tag">해설 매칭 ✓</span>`:''}</div>`:''}</div>
       <button class="btn danger sm" onclick="state.bulkDrafts.splice(${i},1);rerenderBulk()">삭제</button></div>`).join('');
-  $('#bulk-status').textContent = state.bulkDrafts.length+'개 문제';
+  if(!state._aiBusy) $('#bulk-status').textContent = state.bulkDrafts.length+'개 문제';
   renderMath($('#bulk-preview'));
 }
 async function saveBulk(){
@@ -1353,12 +1384,13 @@ async function saveBulk(){
     }
     const sg = suggestTags(d.text||'');
     const useSg = sg.length && CURRICULUM[sg[0].unit[0]];
+    const useAi = d.aiSub && CURRICULUM[d.aiSub];        // AI 변환이 추천한 단원 우선
     const p = {
       id: uid()+n, question, choices: d.choices||[], answer: d.ans||'', solution: d.sol||'', images: d.img?[d.img]:[],
-      subject: useSg ? sg[0].unit[0] : subject,
-      chapter: useSg ? sg[0].unit[1] : (Object.keys(CURRICULUM[subject]||{})[0]||''),
-      section: useSg ? sg[0].unit[2] : '',
-      grade, srcType:'기출', srcName, srcYear:'', difficulty:diff, tags:[],
+      subject: useAi ? d.aiSub : (useSg ? sg[0].unit[0] : subject),
+      chapter: useAi ? (d.aiChap||Object.keys(CURRICULUM[d.aiSub])[0]||'') : (useSg ? sg[0].unit[1] : (Object.keys(CURRICULUM[subject]||{})[0]||'')),
+      section: useAi ? '' : (useSg ? sg[0].unit[2] : ''),
+      grade, srcType:'기출', srcName, srcYear:'', difficulty: d.aiDiff||diff, tags:[],
       origNo: d.num||'', reviewed: false,
       createdAt: Date.now()+n, updatedAt: Date.now()+n
     };
@@ -2389,6 +2421,136 @@ function clearCart(){
   if($('#view-sheet').classList.contains('active')) renderSheet();
 }
 
+/* ═══ AI 변환 (이미지 문항 → 텍스트·수식, 사용자 API 키) ═══ */
+function aiSettings(){
+  return { key: localStorage.getItem('sp-lab-apikey')||'', model: localStorage.getItem('sp-lab-aimodel')||'claude-haiku-5-5' };
+}
+function saveAiSettings(){
+  const key = $('#ai-key').value.trim();
+  if(key) localStorage.setItem('sp-lab-apikey', key);
+  localStorage.setItem('sp-lab-aimodel', $('#ai-model').value);
+  $('#ai-status').textContent = aiSettings().key ? '✅ 저장됨 — AI 변환을 사용할 수 있습니다.' : '키를 입력하세요.';
+}
+function clearAiSettings(){
+  localStorage.removeItem('sp-lab-apikey');
+  $('#ai-key').value='';
+  $('#ai-status').textContent = '키를 삭제했습니다.';
+}
+function curriculumBrief(){
+  return Object.entries(CURRICULUM).map(([s,ch])=>s+': '+Object.keys(ch).join(', ')).join('\n');
+}
+function aiPrompt(){
+  return '이 이미지는 한국 중·고등학교 수학 문제 1개입니다. 아래 JSON 형식으로만 답하세요. 설명·코드블록 없이 JSON 하나만 출력합니다.\n'
+  +'{"question":"문제 본문 전체. 모든 수식은 $...$ 안에 LaTeX로 정확히 옮기세요(예: $\\\\dfrac{q}{p}$, $x^{2}$). 수식을 임의로 바꾸거나 생략하지 말고, 문자열 안의 줄바꿈은 \\\\n 으로 이스케이프",'
+  +'"choices":["① $25$","② $30$"],  // 객관식 선택지. 없으면 []\n'
+  +'"answer":"",  // 이미지에 정답 표기가 보일 때만\n'
+  +'"hasFigure": false,  // 그래프·도형·표 그림이 포함되어 있으면 true\n'
+  +'"subject":"",  // 아래 분류표의 과목명 중 하나. 불확실하면 ""\n'
+  +'"chapter":"",  // 그 과목의 대단원명 중 하나. 불확실하면 ""\n'
+  +'"difficulty": 3}  // 1~5 난이도 추정(정수)\n'
+  +'분류표:\n'+curriculumBrief()+'\n읽을 수 없는 글자는 [판독불가]로 표시하세요.';
+}
+async function aiTranscribeImage(dataURL){
+  const {key, model} = aiSettings();
+  if(!key) throw new Error('API 키가 없습니다 — [백업·데이터 → AI 변환 설정]에서 키를 저장하세요.');
+  const m = String(dataURL).match(/^data:(image\/\w+);base64,(.+)$/);
+  if(!m) throw new Error('이미지 형식 오류');
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model, max_tokens: 2000,
+      messages: [{ role:'user', content: [
+        { type:'image', source:{ type:'base64', media_type:m[1], data:m[2] } },
+        { type:'text', text: aiPrompt() }
+      ]}]
+    })
+  });
+  if(!r.ok){
+    const t = await r.text().catch(()=> '');
+    if(r.status===401) throw new Error('API 키가 올바르지 않습니다 (401). 키를 다시 확인하세요.');
+    throw new Error('API 오류 '+r.status+': '+t.slice(0,140));
+  }
+  const data = await r.json();
+  const txt = (data.content||[]).map(c=>c.text||'').join('');
+  const a = txt.indexOf('{'), b = txt.lastIndexOf('}');
+  if(a<0 || b<=a) throw new Error('AI 응답을 해석하지 못했습니다.');
+  return JSON.parse(txt.slice(a, b+1));
+}
+async function aiTranscribeDrafts(){
+  const targets = state.bulkDrafts.filter(d=>d.img && !(d.text||'').trim());
+  if(!targets.length){ toast('변환할 이미지 문항이 없습니다. (텍스트가 비어 있는 이미지 문항만 변환)'); return; }
+  if(!aiSettings().key){ toast('API 키가 없습니다 — [백업·데이터 → AI 변환 설정]에서 먼저 저장하세요.'); return; }
+  const btn = $('#btn-ai-drafts'); btn.disabled = true;
+  state._aiBusy = true;
+  let ok=0, fail=0;
+  try{
+    for(let i=0;i<targets.length;i++){
+      const d = targets[i];
+      $('#bulk-status').textContent = `🤖 AI 변환 중… ${i+1}/${targets.length} (문항 ${d.num||''})`;
+      try{
+        const r = await aiTranscribeImage(d.img);
+        d.text = (r.question||'').trim();
+        if(Array.isArray(r.choices) && r.choices.length) d.choices = r.choices.map(String);
+        if(r.answer && !d.ans) d.ans = String(r.answer);
+        if(r.subject && CURRICULUM[r.subject]){ d.aiSub=r.subject; if(r.chapter && CURRICULUM[r.subject][r.chapter]) d.aiChap=r.chapter; }
+        const dd = Math.round(+r.difficulty); if(dd>=1 && dd<=5) d.aiDiff = dd;
+        if(r.hasFigure === false) d.img = null;       // 그림 없는 문항: 이미지 제거(내용 중복 방지)
+        ok++;
+      }catch(e){
+        fail++;
+        if(/API 키|401/.test(e.message)) throw e;      // 키 문제는 즉시 중단
+      }
+      rerenderBulk();
+    }
+    $('#bulk-status').textContent = `🤖 AI 변환 완료 — 성공 ${ok}개`+(fail?` · 실패 ${fail}개 (이미지 유지됨)`:'')+'. 미리보기 확인 후 [전체 저장]하세요.';
+    logJob('AI 텍스트 변환', '분할 문항', ok+'개 변환'+(fail?`, ${fail}개 실패`:''));
+  }catch(e){
+    $('#bulk-status').textContent = '⚠ '+e.message;
+    toast(e.message);
+  }finally{
+    btn.disabled = false;
+    state._aiBusy = false;
+  }
+}
+async function batchAiTranscribe(){
+  const targets = cartList().filter(p=>p.images && p.images.length && !(p.question||'').trim());
+  if(!targets.length){ toast('변환 대상이 없습니다 — 텍스트가 비어 있는 이미지 문항을 선택하세요.'); return; }
+  if(!aiSettings().key){ toast('API 키가 없습니다 — [백업·데이터 → AI 변환 설정]에서 먼저 저장하세요.'); return; }
+  let ok=0, fail=0;
+  try{
+    for(let i=0;i<targets.length;i++){
+      const p = targets[i];
+      toast(`🤖 AI 변환 중… ${i+1}/${targets.length}`);
+      try{
+        const r = await aiTranscribeImage(p.images[0]);
+        p.question = (r.question||'').trim();
+        if(Array.isArray(r.choices) && r.choices.length) p.choices = r.choices.map(String);
+        if(r.answer && !p.answer) p.answer = String(r.answer);
+        if(r.subject && CURRICULUM[r.subject]){
+          p.subject = r.subject;
+          if(r.chapter && CURRICULUM[r.subject][r.chapter]){ p.chapter = r.chapter; p.section=''; }
+        }
+        const dd = Math.round(+r.difficulty); if(dd>=1 && dd<=5) p.difficulty = dd;
+        if(r.hasFigure === false) p.images = [];
+        p.updatedAt = Date.now();
+        await DB.put('problems', p); ok++;
+      }catch(e){
+        fail++;
+        if(/API 키|401/.test(e.message)) throw e;
+      }
+    }
+  }catch(e){ toast(e.message); }
+  renderDB(); refreshCounts();
+  toast(`AI 변환 완료 — ${ok}개 성공`+(fail?`, ${fail}개 실패`:''));
+  logJob('AI 텍스트 변환', '선택 문항', ok+'개 변환'+(fail?`, ${fail}개 실패`:''));
+}
+
 /* ═══ 일괄 작업 (선택 문항 대상) ═══ */
 function cartList(){ return state.cart.map(id=>state.problems.find(p=>p.id===id)).filter(Boolean); }
 function openBatchTag(){
@@ -3175,6 +3337,10 @@ function renderDash(){
   persistCart();
   refreshCounts();
   renderJobLog();
+  const ai = aiSettings();
+  if(ai.key) $('#ai-key').value = ai.key;
+  $('#ai-model').value = ai.model;
+  if(ai.key) $('#ai-status').textContent = '✅ 키 저장됨 — AI 변환 사용 가능';
 })();
 </script>
 </body>
