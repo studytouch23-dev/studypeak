@@ -439,10 +439,12 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
       <select id="filter-subject"><option value="">과목 전체</option></select>
       <select id="filter-chapter"><option value="">대단원 전체</option></select>
       <select id="filter-grade"><option value="">학년 전체</option></select>
+      <select id="filter-reviewed"><option value="">검수 전체</option><option value="1">검수완료</option><option value="0">미검수</option></select>
       <select id="filter-diff"><option value="">난이도 전체</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
       <select id="filter-src"><option value="">출처 전체</option></select>
       <select id="sort"><option value="new">최신순</option><option value="old">오래된순</option><option value="diff-desc">난이도 높은순</option><option value="diff-asc">난이도 낮은순</option></select>
       <button class="btn ghost sm" onclick="resetFilters()">필터 초기화</button>
+      <button class="btn ghost sm" onclick="findDuplicates()">중복 검사</button>
     </div>
     <div class="spread">
       <span class="hint" id="db-count"></span>
@@ -473,19 +475,47 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
       <div class="field"><label>날짜</label><input id="s-date" type="date"></div>
     </div>
     <div class="row">
+      <div style="display:flex;align-items:center;gap:.4rem;font-weight:600">출력 종류
+        <select id="s-doctype" style="width:auto">
+          <option value="teacher">강사용 (문제+정답·해설)</option>
+          <option value="student">학생용 (문제만)</option>
+          <option value="anskey">정답표만</option>
+          <option value="solution">해설지만</option>
+        </select>
+      </div>
       <label style="margin:0;display:flex;align-items:center;gap:.35rem;font-weight:600"><input type="checkbox" id="s-2col" checked style="width:auto"> 2단 편집</label>
-      <label style="margin:0;display:flex;align-items:center;gap:.35rem;font-weight:600"><input type="checkbox" id="s-answers" checked style="width:auto"> 정답·해설지 포함</label>
       <label style="margin:0;display:flex;align-items:center;gap:.35rem;font-weight:600"><input type="checkbox" id="s-meta" style="width:auto"> 문제별 출처 표기</label>
     </div>
   </div>
 
   <div class="card">
-    <div class="spread"><h3 style="margin:0">② 문제 구성 <span class="hint" id="sheet-count"></span></h3>
+    <h3>② 자동 구성 — 조건으로 문항 추천</h3>
+    <p class="hint" style="margin-bottom:.6rem">조건에 맞는 문제를 내 DB에서 무작위로 골라 담습니다. 조건을 만족하는 문항이 부족하면 부족 수량을 그대로 알려드립니다.</p>
+    <div class="row">
+      <select id="ac-subject" style="width:auto"></select>
+      <select id="ac-grade" style="width:auto"></select>
+      <label style="margin:0;display:flex;align-items:center;gap:.3rem;font-weight:600"><input type="checkbox" id="ac-reviewed" checked style="width:auto"> 검수완료만</label>
+    </div>
+    <div class="row" style="margin-top:.5rem">
+      <span class="hint">난이도별 문항 수:</span>
+      <span>1단계 <input type="number" id="ac-d1" min="0" value="0" style="width:58px"></span>
+      <span>2단계 <input type="number" id="ac-d2" min="0" value="0" style="width:58px"></span>
+      <span>3단계 <input type="number" id="ac-d3" min="0" value="0" style="width:58px"></span>
+      <span>4단계 <input type="number" id="ac-d4" min="0" value="0" style="width:58px"></span>
+      <span>5단계 <input type="number" id="ac-d5" min="0" value="0" style="width:58px"></span>
+      <button class="btn" onclick="autoCompose()">자동 구성 실행</button>
+    </div>
+    <div class="hint" id="ac-result" style="margin-top:.5rem"></div>
+  </div>
+
+  <div class="card">
+    <div class="spread"><h3 style="margin:0">③ 문제 구성 <span class="hint" id="sheet-count"></span></h3>
       <div class="row">
         <button class="btn ghost sm" onclick="shuffleSheet()">순서 섞기</button>
         <button class="btn danger sm" onclick="clearCart()">모두 비우기</button>
       </div>
     </div>
+    <div class="hint" id="sheet-warn" style="margin-top:.5rem;color:#7a5c1e"></div>
     <div id="sheet-list" style="margin-top:.7rem"></div>
     <div class="empty" id="sheet-empty">아직 담긴 문제가 없습니다. <b>문제 검색·작업</b>에서 문제를 담아 오세요.
       <div style="margin-top:.6rem"><button class="btn sm" onclick="go('db')">문제 찾으러 가기</button></div>
@@ -664,6 +694,7 @@ const DB = {
 const state = {
   problems: [], worksheets: [],
   cart: JSON.parse(localStorage.getItem('sp-lab-cart')||'[]'),
+  points: JSON.parse(localStorage.getItem('sp-lab-points')||'{}'),
   pendingImages: [], bulkDrafts: [],
   lastResults: null,
   tagSubject: null, tagChapter: null   // 단원태그 편집기 선택 상태
@@ -1011,6 +1042,7 @@ function collectSingle(){
     srcType: $('#f-srctype').value, srcName: $('#f-srcname').value.trim(), srcYear: $('#f-srcyear').value.trim(),
     difficulty: +$('#f-diff').value,
     tags: $('#f-tags').value.split(',').map(s=>s.trim()).filter(Boolean),
+    origNo: '', reviewed: true,
     createdAt: Date.now(), updatedAt: Date.now()
   };
 }
@@ -1032,8 +1064,10 @@ function clearSingle(clearTagsToo){
 }
 
 /* ═══════════════ 등록: 일괄 (파일 업로드 + 분할) ═══════════════ */
-const NUM_SPLIT = /\n(?=\s*\d{1,3}\s*[.)]\s)/;
-const NUM_HEAD = /^\s*(\d{1,3})\s*[.)]\s*/;
+/* 지원 번호 형식: "1." "1)" "01." "[1]" "문제 1." "1번" */
+const NUM_SPLIT = /\n(?=\s*(?:문제\s*)?(?:\[\d{1,3}\]|\d{1,3}\s*(?:[.)]|번))\s)/;
+const NUM_HEAD = /^\s*(?:문제\s*)?(?:\[(\d{1,3})\]|(\d{1,3})\s*(?:[.)]|번))\s*/;
+function headNum(text){ const m = text.match(NUM_HEAD); return m ? (m[1]||m[2]) : null; }
 function splitProblemsText(raw){
   return raw.replace(/\r/g,'').split(NUM_SPLIT).map(s=>s.trim()).filter(s=>s.length>3);
 }
@@ -1046,19 +1080,18 @@ function splitBulk(){
   const solRaw = $('#bulk-sol').value;
   if(solRaw.trim()){
     for(const s of splitProblemsText(solRaw)){
-      const m = s.match(NUM_HEAD);
-      if(m) solMap[m[1]] = s.replace(NUM_HEAD,'');
+      const num = headNum(s);
+      if(num) solMap[num] = s.replace(NUM_HEAD,'');
     }
   }
   state.bulkDrafts = parts.map(t=>{
-    const m = t.match(NUM_HEAD);
-    const num = m ? m[1] : null;
+    const num = headNum(t);
     return { text:t, num, sol: (num && solMap[num]) ? solMap[num] : '' };
   });
   const matched = state.bulkDrafts.filter(d=>d.sol).length;
-  $('#bulk-status').textContent = parts.length+'개 문제로 분할'+(matched?` · 해설 ${matched}개 자동 매칭`:'');
   $('#bulk-preview-card').style.display='block';
   rerenderBulk();
+  $('#bulk-status').textContent = parts.length+'개 문제로 분할'+(matched?` · 해설 ${matched}개 자동 매칭`:'');
 }
 function rerenderBulk(){
   $('#bulk-preview').innerHTML = state.bulkDrafts.map((d,i)=>
@@ -1073,16 +1106,22 @@ async function saveBulk(){
   if(!state.bulkDrafts.length){ toast('저장할 문제가 없습니다.'); return; }
   const subject = $('#b-subject').value, srcName = $('#b-srcname').value.trim(), diff = +$('#b-diff').value;
   const grade = $('#b-grade').value==='미지정' ? '' : $('#b-grade').value;
-  let n=0;
+  const normalize = s=>String(s||'').replace(/\s+/g,'');
+  const existing = new Set(state.problems.map(p=>normalize(p.question)));
+  let n=0, dup=0;
   for(const d of state.bulkDrafts){
+    const question = d.text.replace(NUM_HEAD,'');
+    if(existing.has(normalize(question))){ dup++; continue; }   // 완전 동일 문항은 건너뜀
+    existing.add(normalize(question));
     const sg = suggestTags(d.text);
     const useSg = sg.length && CURRICULUM[sg[0].unit[0]];
     const p = {
-      id: uid()+n, question: d.text.replace(NUM_HEAD,''), choices: [], answer:'', solution: d.sol||'', images: [],
+      id: uid()+n, question, choices: [], answer:'', solution: d.sol||'', images: [],
       subject: useSg ? sg[0].unit[0] : subject,
       chapter: useSg ? sg[0].unit[1] : (Object.keys(CURRICULUM[subject]||{})[0]||''),
       section: useSg ? sg[0].unit[2] : '',
       grade, srcType:'기출', srcName, srcYear:'', difficulty:diff, tags:[],
+      origNo: d.num||'', reviewed: false,
       createdAt: Date.now()+n, updatedAt: Date.now()+n
     };
     await DB.put('problems', p); state.problems.push(p); n++;
@@ -1090,7 +1129,7 @@ async function saveBulk(){
   state.bulkDrafts=[]; $('#bulk-text').value=''; $('#bulk-preview-card').style.display='none';
   $('#bulk-status').textContent='';
   refreshCounts();
-  toast(n+'개 문제가 저장되었습니다. (단원 태그 자동 추천 적용)');
+  toast(n+'개 문제 저장 (미검수 상태)'+(dup?` · 완전 동일 문항 ${dup}개 제외`:''));
   go('db');
 }
 
@@ -1148,16 +1187,35 @@ async function extractTextFromFile(file){
   if(nm.endsWith('.pdf')) return parsePDF(file);
   return file.text();
 }
+async function fileSHA256(file){
+  if(!crypto.subtle) return null;
+  const buf = await file.arrayBuffer();
+  const h = await crypto.subtle.digest('SHA-256', buf);
+  return [...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
 async function handleUploadFiles(files, targetSel){
   const status = $('#upload-status');
+  const seen = JSON.parse(localStorage.getItem('sp-lab-filehashes')||'{}');
   let ok=0;
   for(const file of files){
     try{
       status.textContent = `⏳ ${file.name} 처리 중…`;
+      // SHA256 중복 파일 감지
+      const hash = await fileSHA256(file).catch(()=>null);
+      if(hash && seen[hash]){
+        if(!confirm(`‘${file.name}’ 은(는) ${seen[hash].date} 에 이미 올린 파일(${seen[hash].name})과 내용이 동일합니다.\n그래도 다시 처리할까요?`)){
+          status.textContent = `⤫ ${file.name} — 중복 파일이라 건너뛰었습니다.`;
+          continue;
+        }
+      }
       const text = (await extractTextFromFile(file)).trim();
       if(!text){ status.textContent = `⚠ ${file.name} — 추출된 텍스트가 없습니다 (스캔본 PDF는 글자 인식이 필요합니다).`; continue; }
       const ta = $(targetSel);
       ta.value = (ta.value.trim() ? ta.value.replace(/\s+$/,'')+'\n\n' : '') + text;
+      if(hash){ seen[hash] = {name:file.name, date:new Date().toISOString().slice(0,10)}; }
+      // 출처 이름이 비어 있으면 파일명으로 자동 채움 (원본 추적)
+      if(targetSel==='#bulk-text' && !$('#b-srcname').value.trim())
+        $('#b-srcname').value = file.name.replace(/\.(hwpx|hwp|pdf|txt)$/i,'');
       ok++;
     }catch(err){
       status.textContent = '⚠ '+(err.message||'파일 처리 실패');
@@ -1165,6 +1223,7 @@ async function handleUploadFiles(files, targetSel){
     }
   }
   if(ok){
+    localStorage.setItem('sp-lab-filehashes', JSON.stringify(seen));
     status.textContent = `✅ 파일 ${ok}개에서 텍스트를 추출했습니다. 분할 결과를 확인하세요.`;
     if(targetSel==='#bulk-text') splitBulk();
   }
@@ -1190,11 +1249,13 @@ $('#sol-files').addEventListener('change', e=>{
 function problemsFiltered(){
   const q = $('#q').value.trim().toLowerCase();
   const fs = $('#filter-subject').value, fc = $('#filter-chapter').value,
-        fd = $('#filter-diff').value, fsrc = $('#filter-src').value, fg = $('#filter-grade').value;
+        fd = $('#filter-diff').value, fsrc = $('#filter-src').value, fg = $('#filter-grade').value,
+        fr = $('#filter-reviewed').value;
   let list = state.problems.filter(p=>{
     if(fs && p.subject!==fs) return false;
     if(fc && p.chapter!==fc) return false;
     if(fg && (p.grade||'')!==fg) return false;
+    if(fr!=='' && (p.reviewed?'1':'0')!==fr) return false;
     if(fd && String(p.difficulty)!==fd) return false;
     if(fsrc && p.srcName!==fsrc) return false;
     if(q && !state.lastResults){
@@ -1229,14 +1290,16 @@ function problemCardHTML(p){
       ${p.images&&p.images.length?`<div class="pimgs">${p.images.map(d=>`<img src="${d}" alt="문제 그림">`).join('')}</div>`:''}
       <div class="pmeta">
         ${sim}
+        ${p.reviewed?'<span class="tag" style="background:#e4f2e8;color:var(--ok)">검수완료</span>':'<span class="tag" style="background:#faf0dc;color:#7a5c1e">미검수</span>'}
         <span class="tag">${esc(unit||'미분류')}</span>
         ${p.grade?`<span class="tag diff">${esc(p.grade)}</span>`:''}
         <span class="tag diff">난이도 ${'●'.repeat(p.difficulty||3)}</span>
-        ${p.srcName?`<span class="tag src">${esc(p.srcType||'출처')} · ${esc(p.srcName)}${p.srcYear?' ('+esc(p.srcYear)+')':''}</span>`:''}
+        ${p.srcName?`<span class="tag src">${esc(p.srcType||'출처')} · ${esc(p.srcName)}${p.srcYear?' ('+esc(p.srcYear)+')':''}${p.origNo?' · 원본 '+esc(p.origNo)+'번':''}</span>`:''}
         ${(p.tags||[]).map(t=>`<span class="tag user">#${esc(t)}</span>`).join('')}
       </div>
       <div class="pacts">
         <button class="btn ghost sm" onclick="openDetail('${p.id}')">상세·수정</button>
+        <button class="btn ghost sm" onclick="toggleReviewed('${p.id}')">${p.reviewed?'검수 해제':'검수 승인'}</button>
         <button class="btn ghost sm" onclick="findSimilar('${p.id}')">이 문제와 비슷한 문제</button>
         <button class="btn ${inCart?'gold':''} sm" onclick="toggleCart('${p.id}')">${inCart?'담김 ✓':'학습지에 담기'}</button>
         <button class="btn danger sm" onclick="removeProblem('${p.id}')">삭제</button>
@@ -1268,12 +1331,20 @@ function renderDB(){
 }
 function resetFilters(){
   $('#q').value=''; $('#filter-subject').value=''; $('#filter-chapter').value='';
-  $('#filter-diff').value=''; $('#filter-src').value='';
+  $('#filter-diff').value=''; $('#filter-src').value=''; $('#filter-grade').value=''; $('#filter-reviewed').value='';
   state.lastResults = null;
   renderDB();
 }
-['filter-subject','filter-chapter','filter-grade','filter-diff','filter-src','sort'].forEach(id=>
+['filter-subject','filter-chapter','filter-grade','filter-reviewed','filter-diff','filter-src','sort'].forEach(id=>
   $('#'+id).addEventListener('change', renderDB));
+async function toggleReviewed(id){
+  const p = state.problems.find(x=>x.id===id); if(!p) return;
+  p.reviewed = !p.reviewed; p.updatedAt = Date.now();
+  await DB.put('problems', p);
+  renderDB();
+  if($('#view-sheet').classList.contains('active')) renderSheet();
+  toast(p.reviewed?'검수 완료로 표시했습니다.':'미검수 상태로 되돌렸습니다.');
+}
 function quickPick(n){
   let added=0;
   for(const p of problemsFiltered()){
@@ -1330,6 +1401,45 @@ function findSimilar(id){
   toast('이 문제와 비슷한 문제 '+state.lastResults.size+'건');
 }
 
+/* ═══ 중복 문항 검사: 자동 삭제·병합 없이 후보만 보고 ═══ */
+function findDuplicates(){
+  const ps = state.problems;
+  if(ps.length<2){ toast('비교할 문제가 2개 이상 필요합니다.'); return; }
+  if(ps.length>1500 && !confirm(`문제가 ${ps.length}개라 검사에 시간이 걸릴 수 있습니다. 계속할까요?`)) return;
+  const norm = s=>String(s||'').replace(/\s+/g,'').toLowerCase();
+  // ① 완전 동일(공백·대소문자 차이 무시)
+  const byNorm = new Map();
+  for(const p of ps){ const k=norm(p.question); if(!byNorm.has(k)) byNorm.set(k,[]); byNorm.get(k).push(p); }
+  const exact = [...byNorm.values()].filter(g=>g.length>1);
+  // ② 유사 후보 (bigram 코사인 > 0.88)
+  const vecs = ps.map(p=>bigrams(p.question));
+  const pairs = [];
+  for(let i=0;i<ps.length;i++){
+    for(let j=i+1;j<ps.length;j++){
+      if(norm(ps[i].question)===norm(ps[j].question)) continue;
+      const s = cosine(vecs[i], vecs[j]);
+      if(s>0.88) pairs.push([ps[i], ps[j], s]);
+    }
+  }
+  pairs.sort((a,b)=>b[2]-a[2]);
+  const snip = p=>`<span class="hint">[${esc(p.srcName||'출처 없음')}${p.origNo?' '+esc(p.origNo)+'번':''}]</span> ${esc(p.question.slice(0,70))}…
+    <button class="btn ghost sm" onclick="openDetail('${p.id}')">보기</button>
+    <button class="btn danger sm" onclick="removeProblem('${p.id}');closeModal()">삭제</button>`;
+  const m = $('#modal-body');
+  m.innerHTML = `
+    <button class="close" onclick="closeModal()">✕</button>
+    <h3>중복 문항 검사 결과</h3>
+    <p class="hint" style="margin-bottom:.8rem">후보만 보여드립니다 — 자동 삭제·병합은 하지 않으니 직접 확인 후 정리하세요.</p>
+    <h4 style="color:var(--green);margin-bottom:.4rem">완전 동일 문항 그룹 (${exact.length})</h4>
+    ${exact.length ? exact.slice(0,30).map(g=>`<div class="card" style="padding:.6rem .8rem">${g.map(p=>`<div style="margin:.25rem 0">${snip(p)}</div>`).join('')}</div>`).join('') : '<p class="hint" style="margin-bottom:.8rem">없습니다.</p>'}
+    <h4 style="color:var(--green);margin:.6rem 0 .4rem">유사 문항 후보 쌍 (${pairs.length})</h4>
+    ${pairs.length ? pairs.slice(0,30).map(([a,b,s])=>`<div class="card" style="padding:.6rem .8rem">
+      <b class="simscore">유사도 ${(Math.min(s,0.99)*100).toFixed(0)}%</b>
+      <div style="margin:.25rem 0">${snip(a)}</div><div style="margin:.25rem 0">${snip(b)}</div></div>`).join('') : '<p class="hint">없습니다.</p>'}
+    ${exact.length>30||pairs.length>30?'<p class="hint">상위 30건만 표시했습니다. 정리 후 다시 검사하세요.</p>':''}`;
+  $('#modal-bg').classList.add('show');
+}
+
 /* ═══════════════ 상세·수정 모달 ═══════════════ */
 function openDetail(id){
   const p = state.problems.find(x=>x.id===id); if(!p) return;
@@ -1370,6 +1480,8 @@ function openDetail(id){
       <div class="field"><label>학년</label><select id="e-grade">${GRADES.map(g=>`<option ${(p.grade||'미지정')===g?'selected':''}>${g}</option>`).join('')}</select></div>
     </div>
     <div class="field"><label>나만의 태그 (쉼표 구분)</label><input id="e-tags" value="${esc((p.tags||[]).join(', '))}"></div>
+    <div class="field"><label style="display:flex;align-items:center;gap:.4rem;margin:0">
+      <input type="checkbox" id="e-reviewed" style="width:auto" ${p.reviewed?'checked':''}> 검수 완료 (교사 확인)</label></div>
     ${p.images&&p.images.length?`<div class="pimgs" style="margin-bottom:.8rem">${p.images.map(d=>`<img src="${d}" style="max-height:140px" alt="문제 그림">`).join('')}</div>`:''}
     <div class="row">
       <button class="btn gold" onclick="saveDetail('${p.id}')">수정 저장</button>
@@ -1393,6 +1505,7 @@ async function saveDetail(id){
   p.subject = $('#e-subject').value; p.chapter = $('#e-chapter').value; p.section = $('#e-section').value;
   p.srcType = $('#e-srctype').value; p.srcName = $('#e-srcname').value.trim(); p.srcYear = $('#e-srcyear').value.trim();
   p.grade = $('#e-grade').value==='미지정' ? '' : $('#e-grade').value;
+  p.reviewed = $('#e-reviewed').checked;
   p.tags = $('#e-tags').value.split(',').map(s=>s.trim()).filter(Boolean);
   p.updatedAt = Date.now();
   await DB.put('problems', p);
@@ -1440,19 +1553,38 @@ function clearCart(){
 function cartProblems(){
   return state.cart.map(id=>state.problems.find(p=>p.id===id)).filter(Boolean);
 }
+function setPoint(id, v){
+  const n = parseFloat(v);
+  if(!v || isNaN(n)) delete state.points[id]; else state.points[id] = n;
+  localStorage.setItem('sp-lab-points', JSON.stringify(state.points));
+  renderSheetSummary();
+}
+function renderSheetSummary(){
+  const list = cartProblems();
+  const total = list.reduce((s,p)=>s+(state.points[p.id]||0),0);
+  const scored = list.filter(p=>state.points[p.id]!=null).length;
+  $('#sheet-count').textContent = list.length
+    ? `(${list.length}문항${scored?` · 배점 합계 ${total}점${scored<list.length?` / ${scored}문항만 배점됨`:''}`:''})` : '';
+  const unreviewed = list.filter(p=>!p.reviewed).length;
+  $('#sheet-warn').textContent = unreviewed
+    ? `⚠ 미검수 문항 ${unreviewed}개가 포함되어 있습니다. 출력 전에 문제 검색·작업에서 검수(승인)를 권장합니다.` : '';
+}
 function renderSheet(){
   persistCart();
   const list = cartProblems();
-  $('#sheet-count').textContent = list.length? `(${list.length}문항)` : '';
+  renderSheetSummary();
   $('#sheet-empty').style.display = list.length? 'none':'block';
   $('#sheet-list').innerHTML = list.map((p,i)=>`
     <div class="sheet-item">
       <div class="num">${i+1}</div>
       <div class="txt">${esc(p.question.slice(0,160))}${p.question.length>160?'…':''}
         <div class="pmeta"><span class="tag">${esc([p.subject,p.chapter].filter(Boolean).join(' › ')||'미분류')}</span>
-        <span class="tag diff">${'●'.repeat(p.difficulty||3)}</span></div>
+        <span class="tag diff">${'●'.repeat(p.difficulty||3)}</span>
+        ${p.reviewed?'':'<span class="tag" style="background:#faf0dc;color:#7a5c1e">미검수</span>'}</div>
       </div>
       <div class="mv">
+        <input type="number" min="0" step="0.5" value="${state.points[p.id]!=null?state.points[p.id]:''}" placeholder="배점"
+          style="width:64px;padding:.25rem .4rem;font-size:.8rem" onchange="setPoint('${p.id}',this.value)">
         <button class="btn ghost sm" onclick="moveCart(${i},-1)" ${i===0?'disabled':''}>▲</button>
         <button class="btn ghost sm" onclick="moveCart(${i},1)" ${i===list.length-1?'disabled':''}>▼</button>
         <button class="btn danger sm" onclick="toggleCart('${p.id}')">빼기</button>
@@ -1460,6 +1592,28 @@ function renderSheet(){
     </div>`).join('');
   renderMath($('#sheet-list'));
   renderWorksheetList();
+}
+/* 조건 기반 자동 구성: 부족하면 부족 수량을 그대로 보고 */
+function autoCompose(){
+  const subj = $('#ac-subject').value, grade = $('#ac-grade').value, onlyReviewed = $('#ac-reviewed').checked;
+  const want = [1,2,3,4,5].map(d=>+($('#ac-d'+d).value||0));
+  if(!want.some(n=>n>0)){ toast('난이도별 문항 수를 1개 이상 입력하세요.'); return; }
+  const pool = state.problems.filter(p=>
+    (!subj || p.subject===subj) && (!grade || (p.grade||'')===grade) &&
+    (!onlyReviewed || p.reviewed) && !state.cart.includes(p.id));
+  const lines = []; let added = 0;
+  for(let d=1; d<=5; d++){
+    const need = want[d-1]; if(!need) continue;
+    const cand = pool.filter(p=>(p.difficulty||3)===d);
+    for(let i=cand.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [cand[i],cand[j]]=[cand[j],cand[i]]; }
+    const take = cand.slice(0, need);
+    take.forEach(p=>state.cart.push(p.id));
+    added += take.length;
+    lines.push(`난이도 ${d}: ${take.length}/${need}문항` + (take.length<need?` — ${need-take.length}개 부족`:''));
+  }
+  persistCart(); renderSheet();
+  $('#ac-result').innerHTML = `✅ ${added}문항 담음 · ` + lines.join(' · ')
+    + (lines.some(l=>l.includes('부족'))?'<br>⚠ 부족한 난이도는 조건(과목·학년·검수)을 넓히거나 문제를 더 등록해 주세요. 임의로 문항을 만들지 않습니다.':'');
 }
 function moveCart(i,dir){
   const j=i+dir; if(j<0||j>=state.cart.length) return;
@@ -1480,32 +1634,43 @@ function printSheet(){
   if(!list.length){ toast('담긴 문제가 없습니다.'); return; }
   const title = $('#s-title').value||'수학 연습 문제';
   const sub = $('#s-sub').value, author = $('#s-author').value, date = $('#s-date').value;
-  const twoCol = $('#s-2col').checked, withAns = $('#s-answers').checked, withMeta = $('#s-meta').checked;
+  const twoCol = $('#s-2col').checked, withMeta = $('#s-meta').checked;
+  const doctype = $('#s-doctype').value;
+  const pts = p=>state.points[p.id]!=null ? state.points[p.id] : null;
+  const total = list.reduce((s,p)=>s+(pts(p)||0),0);
 
   const qHTML = list.map((p,i)=>`
     <div class="pr-q">
-      <span class="qn">${i+1}.</span> <span>${esc(p.question)}</span>
+      <span class="qn">${i+1}.</span>${pts(p)!=null?` <span style="font-size:8.5pt">[${pts(p)}점]</span>`:''} <span>${esc(p.question)}</span>
       ${p.images&&p.images.length?p.images.map(d=>`<img src="${d}" alt="">`).join(''):''}
       ${p.choices&&p.choices.length?`<div class="choices">${p.choices.map(c=>esc(c)).join('&nbsp;&nbsp; ')}</div>`:''}
       ${withMeta&&p.srcName?`<div style="font-size:8pt;color:#777">[${esc(p.srcType)} · ${esc(p.srcName)}${p.srcYear?' '+esc(p.srcYear):''}]</div>`:''}
     </div>`).join('');
 
-  const ansHTML = withAns ? `
-    <div class="pr-ans">
+  const keyHTML = `
+    <div class="${doctype==='anskey'?'':'pr-ans'}">
+      <h2>정답표 — ${esc(title)}</h2>
+      ${list.map((p,i)=>`<div class="arow" style="display:inline-block;min-width:110px"><b>${i+1}.</b> ${esc(p.answer||'—')}</div>`).join(' ')}
+    </div>`;
+  const solHTML = `
+    <div class="${doctype==='solution'?'':'pr-ans'}">
       <h2>정답 및 해설 — ${esc(title)}</h2>
       ${list.map((p,i)=>`<div class="arow"><b>${i+1}.</b> <b>${esc(p.answer||'—')}</b>
         ${p.solution?`<div style="font-size:9.5pt;color:#333;margin-top:2px;white-space:pre-wrap">${esc(p.solution)}</div>`:''}</div>`).join('')}
-    </div>` : '';
+    </div>`;
 
-  $('#print-area').innerHTML = `
+  const head = `
     <div class="pr-head"><h1>${esc(title)}</h1>${sub?`<div class="sub">${esc(sub)}</div>`:''}</div>
     <div class="pr-info">
       <span>${date?esc(date):''} ${author?'· '+esc(author):''}</span>
-      <span>총 ${list.length}문항</span>
+      <span>총 ${list.length}문항${total?` · ${total}점`:''}</span>
       <span>이름: ______________</span>
-    </div>
-    <div class="${twoCol?'pr-cols-2':''}">${qHTML}</div>
-    ${ansHTML}`;
+    </div>`;
+  let body = '';
+  if(doctype==='anskey') body = keyHTML;
+  else if(doctype==='solution') body = solHTML;
+  else body = `<div class="${twoCol?'pr-cols-2':''}">${qHTML}</div>` + (doctype==='teacher'?solHTML:'');
+  $('#print-area').innerHTML = head + body;
   renderMath($('#print-area'));
   setTimeout(()=>window.print(), 150);
 }
@@ -1626,20 +1791,31 @@ async function downloadHWPX(){
   if(!window.JSZip){ toast('구성요소(JSZip)가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
   const title = $('#s-title').value||'수학 연습 문제';
   const sub = $('#s-sub').value, author = $('#s-author').value, date = $('#s-date').value;
-  const withAns = $('#s-answers').checked, withMeta = $('#s-meta').checked;
+  const withMeta = $('#s-meta').checked;
+  const doctype = $('#s-doctype').value;
+  const pts = p=>state.points[p.id]!=null ? state.points[p.id] : null;
+  const total = list.reduce((s,p)=>s+(pts(p)||0),0);
 
   const paras = [];
   if(sub) paras.push(hwpxP(sub, 1, 1));
-  paras.push(hwpxP([date, author, '총 '+list.length+'문항', '이름: ______________'].filter(Boolean).join('    '), 0, 1));
+  paras.push(hwpxP([date, author, '총 '+list.length+'문항'+(total?` · ${total}점`:''), '이름: ______________'].filter(Boolean).join('    '), 0, 1));
   paras.push(hwpxP('',0,0));
-  list.forEach((p,i)=>{
-    const lines = ((i+1)+'. '+p.question).split('\n');
-    lines.forEach((l,li)=>paras.push(hwpxP(l, li===0?1:0, 0)));
-    if(p.choices && p.choices.length) paras.push(hwpxP(p.choices.join('    '), 0, 0));
-    if(withMeta && p.srcName) paras.push(hwpxP(`[${p.srcType||'출처'} · ${p.srcName}${p.srcYear?' '+p.srcYear:''}]`, 0, 0));
+  if(doctype==='teacher' || doctype==='student'){
+    list.forEach((p,i)=>{
+      const headTxt = (i+1)+'.'+(pts(p)!=null?` [${pts(p)}점]`:'')+' ';
+      const lines = (headTxt+p.question).split('\n');
+      lines.forEach((l,li)=>paras.push(hwpxP(l, li===0?1:0, 0)));
+      if(p.choices && p.choices.length) paras.push(hwpxP(p.choices.join('    '), 0, 0));
+      if(withMeta && p.srcName) paras.push(hwpxP(`[${p.srcType||'출처'} · ${p.srcName}${p.srcYear?' '+p.srcYear:''}]`, 0, 0));
+      paras.push(hwpxP('',0,0));
+    });
+  }
+  if(doctype==='anskey'){
+    paras.push(hwpxP('정답표', 2, 1));
     paras.push(hwpxP('',0,0));
-  });
-  if(withAns){
+    list.forEach((p,i)=>paras.push(hwpxP(`${i+1}. ${p.answer||'—'}`, 0, 0)));
+  }
+  if(doctype==='teacher' || doctype==='solution'){
     paras.push(hwpxP('',0,0));
     paras.push(hwpxP('정답 및 해설', 2, 1));
     paras.push(hwpxP('',0,0));
@@ -1670,8 +1846,11 @@ async function downloadHWPX(){
 /* 학습지 구성 저장/불러오기 */
 async function saveWorksheet(){
   if(!state.cart.length){ toast('담긴 문제가 없습니다.'); return; }
+  const pointsSnap = {};
+  for(const id of state.cart) if(state.points[id]!=null) pointsSnap[id] = state.points[id];
   const ws = { id: uid(), title: $('#s-title').value||'제목 없음', sub: $('#s-sub').value,
-    author: $('#s-author').value, date: $('#s-date').value, ids: state.cart.slice(), createdAt: Date.now() };
+    author: $('#s-author').value, date: $('#s-date').value, ids: state.cart.slice(),
+    points: pointsSnap, doctype: $('#s-doctype').value, createdAt: Date.now() };
   await DB.put('worksheets', ws);
   state.worksheets.push(ws);
   renderWorksheetList(); refreshCounts();
@@ -1694,6 +1873,9 @@ function loadWorksheet(id){
   const ws = state.worksheets.find(w=>w.id===id); if(!ws) return;
   state.cart = ws.ids.filter(i=>state.problems.some(p=>p.id===i));
   $('#s-title').value=ws.title; $('#s-sub').value=ws.sub||''; $('#s-author').value=ws.author||''; $('#s-date').value=ws.date||'';
+  if(ws.doctype) $('#s-doctype').value = ws.doctype;
+  if(ws.points) Object.assign(state.points, ws.points);
+  localStorage.setItem('sp-lab-points', JSON.stringify(state.points));
   persistCart(); renderSheet();
   toast('학습지 구성을 불러왔습니다.');
 }
@@ -1743,7 +1925,9 @@ async function wipeAll(){
   if(!confirm('정말 모든 데이터를 삭제할까요? 이 작업은 되돌릴 수 없습니다.')) return;
   if(!confirm('마지막 확인: 백업 없이 삭제하면 복구할 수 없습니다. 삭제할까요?')) return;
   await DB.clear('problems'); await DB.clear('worksheets');
-  state.problems=[]; state.worksheets=[]; state.cart=[]; persistCart();
+  state.problems=[]; state.worksheets=[]; state.cart=[]; state.points={};
+  localStorage.removeItem('sp-lab-points'); localStorage.removeItem('sp-lab-filehashes');
+  persistCart();
   refreshCounts(); renderDB(); renderSheet();
   toast('모든 데이터가 삭제되었습니다.');
 }
@@ -1775,7 +1959,7 @@ async function loadSeed(){
     const gradeOf = {"수학(상)":"고1","수학(하)":"고1","수학Ⅰ":"고2","수학Ⅱ":"고2","미적분":"고3","확률과 통계":"고3","기하":"고3","중등 수학":"중3"};
     const p = { id:uid()+n, question:s.q, choices:s.ch, answer:s.a, solution:s.sol, images:[],
       subject:s.u[0], chapter:s.u[1], section:s.u[2], grade:gradeOf[s.u[0]]||'', srcType:'기출', srcName:s.src, srcYear:'2025',
-      difficulty:s.d, tags:['샘플'], createdAt:Date.now()+n, updatedAt:Date.now()+n };
+      difficulty:s.d, tags:['샘플'], origNo:'', reviewed:true, createdAt:Date.now()+n, updatedAt:Date.now()+n };
     await DB.put('problems',p); state.problems.push(p); n++;
   }
   refreshCounts();
@@ -1808,6 +1992,8 @@ function renderDash(){
   $('#f-grade').innerHTML = GRADES.map(g=>`<option>${g}</option>`).join('');
   $('#b-grade').innerHTML = GRADES.map(g=>`<option>${g}</option>`).join('');
   $('#filter-grade').innerHTML = '<option value="">학년 전체</option>'+GRADES.slice(1).map(g=>`<option>${g}</option>`).join('');
+  $('#ac-subject').innerHTML = '<option value="">과목 전체</option>'+Object.keys(CURRICULUM).map(s=>`<option>${esc(s)}</option>`).join('');
+  $('#ac-grade').innerHTML = '<option value="">학년 전체</option>'+GRADES.slice(1).map(g=>`<option>${g}</option>`).join('');
   $('#s-date').value = new Date().toISOString().slice(0,10);
   state.cart = state.cart.filter(id=>state.problems.some(p=>p.id===id));
   persistCart();
