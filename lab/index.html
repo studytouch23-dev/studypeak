@@ -159,6 +159,22 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 #pager{display:flex;gap:.3rem;justify-content:center;align-items:center;margin-top:1rem;flex-wrap:wrap}
 .preset-chip{display:inline-flex;align-items:center;gap:.3rem;background:#eef2ec;border:1px solid #d7e0d4;border-radius:99px;padding:.15rem .6rem;font-size:.78rem;font-weight:700;color:var(--green);cursor:pointer;margin:.1rem .2rem .1rem 0}
 .preset-chip .x{opacity:.5}.preset-chip .x:hover{opacity:1}
+/* PDF 영역 인식 에디터 */
+#pdfed-bg .modal{width:96vw}
+.pdfed-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.5rem;max-height:60vh;overflow:auto}
+.pdfed-thumb{border:2px solid var(--line);border-radius:8px;padding:.25rem;cursor:pointer;text-align:center;background:#fff;position:relative}
+.pdfed-thumb img{width:100%;display:block;border-radius:4px}
+.pdfed-thumb.sel{border-color:var(--green);background:#eef2ec}
+.pdfed-thumb .pno{font-size:.72rem;color:var(--muted);font-weight:700}
+.pdfed-thumb .badge-ans{position:absolute;top:4px;right:4px;background:#faf0dc;color:#7a5c1e;font-size:.64rem;font-weight:800;border-radius:6px;padding:0 .3rem}
+.reg-box{position:absolute;border:2px solid #2c5fd8;background:rgba(44,95,216,.07);border-radius:3px;cursor:pointer}
+.reg-box.sel{border-color:var(--gold-2);background:rgba(216,185,124,.15)}
+.reg-box .rno{position:absolute;top:-1px;left:-1px;background:#2c5fd8;color:#fff;font-size:.68rem;font-weight:800;padding:0 .35rem;border-radius:3px 0 6px 0}
+.reg-box.sel .rno{background:var(--gold-2)}
+.reg-ghost{position:absolute;border:2px dashed #2c5fd8;background:rgba(44,95,216,.08);pointer-events:none}
+.regrow{display:flex;align-items:center;gap:.3rem;border:1px solid var(--line);border-radius:8px;padding:.3rem .45rem;margin-bottom:.3rem;font-size:.8rem;cursor:pointer}
+.regrow.sel{border-color:var(--gold-2);background:#fffdf6}
+.regrow input{width:52px;padding:.15rem .3rem;font-size:.78rem}
 .plist{display:flex;flex-direction:column;gap:.7rem}
 .pitem{background:#fff;border:1px solid var(--line);border-radius:12px;padding:.9rem 1rem;display:flex;gap:.8rem}
 .pitem.selected{outline:2px solid var(--gold);background:#fffdf6}
@@ -185,7 +201,9 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 #cartbar{position:fixed;bottom:0;left:var(--sbw);right:0;background:var(--green);color:#fff;z-index:60;display:none;box-shadow:0 -3px 12px rgba(0,0,0,.2)}
 @media(max-width:900px){#cartbar{left:0}}
 #cartbar.show{display:block}
-#cartbar .inner{max-width:1240px;margin:0 auto;padding:.6rem 18px;display:flex;align-items:center;gap:.8rem;flex-wrap:wrap}
+#cartbar .inner{max-width:1240px;margin:0 auto;padding:.6rem 18px;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+#cartbar .cb{background:rgba(255,255,255,.14);color:#fff}
+#cartbar .cb:hover{background:rgba(255,255,255,.26)}
 
 /* modal */
 .modal-bg{position:fixed;inset:0;background:rgba(20,28,22,.55);z-index:80;display:none;align-items:flex-start;justify-content:center;overflow:auto;padding:3vh 12px}
@@ -631,15 +649,63 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 
 <!-- 담기 바 -->
 <div id="cartbar"><div class="inner">
-  <b>🧺 담은 문제 <span id="cart-n2">0</span>개</b>
+  <b>🧺 <span id="cart-n2">0</span>개 선택됨</b>
+  <button class="btn sm cb" onclick="openBatchTag()">🏷 일괄 태그</button>
+  <button class="btn sm cb" onclick="batchAutoTag()">✨ 자동 태그 적용</button>
+  <button class="btn sm cb" onclick="batchReviewed(true)">✓ 일괄 검수 승인</button>
+  <button class="btn sm cb" onclick="downloadHWPX()">📥 한글 다운로드</button>
+  <button class="btn sm cb" style="color:#ffb4a4" onclick="batchDelete()">🗑 삭제</button>
   <span style="flex:1"></span>
-  <button class="btn gold sm" onclick="go('sheet')">학습지 만들러 가기 →</button>
-  <button class="btn sm" style="background:rgba(255,255,255,.15)" onclick="clearCart()">비우기</button>
+  <button class="btn gold sm" onclick="go('sheet')">학습지 만들기 →</button>
+  <button class="btn sm cb" onclick="clearCart()">선택 해제</button>
 </div></div>
 
 <!-- 상세/수정 모달 -->
 <div class="modal-bg" id="modal-bg" onclick="if(event.target===this)closeModal()">
   <div class="modal" id="modal-body"></div>
+</div>
+
+<!-- PDF 영역 인식 에디터 -->
+<div class="modal-bg" id="pdfed-bg">
+  <div class="modal" style="max-width:1150px">
+    <div class="spread" style="margin-bottom:.6rem">
+      <h3 style="margin:0" id="pdfed-title">PDF 분석</h3>
+      <button class="close" onclick="closePdfEditor()" style="float:none">✕</button>
+    </div>
+    <div id="pdfed-step1">
+      <p class="hint" style="margin-bottom:.5rem">분석할 페이지만 선택하세요. 빠른정답·해설로 보이는 페이지는 자동으로 선택 해제되어 있습니다. (클릭으로 선택/해제)</p>
+      <div class="row" style="margin-bottom:.5rem">
+        <button class="btn ghost sm" onclick="pdfedSelAll(true)">모두 선택</button>
+        <button class="btn ghost sm" onclick="pdfedSelAll(false)">모두 해제</button>
+        <span class="hint" id="pdfed-selcount"></span>
+        <span style="flex:1"></span>
+        <button class="btn gold" onclick="pdfedToRegions()">다음: 영역 인식 →</button>
+      </div>
+      <div id="pdfed-pages" class="pdfed-grid"></div>
+    </div>
+    <div id="pdfed-step2" style="display:none">
+      <div class="row" style="margin-bottom:.4rem">
+        <button class="btn ghost sm" onclick="pdfedNav(-1)">← 이전</button>
+        <b id="pdfed-pageinfo" style="color:var(--green)"></b>
+        <button class="btn ghost sm" onclick="pdfedNav(1)">다음 →</button>
+        <span style="flex:1"></span>
+        <button class="btn ghost sm" onclick="pdfedAutoDetect()">이 페이지 자동 인식 다시 실행</button>
+        <button class="btn danger sm" onclick="pdfedClearPage()">이 페이지 영역 지우기</button>
+        <button class="btn gold" onclick="pdfedFinish()" id="pdfed-finish">완료 — 문항 추출</button>
+      </div>
+      <p class="hint" style="margin-bottom:.4rem">파란 박스가 인식된 문항 영역입니다. <b>빈 곳을 드래그</b>하면 새 영역이 추가되고, 박스를 <b>클릭</b>하면 오른쪽에서 번호 수정·삭제할 수 있습니다.</p>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) 215px;gap:.8rem;align-items:start">
+        <div id="pdfed-wrap" style="position:relative;border:1px solid var(--line);border-radius:8px;overflow:hidden;cursor:crosshair;user-select:none">
+          <canvas id="pdfed-canvas" style="display:block;width:100%"></canvas>
+          <div id="pdfed-overlays" style="position:absolute;inset:0"></div>
+        </div>
+        <div>
+          <div class="hint" style="margin-bottom:.4rem"><b id="pdfed-regcount" style="color:var(--green)"></b></div>
+          <div id="pdfed-reglist" style="max-height:520px;overflow:auto"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="toast"></div>
@@ -1442,38 +1508,75 @@ async function parsePDF(file){
     }
     return out.join('\n');
   }
-  // 이미지형: 문제 페이지를 렌더링해 번호 앵커 기준으로 문항별 크롭
-  const drafts = []; let skipped = 0;
-  for(const pg of pages){
-    if(pg.isQuickAns || pg.ansLabels >= 4 || !pg.anchors.length){ skipped++; continue; }
-    const scale = 2;
-    const vp = pg.page.getViewport({scale});
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.ceil(vp.width); canvas.height = Math.ceil(vp.height);
-    await pg.page.render({canvasContext: canvas.getContext('2d'), viewport: vp}).promise;
-    const mid = pg.w/2;
-    const twoCol = pg.anchors.some(a=>a.x < mid*0.8) && pg.anchors.some(a=>a.x >= mid);
-    const cols = twoCol ? [pg.anchors.filter(a=>a.x<mid), pg.anchors.filter(a=>a.x>=mid)] : [pg.anchors.slice()];
-    for(let ci=0; ci<cols.length; ci++){
-      const colAnchors = cols[ci].sort((a,b)=>b.y-a.y);   // PDF 좌표는 아래가 0 → 위에서 아래로
-      for(let k=0;k<colAnchors.length;k++){
-        const a = colAnchors[k];
-        const topPdf = Math.min(pg.h, a.y + 14);
-        const botPdf = (k+1<colAnchors.length) ? colAnchors[k+1].y + 16 : pg.h*0.055;
-        const x0 = Math.max(0, a.x - 8);
-        const x1 = twoCol ? (ci===0 ? mid - 4 : pg.w*0.975) : pg.w*0.975;
-        const sw = (x1-x0)*scale, sh = (topPdf-botPdf)*scale;
-        if(sw < 40 || sh < 24) continue;
-        const c2 = document.createElement('canvas');
-        c2.width = Math.ceil(sw); c2.height = Math.ceil(sh);
-        c2.getContext('2d').drawImage(canvas, x0*scale, (pg.h-topPdf)*scale, sw, sh, 0, 0, sw, sh);
-        drafts.push({ text:'', num:a.num, sol:'', ans:'', img: c2.toDataURL('image/jpeg', 0.87) });
-      }
+  // 이미지형: 페이지 선택 → 영역 인식·보정 에디터로 넘김
+  return { kind:'pdfEditor', pdf, pages, fileName:file.name };
+}
+/* ── 번호 앵커 기반 영역 자동 인식: top-left 좌표계 rect 목록 ── */
+function detectRegionsByAnchors(pg, pageIdx){
+  const out = [];
+  if(!pg.anchors.length) return out;
+  const mid = pg.w/2;
+  const twoCol = pg.anchors.some(a=>a.x < mid*0.8) && pg.anchors.some(a=>a.x >= mid);
+  const cols = twoCol ? [pg.anchors.filter(a=>a.x<mid), pg.anchors.filter(a=>a.x>=mid)] : [pg.anchors.slice()];
+  for(let ci=0; ci<cols.length; ci++){
+    const colAnchors = cols[ci].sort((a,b)=>b.y-a.y);     // PDF 좌표(아래 0) → 위에서 아래로
+    for(let k=0;k<colAnchors.length;k++){
+      const a = colAnchors[k];
+      const topPdf = Math.min(pg.h, a.y + 14);
+      const botPdf = (k+1<colAnchors.length) ? colAnchors[k+1].y + 16 : pg.h*0.055;
+      const x0 = Math.max(0, a.x - 8);
+      const x1 = twoCol ? (ci===0 ? mid - 4 : pg.w*0.975) : pg.w*0.975;
+      if(x1-x0 < 20 || topPdf-botPdf < 12) continue;
+      out.push({ page:pageIdx, x:x0, y:pg.h-topPdf, w:x1-x0, h:topPdf-botPdf, num:a.num });
     }
   }
-  if(!drafts.length) throw new Error(file.name+' — 이미지형 PDF에서 문항 영역을 찾지 못했습니다.');
-  drafts.sort((a,b)=>(+a.num)-(+b.num));
-  return { kind:'imageDrafts', drafts, skipped };
+  return out;
+}
+/* ── 픽셀 여백 투영 분할: 번호가 없는 PDF용 (단 감지 + 가로 여백으로 경계) ── */
+function detectRegionsByPixels(canvas, pgW, pgH, pageIdx, startNum){
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const img = ctx.getImageData(0,0,W,H).data;
+  const sx = W/pgW;                                       // canvas px per page unit
+  const dark = (x,y)=>{ const i=(y*W+x)*4; return (0.299*img[i]+0.587*img[i+1]+0.114*img[i+2]) < 190; };
+  // 단(컬럼) 감지: 세로 투영에서 가운데 넓은 흰 띠
+  const colCount = new Float32Array(W);
+  for(let x=0;x<W;x+=1){
+    let c=0;
+    for(let y=Math.floor(H*0.1); y<H*0.94; y+=3) if(dark(x,y)) c++;
+    colCount[x]=c;
+  }
+  let gapStart=-1, bestGap=null;
+  for(let x=Math.floor(W*0.35); x<W*0.65; x++){
+    if(colCount[x]<=1){ if(gapStart<0) gapStart=x; }
+    else { if(gapStart>=0 && x-gapStart > W*0.02 && (!bestGap || x-gapStart > bestGap[1]-bestGap[0])) bestGap=[gapStart,x]; gapStart=-1; }
+  }
+  if(gapStart>=0 && Math.floor(W*0.65)-gapStart > W*0.02) bestGap=[gapStart, Math.floor(W*0.65)];
+  const colRanges = bestGap
+    ? [[Math.floor(W*0.03), bestGap[0]], [bestGap[1], Math.floor(W*0.97)]]
+    : [[Math.floor(W*0.03), Math.floor(W*0.97)]];
+  // 각 단에서 가로 여백으로 문항 경계
+  const out = []; let num = startNum;
+  for(const [x0,x1] of colRanges){
+    const rowHas = new Uint8Array(H);
+    for(let y=0;y<H;y++){
+      for(let x=x0;x<x1;x+=2){ if(dark(x,y)){ rowHas[y]=1; break; } }
+    }
+    const top = Math.floor(H*0.04), bot = Math.floor(H*0.95);
+    const GAP = Math.max(10, Math.round(14*sx));          // ≈14pt 이상 여백이면 경계
+    let segStart=-1, lastInk=-1;
+    const segs=[];
+    for(let y=top;y<bot;y++){
+      if(rowHas[y]){ if(segStart<0) segStart=y; lastInk=y; }
+      else if(segStart>=0 && y-lastInk>GAP){ segs.push([segStart,lastInk]); segStart=-1; }
+    }
+    if(segStart>=0) segs.push([segStart,lastInk]);
+    for(const [a,b] of segs){
+      if(b-a < 22*sx) continue;                            // 너무 작은 조각(머리말 등) 제외
+      out.push({ page:pageIdx, x:x0/sx, y:(a-4)/sx, w:(x1-x0)/sx, h:(b-a+10)/sx, num:String(num++) });
+    }
+  }
+  return out;
 }
 async function extractTextFromFile(file){
   const nm = file.name.toLowerCase();
@@ -1482,6 +1585,236 @@ async function extractTextFromFile(file){
   if(nm.endsWith('.pdf')) return parsePDF(file);
   return file.text();
 }
+/* ═══════════════ PDF 영역 인식 에디터 ═══════════════ */
+const PDFED = { pdf:null, fileName:'', pages:[], regions:[], cur:0, nextNum:1,
+  selectedRegion:null, scale:1, pixCache:new Map(), drawing:null };
+async function openPdfEditor(res){
+  PDFED.pdf = res.pdf; PDFED.fileName = res.fileName;
+  PDFED.pages = res.pages.map((pg,i)=>({ ...pg, idx:i,
+    isAns: pg.isQuickAns || pg.ansLabels>=4,
+    selected: !(pg.isQuickAns || pg.ansLabels>=4),
+    thumb:null }));
+  PDFED.regions = []; PDFED.cur = 0; PDFED.nextNum = 1;
+  PDFED.selectedRegion = null; PDFED.pixCache.clear();
+  $('#pdfed-title').textContent = 'PDF 분석 — '+res.fileName;
+  $('#pdfed-step1').style.display='block';
+  $('#pdfed-step2').style.display='none';
+  $('#pdfed-bg').classList.add('show');
+  // 썸네일 렌더링
+  const wrap = $('#pdfed-pages');
+  wrap.innerHTML = PDFED.pages.map(pg=>
+    `<div class="pdfed-thumb ${pg.selected?'sel':''}" data-i="${pg.idx}">
+      ${pg.isAns?'<span class="badge-ans">해설?</span>':''}
+      <div class="pno">${pg.idx+1}</div><img alt="p${pg.idx+1}">
+    </div>`).join('');
+  pdfedSelCount();
+  for(const pg of PDFED.pages){
+    const vp = pg.page.getViewport({scale: 150/pg.w});
+    const c = document.createElement('canvas');
+    c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+    await pg.page.render({canvasContext:c.getContext('2d'), viewport:vp}).promise;
+    pg.thumb = c.toDataURL('image/jpeg', 0.7);
+    const el = wrap.querySelector(`[data-i="${pg.idx}"] img`);
+    if(el) el.src = pg.thumb;
+  }
+}
+$('#pdfed-pages').addEventListener('click', e=>{
+  const t = e.target.closest('.pdfed-thumb'); if(!t) return;
+  const pg = PDFED.pages[+t.dataset.i];
+  pg.selected = !pg.selected;
+  t.classList.toggle('sel', pg.selected);
+  pdfedSelCount();
+});
+function pdfedSelCount(){
+  $('#pdfed-selcount').textContent = PDFED.pages.filter(p=>p.selected).length+' / '+PDFED.pages.length+' 페이지 선택됨';
+}
+function pdfedSelAll(v){
+  PDFED.pages.forEach(p=>p.selected=v);
+  $$('#pdfed-pages .pdfed-thumb').forEach(t=>t.classList.toggle('sel', v));
+  pdfedSelCount();
+}
+function closePdfEditor(){
+  if(PDFED.regions.length && !confirm('영역 인식 작업을 닫을까요? 인식한 영역은 사라집니다.')) return;
+  $('#pdfed-bg').classList.remove('show');
+  PDFED.pdf=null; PDFED.pages=[]; PDFED.regions=[]; PDFED.pixCache.clear();
+}
+function pdfedSelPages(){ return PDFED.pages.filter(p=>p.selected); }
+async function pdfedToRegions(){
+  const sel = pdfedSelPages();
+  if(!sel.length){ toast('분석할 페이지를 선택하세요.'); return; }
+  $('#pdfed-step1').style.display='none';
+  $('#pdfed-step2').style.display='block';
+  PDFED.cur = 0;
+  // 전체 선택 페이지에 자동 인식 (앵커 우선, 없으면 픽셀 분할)
+  PDFED.regions = []; PDFED.nextNum = 1;
+  for(const pg of sel) await pdfedDetectPage(pg, false);
+  pdfedRenumber();
+  await pdfedShowPage();
+}
+async function pdfedPixelCanvas(pg){
+  if(PDFED.pixCache.has(pg.idx)) return PDFED.pixCache.get(pg.idx);
+  const vp = pg.page.getViewport({scale:1});
+  const c = document.createElement('canvas');
+  c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+  await pg.page.render({canvasContext:c.getContext('2d'), viewport:vp}).promise;
+  PDFED.pixCache.set(pg.idx, c);
+  if(PDFED.pixCache.size>6) PDFED.pixCache.delete(PDFED.pixCache.keys().next().value);
+  return c;
+}
+async function pdfedDetectPage(pg, rerender){
+  let regs = detectRegionsByAnchors(pg, pg.idx);
+  if(!regs.length){
+    const c = await pdfedPixelCanvas(pg);
+    regs = detectRegionsByPixels(c, pg.w, pg.h, pg.idx, PDFED.nextNum);
+  }
+  PDFED.regions = PDFED.regions.filter(r=>r.page!==pg.idx).concat(regs);
+  PDFED.nextNum = Math.max(PDFED.nextNum, ...PDFED.regions.map(r=>(+r.num||0)+1), 1);
+  if(rerender){ pdfedRenumber(); await pdfedShowPage(); }
+}
+function pdfedRenumber(){ /* 번호 중복 허용(원본 번호 유지), nextNum만 갱신 */
+  PDFED.nextNum = Math.max(1, ...PDFED.regions.map(r=>(+r.num||0)+1));
+}
+async function pdfedShowPage(){
+  const sel = pdfedSelPages();
+  if(!sel.length) return;
+  PDFED.cur = Math.min(Math.max(0, PDFED.cur), sel.length-1);
+  const pg = sel[PDFED.cur];
+  $('#pdfed-pageinfo').textContent = `${PDFED.cur+1} / ${sel.length} (원본 ${pg.idx+1}쪽)`;
+  const wrap = $('#pdfed-wrap');
+  const w = wrap.clientWidth || 700;
+  const scale = Math.min(1.7, w / pg.w);
+  PDFED.scale = scale;
+  const vp = pg.page.getViewport({scale});
+  const canvas = $('#pdfed-canvas');
+  canvas.width = Math.ceil(vp.width); canvas.height = Math.ceil(vp.height);
+  canvas.style.width = '100%';
+  await pg.page.render({canvasContext:canvas.getContext('2d'), viewport:vp}).promise;
+  pdfedDrawOverlays();
+  pdfedRegList();
+}
+function pdfedCurPage(){ return pdfedSelPages()[PDFED.cur]; }
+function pdfedDrawOverlays(){
+  const pg = pdfedCurPage(); if(!pg) return;
+  const ov = $('#pdfed-overlays');
+  const canvas = $('#pdfed-canvas');
+  const dispScale = canvas.clientWidth / pg.w;             // CSS px per page unit
+  ov.innerHTML = PDFED.regions.filter(r=>r.page===pg.idx).map(r=>{
+    const i = PDFED.regions.indexOf(r);
+    return `<div class="reg-box ${PDFED.selectedRegion===i?'sel':''}" data-r="${i}"
+      style="left:${r.x*dispScale}px;top:${r.y*dispScale}px;width:${r.w*dispScale}px;height:${r.h*dispScale}px">
+      <span class="rno">${esc(r.num)}</span></div>`;
+  }).join('');
+}
+function pdfedRegList(){
+  const regs = PDFED.regions.slice().sort((a,b)=>(a.page-b.page)||((+a.num||0)-(+b.num||0)));
+  $('#pdfed-regcount').textContent = PDFED.regions.length+'개 영역 인식됨';
+  $('#pdfed-reglist').innerHTML = regs.map(r=>{
+    const i = PDFED.regions.indexOf(r);
+    return `<div class="regrow ${PDFED.selectedRegion===i?'sel':''}" data-r="${i}">
+      <b>#</b><input value="${esc(r.num)}" onchange="PDFED.regions[${i}].num=this.value;pdfedDrawOverlays()" onclick="event.stopPropagation()">
+      <span class="hint">${r.page+1}쪽</span>
+      <span style="flex:1"></span>
+      <button class="btn danger sm" onclick="event.stopPropagation();pdfedDelRegion(${i})">삭제</button></div>`;
+  }).join('');
+}
+function pdfedDelRegion(i){
+  PDFED.regions.splice(i,1);
+  if(PDFED.selectedRegion===i) PDFED.selectedRegion=null;
+  pdfedDrawOverlays(); pdfedRegList();
+}
+async function pdfedNav(d){ PDFED.cur += d; PDFED.selectedRegion=null; await pdfedShowPage(); }
+async function pdfedAutoDetect(){ const pg=pdfedCurPage(); if(pg) await pdfedDetectPage(pg, true); }
+function pdfedClearPage(){
+  const pg = pdfedCurPage(); if(!pg) return;
+  PDFED.regions = PDFED.regions.filter(r=>r.page!==pg.idx);
+  PDFED.selectedRegion=null;
+  pdfedDrawOverlays(); pdfedRegList();
+}
+/* 드래그로 새 영역 추가 + 클릭 선택 */
+(function(){
+  const wrap = $('#pdfed-wrap');
+  let start = null, ghost = null;
+  wrap.addEventListener('mousedown', e=>{
+    const regEl = e.target.closest('.reg-box');
+    if(regEl){
+      PDFED.selectedRegion = +regEl.dataset.r;
+      pdfedDrawOverlays(); pdfedRegList();
+      return;
+    }
+    const rect = wrap.getBoundingClientRect();
+    start = {x: e.clientX-rect.left, y: e.clientY-rect.top};
+    ghost = document.createElement('div');
+    ghost.className = 'reg-ghost';
+    $('#pdfed-overlays').appendChild(ghost);
+    e.preventDefault();
+  });
+  wrap.addEventListener('mousemove', e=>{
+    if(!start || !ghost) return;
+    const rect = wrap.getBoundingClientRect();
+    const x = e.clientX-rect.left, y = e.clientY-rect.top;
+    ghost.style.left = Math.min(x,start.x)+'px';
+    ghost.style.top = Math.min(y,start.y)+'px';
+    ghost.style.width = Math.abs(x-start.x)+'px';
+    ghost.style.height = Math.abs(y-start.y)+'px';
+  });
+  window.addEventListener('mouseup', e=>{
+    if(!start) return;
+    const rect = wrap.getBoundingClientRect();
+    const x = e.clientX-rect.left, y = e.clientY-rect.top;
+    const pg = pdfedCurPage();
+    if(ghost){ ghost.remove(); ghost=null; }
+    if(pg){
+      const dispScale = $('#pdfed-canvas').clientWidth / pg.w;
+      const rx = Math.min(x,start.x)/dispScale, ry = Math.min(y,start.y)/dispScale;
+      const rw = Math.abs(x-start.x)/dispScale, rh = Math.abs(y-start.y)/dispScale;
+      if(rw>18 && rh>12){
+        PDFED.regions.push({page:pg.idx, x:rx, y:ry, w:rw, h:rh, num:String(PDFED.nextNum++)});
+        pdfedDrawOverlays(); pdfedRegList();
+      }
+    }
+    start = null;
+  });
+  $('#pdfed-overlays').addEventListener('click', e=>{
+    const regEl = e.target.closest('.reg-box');
+    if(regEl){ PDFED.selectedRegion = +regEl.dataset.r; pdfedDrawOverlays(); pdfedRegList(); }
+  });
+})();
+/* 완료: 영역별 크롭 → 일괄 등록 초안 */
+async function pdfedFinish(){
+  if(!PDFED.regions.length){ toast('인식된 영역이 없습니다. 드래그로 영역을 추가하세요.'); return; }
+  $('#pdfed-finish').disabled = true;
+  try{
+    const byPage = new Map();
+    for(const r of PDFED.regions){ if(!byPage.has(r.page)) byPage.set(r.page,[]); byPage.get(r.page).push(r); }
+    const drafts = [];
+    for(const [pageIdx, regs] of byPage){
+      const pg = PDFED.pages[pageIdx];
+      const scale = 2;
+      const vp = pg.page.getViewport({scale});
+      const c = document.createElement('canvas');
+      c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+      await pg.page.render({canvasContext:c.getContext('2d'), viewport:vp}).promise;
+      for(const r of regs){
+        const c2 = document.createElement('canvas');
+        c2.width = Math.ceil(r.w*scale); c2.height = Math.ceil(r.h*scale);
+        c2.getContext('2d').drawImage(c, r.x*scale, r.y*scale, r.w*scale, r.h*scale, 0, 0, c2.width, c2.height);
+        drafts.push({ text:'', num:r.num, sol:'', ans:'', img: c2.toDataURL('image/jpeg', 0.87) });
+      }
+    }
+    drafts.sort((a,b)=>((+a.num)||999)-((+b.num)||999));
+    state.bulkDrafts = drafts;
+    $('#bulk-preview-card').style.display='block';
+    rerenderBulk();
+    $('#upload-status').innerHTML = `✅ <b>${esc(PDFED.fileName)}</b> — 영역 ${drafts.length}개를 이미지 문항으로 잘라냈습니다. 미리보기 확인 후 저장하세요.`;
+    logJob('PDF 영역 인식', PDFED.fileName, drafts.length+'개 문항 추출');
+    PDFED.regions = [];
+    closePdfEditor();
+    toast(drafts.length+'개 문항을 추출했습니다.');
+  } finally {
+    $('#pdfed-finish').disabled = false;
+  }
+}
+
 /* 작업 내역 (업로드·변환·등록·출력 이력) */
 function logJob(kind, name, detail){
   let l=[]; try{ l=JSON.parse(localStorage.getItem('sp-lab-joblog')||'[]'); }catch(e){}
@@ -1523,16 +1856,10 @@ async function handleUploadFiles(files, targetSel){
       if(hash){ seen[hash] = {name:file.name, date:new Date().toISOString().slice(0,10)}; }
       if(targetSel==='#bulk-text' && !$('#b-srcname').value.trim())
         $('#b-srcname').value = file.name.replace(/\.(hwpx|hwp|pdf|txt)$/i,'');
-      if(res && res.kind==='imageDrafts'){
-        // 이미지형 PDF: 문항별 크롭 이미지를 바로 분할 결과로
-        state.bulkDrafts = res.drafts;
-        $('#bulk-preview-card').style.display='block';
-        rerenderBulk();
-        $('#bulk-status').textContent = `이미지 문항 ${res.drafts.length}개`;
-        status.innerHTML = `✅ <b>${esc(file.name)}: 이미지형 PDF 감지</b> — 문항 ${res.drafts.length}개를 이미지로 잘라냈습니다`
-          +(res.skipped?` (정답·해설 페이지 등 ${res.skipped}장 건너뜀)`:'')
-          +`.<br>글자 인식(OCR)은 없어서 문제 텍스트는 비어 있습니다 — 아래 미리보기 확인 후 [전체 저장]하고, 검색용 키워드는 상세·수정에서 붙여 주세요.`;
-        logJob('이미지형 PDF', file.name, `문항 ${res.drafts.length}개 분할`);
+      if(res && res.kind==='pdfEditor'){
+        // 이미지형 PDF: 페이지 선택 → 영역 인식·보정 에디터
+        status.innerHTML = `📄 <b>${esc(file.name)}: 이미지형 PDF 감지</b> — 페이지를 선택하고 문항 영역을 확인하세요.`;
+        await openPdfEditor(res);
         ok++; continue;
       }
       const text = String(res).trim();
@@ -2060,6 +2387,95 @@ function clearCart(){
   state.cart=[]; persistCart();
   if($('#view-db').classList.contains('active')) renderDB();
   if($('#view-sheet').classList.contains('active')) renderSheet();
+}
+
+/* ═══ 일괄 작업 (선택 문항 대상) ═══ */
+function cartList(){ return state.cart.map(id=>state.problems.find(p=>p.id===id)).filter(Boolean); }
+function openBatchTag(){
+  const list = cartList();
+  if(!list.length){ toast('선택된 문제가 없습니다.'); return; }
+  const m = $('#modal-body');
+  m.innerHTML = `
+    <button class="close" onclick="closeModal()">✕</button>
+    <h3>일괄 태그 적용 — 선택 ${list.length}문항</h3>
+    <p class="hint" style="margin-bottom:.8rem">값을 지정한 항목만 모든 선택 문항에 적용됩니다. ‘변경 안 함’은 기존 값을 유지합니다.</p>
+    <div class="grid3">
+      <div class="field"><label>과목</label><select id="bt-subject"><option value="">변경 안 함</option>${Object.keys(CURRICULUM).map(s=>`<option>${esc(s)}</option>`).join('')}</select></div>
+      <div class="field"><label>대단원</label><select id="bt-chapter"><option value="">변경 안 함</option></select></div>
+      <div class="field"><label>중단원</label><select id="bt-section"><option value="">변경 안 함</option></select></div>
+    </div>
+    <div class="grid3">
+      <div class="field"><label>학년</label><select id="bt-grade"><option value="">변경 안 함</option>${GRADES.slice(1).map(g=>`<option>${g}</option>`).join('')}</select></div>
+      <div class="field"><label>난이도</label><select id="bt-diff"><option value="">변경 안 함</option>${[1,2,3,4,5].map(d=>`<option value="${d}">${'●'.repeat(d)} ${d}</option>`).join('')}</select></div>
+      <div class="field"><label>출처 이름</label><input id="bt-src" placeholder="변경 안 함"></div>
+    </div>
+    <div class="field"><label>나만의 태그 추가 (쉼표 구분 — 기존 태그에 추가됨)</label><input id="bt-tags" placeholder="예: 오답노트, 재출제"></div>
+    <div class="row">
+      <button class="btn gold" onclick="applyBatchTag()">선택 ${list.length}문항에 적용</button>
+      <button class="btn ghost" onclick="closeModal()">취소</button>
+    </div>`;
+  $('#bt-subject').addEventListener('change', ()=>{
+    const ch = CURRICULUM[$('#bt-subject').value]||{};
+    $('#bt-chapter').innerHTML = '<option value="">변경 안 함</option>'+Object.keys(ch).map(c=>`<option>${esc(c)}</option>`).join('');
+    $('#bt-section').innerHTML = '<option value="">변경 안 함</option>';
+  });
+  $('#bt-chapter').addEventListener('change', ()=>{
+    const sects = (CURRICULUM[$('#bt-subject').value]||{})[$('#bt-chapter').value]||[];
+    $('#bt-section').innerHTML = '<option value="">변경 안 함</option>'+sects.map(s=>`<option>${esc(s)}</option>`).join('');
+  });
+  $('#modal-bg').classList.add('show');
+}
+async function applyBatchTag(){
+  const subject = $('#bt-subject').value, chapter = $('#bt-chapter').value, section = $('#bt-section').value;
+  const grade = $('#bt-grade').value, diff = $('#bt-diff').value, src = $('#bt-src').value.trim();
+  const addTags = $('#bt-tags').value.split(',').map(s=>s.trim()).filter(Boolean);
+  let n=0;
+  for(const p of cartList()){
+    if(subject) p.subject = subject;
+    if(chapter) p.chapter = chapter;
+    if(section) p.section = section;
+    if(grade) p.grade = grade;
+    if(diff) p.difficulty = +diff;
+    if(src) p.srcName = src;
+    for(const t of addTags) if(!(p.tags||[]).includes(t)) (p.tags=p.tags||[]).push(t);
+    p.updatedAt = Date.now();
+    await DB.put('problems', p); n++;
+  }
+  closeModal(); renderDB(); refreshCounts();
+  toast(n+'개 문항에 태그를 적용했습니다.');
+}
+async function batchAutoTag(){
+  const list = cartList();
+  if(!list.length){ toast('선택된 문제가 없습니다.'); return; }
+  let n=0, miss=0;
+  for(const p of list){
+    const sg = suggestTags(p.question||'');
+    if(sg.length && CURRICULUM[sg[0].unit[0]]){
+      p.subject = sg[0].unit[0]; p.chapter = sg[0].unit[1]; p.section = sg[0].unit[2];
+      p.updatedAt = Date.now();
+      await DB.put('problems', p); n++;
+    } else miss++;
+  }
+  renderDB(); refreshCounts();
+  toast(`자동 단원 태그 ${n}개 적용`+(miss?` · ${miss}개는 인식 못 함(이미지 문항·키워드 없음)`:''));
+}
+async function batchReviewed(v){
+  const list = cartList();
+  if(!list.length){ toast('선택된 문제가 없습니다.'); return; }
+  for(const p of list){ p.reviewed = v; p.updatedAt = Date.now(); await DB.put('problems', p); }
+  renderDB(); if($('#view-sheet').classList.contains('active')) renderSheet();
+  toast(list.length+'개 문항을 '+(v?'검수 완료':'미검수')+'로 표시했습니다.');
+}
+async function batchDelete(){
+  const list = cartList();
+  if(!list.length){ toast('선택된 문제가 없습니다.'); return; }
+  if(!confirm(`선택한 ${list.length}개 문항을 삭제할까요? 되돌릴 수 없습니다.`)) return;
+  for(const p of list){ await DB.del('problems', p.id); }
+  const ids = new Set(list.map(p=>p.id));
+  state.problems = state.problems.filter(p=>!ids.has(p.id));
+  state.cart = []; persistCart();
+  renderDB(); refreshCounts();
+  toast(list.length+'개 문항을 삭제했습니다.');
 }
 
 /* ═══════════════ 학습지 빌더 ═══════════════ */
