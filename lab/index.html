@@ -1077,8 +1077,8 @@ function splitBulk(){
   const raw = $('#bulk-text').value;
   if(!raw.trim()){ toast('파일을 올리거나 텍스트를 먼저 붙여넣으세요.'); return; }
   const parts = splitProblemsText(raw);
-  // 해설 매칭: 같은 번호(1. 2. 3))끼리 짝지음
-  const solMap = {};
+  // 해설 textarea 매칭: 같은 번호(1. 2. 3))끼리 짝지음
+  const solMap = {}, ansMap = {};
   const solRaw = $('#bulk-sol').value;
   if(solRaw.trim()){
     for(const s of splitProblemsText(solRaw)){
@@ -1086,20 +1086,46 @@ function splitBulk(){
       if(num) solMap[num] = s.replace(NUM_HEAD,'');
     }
   }
-  state.bulkDrafts = parts.map(t=>{
+  // 본문에 섞여 있는 "N. 정답: ..." 청크(내보낸 학습지의 해설 섹션 등)는 문제가 아니라
+  // 정답·해설로 자동 분리하고, 번호 없는 머리글(제목·날짜·이름칸)은 제외한다.
+  const SOL_HEAD = /^\s*(?:문제\s*)?\[?(\d{1,3})\]?\s*[.)번]?\s*정답\s*[:：]\s*/;
+  let solChunks = 0;
+  const drafts = [];
+  for(let t of parts){
+    t = t.replace(/\n\s*정답 및 해설\s*$/,'').trim();
+    if(!t) continue;
+    const sm = t.match(SOL_HEAD);
+    if(sm){
+      const n = sm[1], rest = t.slice(sm[0].length).trim();
+      const lines = rest.split('\n');
+      if(!ansMap[n]) ansMap[n] = lines[0].trim();
+      if(!solMap[n] && lines.length>1) solMap[n] = lines.slice(1).join('\n').trim();
+      solChunks++; continue;
+    }
+    drafts.push(t);
+  }
+  const numbered = drafts.filter(t=>headNum(t));
+  const headerChunks = numbered.length>=2 ? drafts.length - numbered.length : 0;
+  const finalDrafts = numbered.length>=2 ? numbered : drafts;
+  state.bulkDrafts = finalDrafts.map(t=>{
     const num = headNum(t);
-    return { text:t, num, sol: (num && solMap[num]) ? solMap[num] : '' };
+    return { text:t, num,
+      sol: (num && solMap[num]) ? solMap[num] : '',
+      ans: (num && ansMap[num]) ? ansMap[num] : '' };
   });
-  const matched = state.bulkDrafts.filter(d=>d.sol).length;
+  const matched = state.bulkDrafts.filter(d=>d.sol||d.ans).length;
   $('#bulk-preview-card').style.display='block';
   rerenderBulk();
-  $('#bulk-status').textContent = parts.length+'개 문제로 분할'+(matched?` · 해설 ${matched}개 자동 매칭`:'');
+  $('#bulk-status').textContent = finalDrafts.length+'개 문제로 분할'
+    +(matched?` · 정답·해설 ${matched}개 자동 매칭`:'')
+    +(solChunks?` · 해설 청크 ${solChunks}개 분리`:'')
+    +(headerChunks?` · 머리글 ${headerChunks}개 제외`:'');
 }
 function rerenderBulk(){
   $('#bulk-preview').innerHTML = state.bulkDrafts.map((d,i)=>
     `<div class="pitem"><div style="font-weight:900;color:var(--gold-2)">${i+1}</div>
       <div class="body"><div class="ptext">${esc(d.text)}</div>
-        ${d.sol?`<div class="pmeta"><span class="tag">해설 매칭 ✓</span></div>`:''}</div>
+        ${d.sol||d.ans?`<div class="pmeta">${d.ans?`<span class="tag">정답 ${esc(d.ans.slice(0,12))} ✓</span>`:''}${d.sol?`<span class="tag">해설 매칭 ✓</span>`:''}</div>`:''}</div>
       <button class="btn danger sm" onclick="state.bulkDrafts.splice(${i},1);rerenderBulk()">삭제</button></div>`).join('');
   $('#bulk-status').textContent = state.bulkDrafts.length+'개 문제';
   renderMath($('#bulk-preview'));
@@ -1118,7 +1144,7 @@ async function saveBulk(){
     const sg = suggestTags(d.text);
     const useSg = sg.length && CURRICULUM[sg[0].unit[0]];
     const p = {
-      id: uid()+n, question, choices: [], answer:'', solution: d.sol||'', images: [],
+      id: uid()+n, question, choices: [], answer: d.ans||'', solution: d.sol||'', images: [],
       subject: useSg ? sg[0].unit[0] : subject,
       chapter: useSg ? sg[0].unit[1] : (Object.keys(CURRICULUM[subject]||{})[0]||''),
       section: useSg ? sg[0].unit[2] : '',
