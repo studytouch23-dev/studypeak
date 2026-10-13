@@ -613,10 +613,12 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 
   <div class="row">
     <button class="btn gold" id="btn-hwpx" onclick="downloadHWPX()">📥 한글 파일(HWPX) 다운로드</button>
+    <button class="btn gold" id="btn-mock" onclick="downloadMockExam()">📘 모의고사 양식 (수능 A3)</button>
     <button class="btn" id="btn-print" onclick="printSheet()">🖨 인쇄 / PDF 저장</button>
     <button class="btn ghost" onclick="saveWorksheet()">학습지 구성 저장</button>
   </div>
-  <p class="hint" style="margin-top:.4rem">HWPX는 한글(한컴오피스)에서 바로 열어 이어서 편집할 수 있습니다. <code>$...$</code> 수식은 <b>한글 수식 개체</b>로 변환되어 더블클릭하면 수식 편집기로 열립니다. 변환하지 못한 수식 명령이 있으면 다운로드 시 알려드립니다.</p>
+  <p class="hint" style="margin-top:.4rem">HWPX는 한글(한컴오피스)에서 바로 열어 이어서 편집할 수 있습니다. <code>$...$</code> 수식은 <b>한글 수식 개체</b>로 변환되어 더블클릭하면 수식 편집기로 열립니다. 변환하지 못한 수식 명령이 있으면 다운로드 시 알려드립니다.<br>
+  <b>모의고사 양식</b>은 수능 문제지 조판 규칙(A3 2단, 쪽당 4문항 고정 슬롯, 번호 13.2pt·본문 11.2pt·수식 11pt)으로 출력합니다. 부제목 칸에 선택과목명(예: 확률과 통계)을 쓰면 "수학 영역" 옆에 붙습니다. 문항이 슬롯 높이를 넘치면 자동으로 줄이지 않고 먼저 알려드립니다.</p>
 
   <div class="card" style="margin-top:1rem">
     <h3>저장된 학습지</h3>
@@ -656,6 +658,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
     </div>
     <div class="row">
       <button class="btn" onclick="saveAiSettings()">저장</button>
+      <button class="btn gold" onclick="testAiConnection()">연결 테스트</button>
       <button class="btn ghost" onclick="clearAiSettings()">키 삭제</button>
       <span class="hint" id="ai-status"></span>
     </div>
@@ -1414,6 +1417,10 @@ function rerenderBulk(){
   $('#bulk-preview').innerHTML = state.bulkDrafts.map((d,i)=>
     `<div class="pitem"><div style="font-weight:900;color:var(--gold-2)">${d.num||i+1}</div>
       <div class="body">
+        ${(d.text&&d.aiDone)?'<div class="pmeta"><span class="tag" style="background:#e4f2e8;color:var(--ok)">✅ AI 변환됨</span>'
+          +(d.img?'<span class="tag src">🖼 그림 포함 문항 — 이미지 유지</span>':'')
+          +(d.aiSub?`<span class="tag">AI 추천: ${esc(d.aiSub)}${d.aiChap?' › '+esc(d.aiChap):''}</span>`:'')
+          +(d.aiDiff?`<span class="tag diff">${'●'.repeat(d.aiDiff)}</span>`:'')+'</div>':''}
         ${d.text?`<div class="ptext">${esc(d.text)}</div>`:(d.img?'':'<div class="hint">(내용 없음)</div>')}
         ${d.choices&&d.choices.length?`<div class="hint">${d.choices.map(c=>esc(c)).join(' &nbsp; ')}</div>`:''}
         ${d.img?`<div class="pimgs"><img src="${d.img}" style="max-height:170px" alt="문항 ${esc(d.num||'')} 이미지"></div>`:''}
@@ -2624,16 +2631,22 @@ async function aiTranscribeImage(dataURL){
       ]}]
     })
   });
-  let r = await call();
+  const safeCall = async ()=>{
+    try{ return await call(); }
+    catch(e){ throw new Error('네트워크 차단 — api.anthropic.com에 연결하지 못했습니다. 광고차단 확장프로그램이나 방화벽이 막고 있을 수 있습니다. 확장프로그램을 끈 창에서 다시 시도해 보세요.'); }
+  };
+  let r = await safeCall();
   // 과부하·속도 제한은 잠시 쉬고 최대 2회 재시도
   for(let retry=0; retry<2 && (r.status===429 || r.status===503 || r.status===529); retry++){
     await new Promise(res=>setTimeout(res, 2500*(retry+1)));
-    r = await call();
+    r = await safeCall();
   }
   if(!r.ok){
     const t = await r.text().catch(()=> '');
+    let detail = t.slice(0,160);
+    try{ const j = JSON.parse(t); if(j.error && j.error.message) detail = j.error.message.slice(0,200); }catch(e){}
     if(r.status===401) throw new Error('API 키가 올바르지 않습니다 (401). 키를 다시 확인하세요.');
-    throw new Error('API 오류 '+r.status+': '+t.slice(0,140));
+    throw new Error('API 오류 '+r.status+': '+detail);
   }
   const data = await r.json();
   const txt = (data.content||[]).map(c=>c.text||'').join('');
@@ -2647,7 +2660,7 @@ async function aiTranscribeDrafts(){
   if(!aiSettings().key){ toast('API 키가 없습니다 — [백업·데이터 → AI 변환 설정]에서 먼저 저장하세요.'); return; }
   const btn = $('#btn-ai-drafts'); btn.disabled = true;
   state._aiBusy = true;
-  let ok=0, fail=0;
+  let ok=0, fail=0, lastErr='';
   try{
     for(let i=0;i<targets.length;i++){
       const d = targets[i];
@@ -2660,18 +2673,25 @@ async function aiTranscribeDrafts(){
         if(r.subject && CURRICULUM[r.subject]){ d.aiSub=r.subject; if(r.chapter && CURRICULUM[r.subject][r.chapter]) d.aiChap=r.chapter; }
         const dd = Math.round(+r.difficulty); if(dd>=1 && dd<=5) d.aiDiff = dd;
         if(r.hasFigure === false) d.img = null;       // 그림 없는 문항: 이미지 제거(내용 중복 방지)
+        d.aiDone = true;
         ok++;
       }catch(e){
-        fail++;
-        if(/API 키|401/.test(e.message)) throw e;      // 키 문제는 즉시 중단
+        fail++; lastErr = e.message||String(e);
+        // 키·네트워크·요청 오류는 모든 문항에서 똑같이 실패하므로 즉시 중단하고 원인 표시
+        if(ok===0 || /API 키|401|네트워크|API 오류 4/.test(lastErr)) throw e;
       }
       rerenderBulk();
     }
-    $('#bulk-status').textContent = `🤖 AI 변환 완료 — 성공 ${ok}개`+(fail?` · 실패 ${fail}개 (이미지 유지됨)`:'')+'. 미리보기 확인 후 [전체 저장]하세요.';
+    $('#bulk-status').textContent = `🤖 AI 변환 완료 — 성공 ${ok}개`
+      +(fail?` · 실패 ${fail}개 (이미지 유지됨) · 마지막 오류: ${lastErr}`:'')
+      +'. 아래 변환 결과를 확인한 뒤 [전체 저장]하세요.';
     logJob('AI 텍스트 변환', '분할 문항', ok+'개 변환'+(fail?`, ${fail}개 실패`:''));
+    // 변환 결과 확인 화면으로 이동
+    $('#bulk-preview-card').scrollIntoView({behavior:'smooth', block:'start'});
+    if(ok) toast(`변환 완료 — 수식이 렌더링된 결과를 확인하세요 (${ok}문항)`);
   }catch(e){
-    $('#bulk-status').textContent = '⚠ '+e.message;
-    toast(e.message);
+    $('#bulk-status').textContent = '⚠ AI 변환 중단: '+(e.message||e)+' — [백업·데이터 → AI 변환 설정]의 [연결 테스트]로 원인을 확인하세요.';
+    toast(e.message||String(e));
   }finally{
     btn.disabled = false;
     state._aiBusy = false;
@@ -2702,14 +2722,47 @@ async function batchAiTranscribe(){
         p.updatedAt = Date.now();
         await saveProblem(p); ok++;
       }catch(e){
-        fail++;
-        if(/API 키|401/.test(e.message)) throw e;
+        fail++; var lastErr2 = e.message||String(e);
+        if(ok===0 || /API 키|401|네트워크|API 오류 4/.test(lastErr2)) throw e;
       }
     }
-  }catch(e){ toast(e.message); }
+    toast(`AI 변환 완료 — ${ok}개 성공`+(fail?`, ${fail}개 실패 (${lastErr2})`:''));
+  }catch(e){
+    toast('⚠ AI 변환 중단: '+(e.message||e)+' — [백업·데이터]의 [연결 테스트]로 원인을 확인하세요.');
+  }
   renderDB(); refreshCounts();
-  toast(`AI 변환 완료 — ${ok}개 성공`+(fail?`, ${fail}개 실패`:''));
   logJob('AI 텍스트 변환', '선택 문항', ok+'개 변환'+(fail?`, ${fail}개 실패`:''));
+}
+/* AI 연결 테스트: 작은 텍스트 요청으로 키·네트워크·모델을 즉석 진단 */
+async function testAiConnection(){
+  const st = $('#ai-status');
+  const {key, model} = aiSettings();
+  if(!key){ st.textContent = '❌ 키를 먼저 입력하고 [저장]을 누르세요.'; return; }
+  st.textContent = '⏳ 연결 테스트 중…';
+  try{
+    let r;
+    try{
+      r = await fetch('https://api.anthropic.com/v1/messages', {
+        method:'POST',
+        headers:{ 'content-type':'application/json', 'x-api-key':key,
+          'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
+        body: JSON.stringify({ model, max_tokens:32, messages:[{role:'user', content:'OK 라고만 답하세요.'}] })
+      });
+    }catch(e){
+      throw new Error('네트워크 차단 — api.anthropic.com에 연결되지 않습니다. 광고차단 확장프로그램(uBlock 등)이나 회사·학교 방화벽이 원인일 수 있어요. 확장프로그램을 끄거나 다른 네트워크에서 시도해 보세요.');
+    }
+    const t = await r.text();
+    if(!r.ok){
+      let detail = t.slice(0,200);
+      try{ const j = JSON.parse(t); if(j.error && j.error.message) detail = j.error.message; }catch(e){}
+      if(r.status===401) throw new Error('키가 올바르지 않습니다 (401): '+detail+' — console.anthropic.com에서 발급한 sk-ant-api... 키인지 확인하세요.');
+      if(r.status===400 && /credit|balance/i.test(detail)) throw new Error('크레딧 부족 (400): '+detail+' — console.anthropic.com → Billing에서 크레딧을 충전하세요.');
+      throw new Error('API 오류 '+r.status+': '+detail);
+    }
+    st.textContent = '✅ 연결 성공! 모델 '+model+' 호출이 정상 동작합니다. AI 변환을 사용할 수 있어요.';
+  }catch(e){
+    st.textContent = '❌ '+(e.message||e);
+  }
 }
 
 /* ═══ 일괄 작업 (선택 문항 대상) ═══ */
@@ -2945,13 +2998,15 @@ const HWPX_CONTAINER_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes
 <ocf:container xmlns:ocf="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:hpf="http://www.hancom.co.kr/schema/2011/hpf">
 <ocf:rootfiles><ocf:rootfile full-path="Contents/content.hpf" media-type="application/hwpml-package+xml"/></ocf:rootfiles>
 </ocf:container>`;
-function hwpxManifestXML(){
+function hwpxManifestXML(secCnt){
+  secCnt = secCnt||1;
+  const secs = Array.from({length:secCnt},(_,i)=>`<odf:file-entry odf:full-path="Contents/section${i}.xml" odf:media-type="application/xml"/>`).join('\n');
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <odf:manifest xmlns:odf="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">
 <odf:file-entry odf:full-path="/" odf:media-type="application/hwp+zip"/>
 <odf:file-entry odf:full-path="version.xml" odf:media-type="text/xml"/>
 <odf:file-entry odf:full-path="Contents/header.xml" odf:media-type="application/xml"/>
-<odf:file-entry odf:full-path="Contents/section0.xml" odf:media-type="application/xml"/>
+${secs}
 <odf:file-entry odf:full-path="settings.xml" odf:media-type="application/xml"/>
 ${HWPX_BINS.map(b=>`<odf:file-entry odf:full-path="BinData/${b.id}.${b.ext}" odf:media-type="${b.mime}"/>`).join('\n')}
 </odf:manifest>`;
@@ -2960,23 +3015,26 @@ const HWPX_SETTINGS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"
 <ha:HWPApplicationSetting xmlns:ha="http://www.hancom.co.kr/hwpml/2011/app" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0">
 <ha:CaretPosition listIDRef="0" paraIDRef="0" pos="0"/>
 </ha:HWPApplicationSetting>`;
-function hwpxContentHPF(title){
+function hwpxContentHPF(title, secCnt){
+  secCnt = secCnt||1;
+  const items = Array.from({length:secCnt},(_,i)=>`<opf:item id="section${i}" href="Contents/section${i}.xml" media-type="application/xml"/>`).join('\n');
+  const refs = Array.from({length:secCnt},(_,i)=>`<opf:itemref idref="section${i}" linear="yes"/>`).join('');
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <opf:package xmlns:opf="http://www.idpf.org/2007/opf/" xmlns:dc="http://purl.org/dc/elements/1.1/" version="" unique-identifier="" id="">
 <opf:metadata><opf:title>${xesc(title)}</opf:title><opf:language>ko</opf:language><opf:meta name="creator" content="StudyPeak Math Lab"/></opf:metadata>
 <opf:manifest>
 <opf:item id="header" href="Contents/header.xml" media-type="application/xml"/>
-<opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"/>
+${items}
 <opf:item id="settings" href="settings.xml" media-type="application/xml"/>
 ${HWPX_BINS.map(b=>`<opf:item id="${b.id}" href="BinData/${b.id}.${b.ext}" media-type="${b.mime}" isEmbeded="1"/>`).join('\n')}
 </opf:manifest>
-<opf:spine><opf:itemref idref="header" linear="yes"/><opf:itemref idref="section0" linear="yes"/></opf:spine>
+<opf:spine><opf:itemref idref="header" linear="yes"/>${refs}</opf:spine>
 </opf:package>`;
 }
 /* 이미지 바이너리(BinData) 등록 */
 let HWPX_BINS = [];
 let HWPX_PIC_ID = 1900000000;
-function resetHwpxBuild(){ resetEqDiag(); HWPX_BINS = []; HWPX_PIC_ID = 1900000000; }
+function resetHwpxBuild(){ resetEqDiag(); HWPX_BINS = []; HWPX_PIC_ID = 1900000000; HWPX_TBL_ID = 1950000000; }
 function registerHwpxBin(dataURL){
   const m = String(dataURL).match(/^data:image\/(png|jpe?g|gif|bmp);base64,(.+)$/i);
   if(!m) return null;
@@ -3008,16 +3066,18 @@ function hwpxPic(binId, w, h){ // w,h: hwpunit
   +`<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>`
   +`<hp:outMargin left="0" right="0" top="0" bottom="0"/></hp:pic>`;
 }
-async function hwpxImageParas(images){
+async function hwpxImageParas(images, opts){
+  opts = opts||{};
   const out = [];
   for(const d of (images||[])){
     const bid = registerHwpxBin(d);
     if(!bid) continue;
     const dim = await imgDims(d);
     let w = dim.w*50, h = dim.h*50;        // 2배 해상도 크롭 → 원래 크기
-    const maxW = 42000;                     // 본문 폭
+    const maxW = opts.maxW||42000;          // 본문 폭(기본) / 모의고사는 단 폭 기준
     if(w > maxW){ h = h*maxW/w; w = maxW; }
-    out.push(`<hp:p paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0">${hwpxPic(bid, Math.round(w), Math.round(h))}</hp:run></hp:p>`);
+    if(opts.maxH && h > opts.maxH){ w = w*opts.maxH/h; h = opts.maxH; }
+    out.push(`<hp:p paraPrIDRef="${opts.paraPr!=null?opts.paraPr:0}" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0">${hwpxPic(bid, Math.round(w), Math.round(h))}</hp:run></hp:p>`);
   }
   return out;
 }
@@ -3026,11 +3086,13 @@ function hwpxFontfaces(){
   return `<hh:fontfaces itemCnt="7">`+langs.map(l=>
     `<hh:fontface lang="${l}" fontCnt="1"><hh:font id="0" face="함초롬바탕" type="TTF" isEmbedded="0"><hh:typeInfo familyType="FCAT_GOTHIC" weight="6" proportion="4" contrast="0" strokeVariation="1" armStyle="1" letterform="1" midline="1" xHeight="1"/></hh:font></hh:fontface>`).join('')+`</hh:fontfaces>`;
 }
-function hwpxBorderFill(id){
+function hwpxBorderFill(id, opts){ // opts: {bottom:'0.4 mm'} 아래선만 / {all:'0.12 mm'} 사방
+  opts = opts||{};
+  const side = (on,w)=> on?`type="SOLID" width="${w}" color="#000000"`:`type="NONE" width="0.1 mm" color="#000000"`;
   return `<hh:borderFill id="${id}" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">
 <hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/>
-<hh:leftBorder type="NONE" width="0.1 mm" color="#000000"/><hh:rightBorder type="NONE" width="0.1 mm" color="#000000"/>
-<hh:topBorder type="NONE" width="0.1 mm" color="#000000"/><hh:bottomBorder type="NONE" width="0.1 mm" color="#000000"/>
+<hh:leftBorder ${side(opts.all, opts.all)}/><hh:rightBorder ${side(opts.all, opts.all)}/>
+<hh:topBorder ${side(opts.all, opts.all)}/><hh:bottomBorder ${side(opts.all||opts.bottom, opts.all||opts.bottom)}/>
 <hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/>
 </hh:borderFill>`;
 }
@@ -3044,15 +3106,16 @@ function hwpxCharPr(id, height, bold){
 ${bold?'<hh:bold/>':''}
 </hh:charPr>`;
 }
-function hwpxParaPr(id, align){
+function hwpxParaPr(id, align, opts){ // opts: {left,intent,line,borderFill,next} (HWPUNIT/%)
+  opts = opts||{};
   return `<hh:paraPr id="${id}" tabPrIDRef="0" condense="0" fontLineHeight="0" snapToGrid="1" suppressLineNumbers="0" checked="0">
 <hh:align horizontal="${align}" vertical="BASELINE"/>
 <hh:heading type="NONE" idRef="0" level="0"/>
 <hh:breakSetting breakLatinWord="KEEP_WORD" breakNonLatinWord="KEEP_WORD" widowOrphan="0" keepWithNext="0" keepLines="0" pageBreakBefore="0" lineWrap="BREAK"/>
 <hh:autoSpacing eAsianEng="0" eAsianNum="0"/>
-<hh:margin><hc:intent value="0" unit="HWPUNIT"/><hc:left value="0" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin>
-<hh:lineSpacing type="PERCENT" value="160" unit="HWPUNIT"/>
-<hh:border borderFillIDRef="2" offsetLeft="0" offsetRight="0" offsetTop="0" offsetBottom="0" connect="0" ignoreMargin="0"/>
+<hh:margin><hc:intent value="${opts.intent||0}" unit="HWPUNIT"/><hc:left value="${opts.left||0}" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="${opts.next||0}" unit="HWPUNIT"/></hh:margin>
+<hh:lineSpacing type="PERCENT" value="${opts.line||160}" unit="HWPUNIT"/>
+<hh:border borderFillIDRef="${opts.borderFill||2}" offsetLeft="0" offsetRight="0" offsetTop="0" offsetBottom="0" connect="0" ignoreMargin="0"/>
 </hh:paraPr>`;
 }
 function hwpxHeaderXML(){
@@ -3065,6 +3128,27 @@ ${hwpxFontfaces()}
 <hh:charProperties itemCnt="3">${hwpxCharPr(0,1000,false)}${hwpxCharPr(1,1000,true)}${hwpxCharPr(2,1600,true)}</hh:charProperties>
 <hh:tabProperties itemCnt="1"><hh:tabPr id="0" autoTabLeft="0" autoTabRight="0"/></hh:tabProperties>
 <hh:paraProperties itemCnt="2">${hwpxParaPr(0,'JUSTIFY')}${hwpxParaPr(1,'CENTER')}</hh:paraProperties>
+<hh:styles itemCnt="1"><hh:style id="0" type="PARA" name="바탕글" engName="Normal" paraPrIDRef="0" charPrIDRef="0" nextStyleIDRef="0" langID="1042" lockForm="0"/></hh:styles>
+</hh:refList>
+<hh:compatibleDocument targetProgram="HWP201X"><hh:layoutCompatibility/></hh:compatibleDocument>
+<hh:docOption><hh:linkinfo path="" pageInherit="0" footnoteInherit="0"/></hh:docOption>
+</hh:head>`;
+}
+/* ── 모의고사(수능 양식) 전용 header — 스펙: .claude/skills/hwpx-format/mockexam-spec.md
+   charPr: 0 본문11.2 / 1 본문굵게 / 2 1쪽제목19.4 / 3 문항번호13.2굵게 / 4 "수학 영역"37.9굵게
+           5 라벨14.6 / 6 선택과목32.2굵게 / 7 머리말제목27.7굵게
+   paraPr: 0 문항첫줄(내어쓰기1130·175%) / 1 가운데 / 2 본문이어짐(left1130·175%) / 3 독립수식(left4080)
+           4 선택지(left1130) / 5 머리말(가운데+아래선0.4mm) / 6 슬롯표문단(줄간격100%) */
+function mockHeaderXML(secCnt){
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<hh:head xmlns:hh="${HWPX_NS.hh}" xmlns:hp="${HWPX_NS.hp}" xmlns:hc="${HWPX_NS.hc}" version="1.4" secCnt="${secCnt||1}">
+<hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>
+<hh:refList>
+${hwpxFontfaces()}
+<hh:borderFills itemCnt="4">${hwpxBorderFill(1)}${hwpxBorderFill(2)}${hwpxBorderFill(3,{bottom:'0.4 mm'})}${hwpxBorderFill(4,{all:'0.12 mm'})}</hh:borderFills>
+<hh:charProperties itemCnt="8">${hwpxCharPr(0,1120,false)}${hwpxCharPr(1,1120,true)}${hwpxCharPr(2,1940,true)}${hwpxCharPr(3,1320,true)}${hwpxCharPr(4,3790,true)}${hwpxCharPr(5,1460,false)}${hwpxCharPr(6,3220,true)}${hwpxCharPr(7,2770,true)}</hh:charProperties>
+<hh:tabProperties itemCnt="1"><hh:tabPr id="0" autoTabLeft="0" autoTabRight="0"/></hh:tabProperties>
+<hh:paraProperties itemCnt="7">${hwpxParaPr(0,'JUSTIFY',{left:1130,intent:-1130,line:175})}${hwpxParaPr(1,'CENTER',{line:160})}${hwpxParaPr(2,'JUSTIFY',{left:1130,line:175})}${hwpxParaPr(3,'LEFT',{left:4080,line:175})}${hwpxParaPr(4,'LEFT',{left:1130,line:175})}${hwpxParaPr(5,'CENTER',{line:130,borderFill:3})}${hwpxParaPr(6,'LEFT',{line:100})}</hh:paraProperties>
 <hh:styles itemCnt="1"><hh:style id="0" type="PARA" name="바탕글" engName="Normal" paraPrIDRef="0" charPrIDRef="0" nextStyleIDRef="0" langID="1042" lockForm="0"/></hh:styles>
 </hh:refList>
 <hh:compatibleDocument targetProgram="HWP201X"><hh:layoutCompatibility/></hh:compatibleDocument>
@@ -3229,12 +3313,14 @@ function eqMeasure(s){
   return {w: Math.max(w,500), h};
 }
 let HWPX_EQ_ID = 1816200000;
+let EQ_BASE = 1000;                      // 수식 기준 크기(HU). 모의고사 양식은 1100(11pt)
 function hwpxEquation(script){
   HWPX_EQ_ID++; EQ_DIAG.count++;
   const m = eqMeasure(script);
-  const w = Math.min(44000, m.w + 300);
-  const h = m.h + 100;
-  return `<hp:equation id="${HWPX_EQ_ID}" zOrder="${HWPX_EQ_ID-1816200000}" numberingType="EQUATION" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" version="Equation Version 60" baseLine="65" textColor="#000000" baseUnit="1000" lineMode="CHAR" font="HYhwpEQ"><hp:sz width="${w}" height="${h}" widthRelTo="ABSOLUTE" heightRelTo="ABSOLUTE" protect="0"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:outMargin left="56" right="56" top="56" bottom="56"/><hp:script>${xesc(script)}</hp:script></hp:equation>`;
+  const k = EQ_BASE/1000;
+  const w = Math.min(44000, Math.round((m.w + 300)*k));
+  const h = Math.round((m.h + 100)*k);
+  return `<hp:equation id="${HWPX_EQ_ID}" zOrder="${HWPX_EQ_ID-1816200000}" numberingType="EQUATION" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" version="Equation Version 60" baseLine="65" textColor="#000000" baseUnit="${EQ_BASE}" lineMode="CHAR" font="HYhwpEQ"><hp:sz width="${w}" height="${h}" widthRelTo="ABSOLUTE" heightRelTo="ABSOLUTE" protect="0"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:outMargin left="56" right="56" top="56" bottom="56"/><hp:script>${xesc(script)}</hp:script></hp:equation>`;
 }
 /* $...$ / $$...$$ 구간을 한글 수식 개체 run으로, 나머지는 텍스트 run으로 */
 function hwpxRuns(text, charPr){
@@ -3314,16 +3400,19 @@ async function downloadHWPX(){
   toast('한글 파일(HWPX) 다운로드 완료'+eqDiagSummary()+(HWPX_BINS.length?` · 그림 ${HWPX_BINS.length}장 포함`:''));
 }
 async function saveHwpxFile(title, paras){
+  return saveHwpxSections(title, [hwpxSectionXML(title, paras)], hwpxHeaderXML());
+}
+async function saveHwpxSections(title, sectionXmls, headerXML){
   const zip = new JSZip();
   zip.file('mimetype', 'application/hwp+zip', {compression:'STORE'});
   zip.file('version.xml', HWPX_VERSION_XML);
   zip.file('settings.xml', HWPX_SETTINGS_XML);
-  zip.file('META-INF/manifest.xml', hwpxManifestXML());
+  zip.file('META-INF/manifest.xml', hwpxManifestXML(sectionXmls.length));
   zip.file('META-INF/container.xml', HWPX_CONTAINER_XML);
   for(const b of HWPX_BINS) zip.file('BinData/'+b.id+'.'+b.ext, b.b64, {base64:true});
-  zip.file('Contents/content.hpf', hwpxContentHPF(title));
-  zip.file('Contents/header.xml', hwpxHeaderXML());
-  zip.file('Contents/section0.xml', hwpxSectionXML(title, paras));
+  zip.file('Contents/content.hpf', hwpxContentHPF(title, sectionXmls.length));
+  zip.file('Contents/header.xml', headerXML);
+  sectionXmls.forEach((xml,i)=>zip.file('Contents/section'+i+'.xml', xml));
   const blob = await zip.generateAsync({type:'blob', mimeType:'application/hwp+zip', compression:'DEFLATE'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -3342,6 +3431,180 @@ async function convertTextToHWPX(){
   await saveHwpxFile(title, paras);
   logJob('HWPX 변환', title, 'PDF/텍스트 → 한글 파일');
   toast('추출 텍스트를 한글(HWPX) 파일로 변환했습니다'+eqDiagSummary());
+}
+
+/* ═══ 모의고사(수능 양식) 조판 ═══
+   스펙 원본: .claude/skills/hwpx-format/mockexam-spec.md (사용자 제공 실측값)
+   A3 세로 2단(간격 2260, 구분선 0.3mm), 쪽당 4문항 고정 슬롯(테두리 없는 1×1 표, treatAsChar).
+   1쪽은 별도 구역(머리말 11800 = 제목 블록), 2쪽~는 머리말 4800("수학 영역"+아래선).
+   슬롯 높이: 1쪽 A 40000 / 2쪽~ A 47000 / B 44700 / 마지막 쪽 단 전체 91700(1쪽이면 84700). */
+const MOCK = { COLW:32155, INDENT:1130, LINE:1970, SLOT_A1:40000, SLOT_A:47000, SLOT_B:44700, FULL:91700, FULL_P1:84700 };
+let HWPX_TBL_ID = 1950000000;
+function mockSlotTbl(paras, h, opts){ // 1×1 표. opts:{w, borderFill(기본 1=테두리없음), vert}
+  opts = opts||{};
+  HWPX_TBL_ID++;
+  const w = opts.w||MOCK.COLW, bf = opts.borderFill||1;
+  return `<hp:tbl id="${HWPX_TBL_ID}" zOrder="${HWPX_TBL_ID-1950000000}" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="NONE" repeatHeader="0" rowCnt="1" colCnt="1" cellSpacing="0" borderFillIDRef="${bf}" noAdjust="0">`
+  +`<hp:sz width="${w}" widthRelTo="ABSOLUTE" height="${h}" heightRelTo="ABSOLUTE" protect="0"/>`
+  +`<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>`
+  +`<hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:inMargin left="0" right="0" top="0" bottom="0"/>`
+  +`<hp:tr><hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="${bf}">`
+  +`<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="${opts.vert||'TOP'}" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${paras.join('')}</hp:subList>`
+  +`<hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="${w}" height="${h}"/><hp:cellMargin left="0" right="0" top="0" bottom="0"/></hp:tc></hp:tr></hp:tbl>`;
+}
+function mockSlotP(tbl, brk, extraRun){ // 슬롯 표를 담는 문단(줄간격 100%). brk:'col'|'page'
+  return `<hp:p paraPrIDRef="6" styleIDRef="0" pageBreak="${brk==='page'?1:0}" columnBreak="${brk==='col'?1:0}" merged="0">`
+    +(extraRun?`<hp:run charPrIDRef="0">${extraRun}</hp:run>`:'')
+    +`<hp:run charPrIDRef="0">${tbl}</hp:run></hp:p>`;
+}
+function mockLabelP(text){ // "5지선다형"/"단답형" 상자(슬롯 안 맨 위, 테두리 0.12mm)
+  const w = text.length>=5 ? 11310 : 8190;   // 39.9mm / 28.9mm
+  const inner = `<hp:p paraPrIDRef="1" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="5"><hp:t>${xesc(text)}</hp:t></hp:run></hp:p>`;
+  return mockSlotP(mockSlotTbl([inner], 2350, {w, borderFill:4, vert:'CENTER'}));
+}
+function mockVisPt(s){ // 표시 폭 근사(pt, 11.2pt 기준). 수식은 eqMeasure로
+  let w = 0;
+  const rest = String(s).replace(/\$\$?([^$\n]+)\$\$?/g, (m,eq)=>{ w += eqMeasure(latexToHwpEq(eq)).w*1.1/100; return ''; });
+  for(const ch of rest) w += /[ㄱ-힝一-鿿①-⑮]/.test(ch) ? 11.2 : 5.9;
+  return w;
+}
+function mockChoiceParas(choices){ // §7: 가장 긴 선택지 폭으로 1줄/3+2/2+2+1/줄당 1개
+  const cs = (choices||[]).map(c=>String(c).trim()).filter(Boolean);
+  if(!cs.length) return {paras:[], rows:0};
+  const maxPt = Math.max(...cs.map(mockVisPt));
+  let groups;
+  if(maxPt<=44) groups = [cs];
+  else if(maxPt<=96) groups = [cs.slice(0,3), cs.slice(3)];
+  else if(maxPt<=140) groups = [cs.slice(0,2), cs.slice(2,4), cs.slice(4)];
+  else groups = cs.map(c=>[c]);
+  groups = groups.filter(g=>g.length);
+  return { paras: groups.map(g=>hwpxP(g.join('   '), 0, 4)), rows: groups.length };
+}
+async function mockItemParas(p, no, pts, label){ // 한 문항 → 슬롯 안 문단들
+  const out = [];
+  if(label) out.push(mockLabelP(label));
+  const lines = String(p.question||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  if(!lines.length) lines.push('');
+  if(pts!=null) lines[lines.length-1] += ` [${pts}점]`;   // §5-3: 질문 끝 공백 1칸 뒤 배점
+  out.push(`<hp:p paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="3"><hp:t>${xesc(no+'. ')}</hp:t></hp:run>${hwpxRuns(lines[0], 0)}</hp:p>`);
+  for(let i=1;i<lines.length;i++){
+    const l = lines[i];
+    if(/^\$\$?[^$]+\$\$?$/.test(l)) out.push(hwpxP(l, 0, 3)); // 독립 수식: 왼쪽+추가 들여쓰기(§6)
+    else out.push(hwpxP(l, 0, 2));
+  }
+  const imgs = await imagesOf(p);
+  if(imgs.length) out.push(...await hwpxImageParas(imgs, {maxW:14470, maxH:17000, paraPr:1})); // 단 폭 45%·최대 60mm·가운데(§8)
+  const ch = mockChoiceParas(p.choices);
+  if(ch.paras.length){ out.push(hwpxP('', 0, 2)); out.push(...ch.paras); }
+  return out;
+}
+async function mockEstimateHU(p, hasLabel, pts){ // §9 사전 높이 추정(HWPUNIT)
+  let h = 0;
+  if(hasLabel) h += 2350 + 2570;
+  const lines = String(p.question||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  if(pts!=null && lines.length) lines[lines.length-1] += ` [${pts}점]`;
+  const usable = (MOCK.COLW - MOCK.INDENT)/100;           // 사용 가능 폭(pt)
+  for(const l of lines){
+    if(/^\$\$?[^$]+\$\$?$/.test(l)){ h += Math.max(Math.round(eqMeasure(latexToHwpEq(l.replace(/\$/g,''))).h*1.1), MOCK.LINE) + 2800; continue; }
+    h += Math.max(1, Math.ceil(mockVisPt(l)/usable)) * MOCK.LINE;
+  }
+  for(const d of await imagesOf(p)){
+    const dim = await imgDims(d);
+    let iw = dim.w*50, ih = dim.h*50;
+    if(iw > 14470) ih = ih*14470/iw;
+    if(ih > 17000) ih = 17000;
+    h += ih + 3500;
+  }
+  const cs = (p.choices||[]).map(c=>String(c).trim()).filter(Boolean);
+  if(cs.length){
+    const maxPt = Math.max(...cs.map(mockVisPt));
+    const rows = maxPt<=44?1 : maxPt<=96?2 : maxPt<=140?3 : cs.length;
+    h += 3150 + rows*2370;
+  }
+  return h;
+}
+function mockSlotH(i, n, fullLast){ // i번째(0부터) 문항의 슬롯 높이
+  if(fullLast && i>=n-2) return i<4 ? MOCK.FULL_P1 : MOCK.FULL;
+  return i%2===0 ? (i<4 ? MOCK.SLOT_A1 : MOCK.SLOT_A) : MOCK.SLOT_B;
+}
+function mockLabelOf(i, firstShortIdx){
+  if(i===0 && firstShortIdx!==0) return '5지선다형';
+  if(i===firstShortIdx) return '단답형';
+  return null;
+}
+function mockHeaderCtrl(first, title, sub){ // 머리말: 1쪽=제목 블록(11800) / 2쪽~=수학 영역+아래선(4800)
+  const subTxt = sub ? `(${sub})` : '';
+  let paras;
+  if(first){
+    paras = `<hp:p paraPrIDRef="1" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="2"><hp:t>${xesc(title)}</hp:t></hp:run></hp:p>`
+      + `<hp:p paraPrIDRef="5" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="4"><hp:t>수학 영역</hp:t></hp:run>${sub?`<hp:run charPrIDRef="6"><hp:t>${xesc(subTxt)}</hp:t></hp:run>`:''}</hp:p>`;
+  } else {
+    paras = `<hp:p paraPrIDRef="5" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="7"><hp:t>${xesc('수학 영역'+subTxt)}</hp:t></hp:run></hp:p>`;
+  }
+  return `<hp:ctrl><hp:header id="${first?1:2}" applyPageType="BOTH"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${paras}</hp:subList></hp:header></hp:ctrl>`;
+}
+function mockSecPr(first){ // A3 세로 + 모의고사 여백(§2). 1쪽 구역만 머리말 11800
+  const pagePr = `<hp:pagePr landscape="WIDELY" width="84188" height="119055" gutterType="LEFT_ONLY"><hp:margin header="${first?11800:4800}" footer="3700" gutter="0" left="8760" right="8760" top="10200" bottom="8650"/></hp:pagePr>`;
+  return HWPX_SECPR.replace(/<hp:pagePr[\s\S]*?<\/hp:pagePr>/, pagePr);
+}
+async function buildMockSections(list, title, sub, ptsOf, firstShortIdx){
+  const n = list.length, fullLast = n%4===2;
+  const secs = [[], []];                          // [1쪽 구역, 2쪽~ 구역]
+  for(let i=0;i<n;i++){
+    const secIdx = i<4 ? 0 : 1;
+    const isFull = fullLast && i>=n-2;
+    const paras = await mockItemParas(list[i], i+1, ptsOf(list[i]), mockLabelOf(i, firstShortIdx));
+    const tbl = mockSlotTbl(paras, mockSlotH(i, n, fullLast));
+    const firstOfSec = secs[secIdx].length===0;
+    let brk = null;
+    if(!firstOfSec){
+      if(i%4===0) brk = 'page';
+      else if(i%4===2 || (isFull && i===n-1)) brk = 'col';
+    }
+    const ctrl = firstOfSec
+      ? mockSecPr(secIdx===0)
+        + `<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="2" sameSz="1" sameGap="2260"><hp:colLine type="SOLID" width="0.3 mm" color="#000000"/></hp:colPr></hp:ctrl>`
+        + mockHeaderCtrl(secIdx===0, title, sub)
+      : null;
+    secs[secIdx].push(mockSlotP(tbl, brk, ctrl));
+  }
+  return secs.filter(ps=>ps.length).map(ps=>
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<hs:sec xmlns:hs="${HWPX_NS.hs}" xmlns:hp="${HWPX_NS.hp}" xmlns:hc="${HWPX_NS.hc}">
+${ps.join('\n')}
+</hs:sec>`);
+}
+async function downloadMockExam(){
+  const list = cartProblems();
+  if(!list.length){ toast('담긴 문제가 없습니다.'); return; }
+  if(!window.JSZip){ toast('구성요소(JSZip)가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
+  resetHwpxBuild();
+  EQ_BASE = 1100;                                 // 모의고사 수식 11pt(§6)
+  try{
+    const title = $('#s-title').value||'수학 모의고사';
+    const sub = ($('#s-sub').value||'').trim();   // 선택과목명 → "수학 영역(…)"
+    const ptsOf = p=>state.points[p.id]!=null ? state.points[p.id] : null;
+    const n = list.length, fullLast = n%4===2;
+    const firstShortIdx = list.findIndex(p=>!(p.choices||[]).some(c=>String(c).trim()));
+    // §9: 조판 전 넘침 추정 — 자동 축소 없이 보고하고 사용자 결정
+    const over = [], warn = [];
+    for(let i=0;i<n;i++){
+      const slotH = mockSlotH(i, n, fullLast);
+      const est = await mockEstimateHU(list[i], !!mockLabelOf(i, firstShortIdx), ptsOf(list[i]));
+      if(est > slotH - 800) over.push(`· ${i+1}번: 약 ${Math.max(1, Math.round((est-slotH)/100))}pt 초과 추정`);
+      else if(est > slotH*0.6) warn.push(i+1);
+    }
+    if(over.length && !confirm(
+      `다음 문항이 슬롯 높이를 넘칠 것으로 추정됩니다.\n(규칙상 글자 크기·줄간격은 줄이지 않습니다)\n\n${over.join('\n')}\n\n`+
+      `계속하면 해당 슬롯이 늘어나 뒤 문항 위치가 밀릴 수 있습니다.\n그래도 계속할까요? [취소] 후 문항 교체·순서 변경을 권장합니다.`)) return;
+    const sections = await buildMockSections(list, title, sub, ptsOf, firstShortIdx);
+    await saveHwpxSections(title, sections, mockHeaderXML(sections.length));
+    const pages = 1 + Math.ceil(Math.max(0, n-4)/4);
+    logJob('모의고사 출력', title, `${n}문항 · 수능 A3 양식 · ${pages}쪽 · HWPX`);
+    toast(`모의고사(수능 A3) 한글 파일 다운로드 완료 · ${n}문항 ${pages}쪽`+eqDiagSummary()
+      +(HWPX_BINS.length?` · 그림 ${HWPX_BINS.length}장`:'')
+      +(warn.length?` · ⚠ ${warn.join(', ')}번은 풀이 공간이 빠듯합니다(슬롯 60% 초과)`:''));
+  } finally { EQ_BASE = 1000; }
 }
 
 /* 학습지 구성 저장/불러오기 */
