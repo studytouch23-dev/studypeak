@@ -22,7 +22,7 @@ JS는 `/* ═══ 섹션명 ═══ */` 주석으로 구획되어 있다. Gr
 | PDF 영역 에디터 | `PDFED` 상태, `openPdfEditor`, `detectRegionsByAnchors`, `detectRegionsByPixels`, `pdfedFinish` |
 | 검색·작업 | `problemsFiltered`, `renderDB`(30/페이지), `renderTree`, `semanticSearch`(bigram), `imgHash`(aHash 이미지검색), 프리셋 |
 | 일괄 작업 | `openBatchTag`, `batchAutoTag`, `batchReviewed`, `batchDelete` |
-| AI 변환 | `aiTranscribeImage`(Claude 비전, 사용자 키 `sp-lab-apikey`, `anthropic-dangerous-direct-browser-access` 헤더), `aiTranscribeDrafts`, `batchAiTranscribe` — 테스트는 page에서 window.fetch 스텁 |
+| AI 변환 | `aiJsonCall`(공용 호출: `aiHeaders()`에 키·워크스페이스 ID, 재시도·오류 한국어 안내), `aiTranscribeImage`, `aiTranscribeDrafts`, `batchAiTranscribe`, `aiSolveProblem`/`batchAiSolve`/`aiSolveDetail`(해설 생성, #AI해설 태그) — 테스트는 page에서 window.fetch 스텁 |
 | 학습지 | `renderSheet`, `autoCompose`, `printSheet`(doctype 4종), `setPoint` |
 | HWPX 생성 | `latexToHwpEq`, `eqMeasure`(수식 크기), `hwpxEquation`, `hwpxPic`/`registerHwpxBin`, `saveHwpxFile`, `downloadHWPX` |
 
@@ -74,5 +74,5 @@ await page.evaluate(()=>{ pdfjsLib.GlobalWorkerOptions.workerSrc='http://127.0.0
 
 ## 미구현(서버 필요) — 약속하지 말 것
 
-스캔 PDF OCR, HWP 바이너리 파싱, LLM 자동 분류/해설 생성, 그림 AI 복원,
-DOCX/OMML 출력, 임베딩 검색, 멀티유저. `lab/README.md` 로드맵 참조.
+HWP 바이너리 파싱, 그림 AI 복원, DOCX/OMML 출력, 임베딩 검색, 멀티유저.
+(OCR·분류·해설은 사용자 API 키 기반 AI 변환/해설 생성으로 대체됨) `lab/README.md` 로드맵 참조.
