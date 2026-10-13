@@ -28,7 +28,12 @@ JS는 `/* ═══ 섹션명 ═══ */` 주석으로 구획되어 있다. Gr
 
 ## 상태·저장소
 
-- `state`: problems, worksheets, cart(=선택), points, page, searchMode, filterTag, viewList, numOf.
+- **대용량 원칙(수만 문항)**: 메모리의 `state.problems`는 `lightenProblem()`을 거친
+  라이트 레코드(images:[] + imgN). 이미지가 필요하면 반드시 `imagesOf(p)`(IndexedDB 조회,
+  LRU 캐시), 문제 저장은 반드시 `saveProblem(p)`(라이트 레코드 저장 시 DB의 이미지 보존).
+  `DB.put('problems', …)` 직접 호출 금지(이미지 유실됨). 로딩/백업은 `DB.each` 커서.
+  이미지 의도적 삭제는 `p.images=[]; p.imgN=0` 둘 다 설정.
+- `state`: problems(라이트), worksheets, cart(=선택), points, page, searchMode, filterTag, viewList, numOf.
 - localStorage 키: `sp-lab-cart`, `sp-lab-points`, `sp-lab-curriculum`, `sp-lab-filehashes`,
   `sp-lab-presets`, `sp-lab-joblog`.
 - 문제 스키마: `{id, question, choices[], answer, solution, images[](dataURL),
