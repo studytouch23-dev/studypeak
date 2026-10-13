@@ -5,6 +5,18 @@ description: HWPX(한글 OWPML) 파일 생성·파싱과 한글 수식 스크립
 
 # HWPX / 한글 수식 레퍼런스
 
+> **모의고사(수능 양식) 조판**: 같은 폴더의 `mockexam-spec.md`가 사용자 제공 실측 스펙(A3 2단,
+> 쪽당 4문항 고정 슬롯, 서식 수치, 넘침 처리)의 원본이다. 모의고사 출력 수정 시 반드시 먼저 읽을 것.
+> 구현은 lab/index.html의 `downloadMockExam()`/`buildMockSections()` 계열(검증 테스트: scratchpad smoke12.js 패턴).
+> - 슬롯 = 테두리 없는 1×1 `hp:tbl`(treatAsChar, 줄간격 100% 문단에 담음). 요소 순서는 실파일 그대로:
+>   `tbl > sz > pos > outMargin > inMargin > tr > tc(> subList > p… > cellAddr > cellSpan > cellSz > cellMargin)`.
+>   `cellSz`/`sz` 높이는 '최소 높이'라 내용이 넘치면 늘어난다(§9 사전 추정으로 방지).
+> - 머리말 = 첫 문단 첫 run에 `secPr` + `<hp:ctrl><hp:colPr…(hp:colLine 자식)></hp:ctrl>` +
+>   `<hp:ctrl><hp:header applyPageType="BOTH"><hp:subList>문단들</hp:subList></hp:header></hp:ctrl>` 순.
+> - 단 나누기/쪽 나누기는 빈 문단이 아니라 **다음 슬롯 문단의** `columnBreak="1"`/`pageBreak="1"` 속성으로.
+> - 모의고사 전용 header.xml은 `mockHeaderXML()`(charPr 0~7, paraPr 0~6, borderFill 3=아래선 0.4mm, 4=사방 0.12mm).
+>   수식 크기는 전역 `EQ_BASE`(기본 1000, 모의고사 1100)로 바꾸고 **finally에서 복원**할 것.
+
 lab/index.html의 구현은 실제 한컴오피스에서 열리는 것이 사용자 확인됨. 구조 변경 금지,
 확장만 할 것.
 
