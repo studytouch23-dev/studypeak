@@ -458,7 +458,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
       <div class="row" style="margin-top:.6rem">
         <button class="btn" onclick="splitBulk()">문제 분할 미리보기</button>
         <button class="btn ghost" onclick="convertTextToHWPX()">📥 추출 텍스트 → 한글(HWPX) 변환</button>
-        <span class="hint" id="bulk-status"></span>
+        <span class="hint" id="bulk-status" style="white-space:pre-line"></span>
       </div>
       <p class="hint" style="margin-top:.3rem">PDF를 한글 파일로 바꾸고 싶을 때는 PDF 업로드 후 [추출 텍스트 → 한글(HWPX) 변환]을 누르세요. DB 등록 없이 변환만 할 수도 있습니다.</p>
     </div>
@@ -656,11 +656,15 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
           <option value="claude-sonnet-5-5">Claude Sonnet 5.5 — 더 정확</option>
         </select></div>
     </div>
+    <div class="grid2">
+      <div class="field"><label>워크스페이스 ID <span class="hint">(선택 — "workspace" 오류가 날 때만)</span></label>
+        <input id="ai-wsid" placeholder="wrkspc_... (console.anthropic.com → Settings → Workspaces)"></div>
+    </div>
     <div class="row">
       <button class="btn" onclick="saveAiSettings()">저장</button>
       <button class="btn gold" onclick="testAiConnection()">연결 테스트</button>
       <button class="btn ghost" onclick="clearAiSettings()">키 삭제</button>
-      <span class="hint" id="ai-status"></span>
+      <span class="hint" id="ai-status" style="white-space:pre-line"></span>
     </div>
   </div>
   <div class="card">
@@ -2583,17 +2587,32 @@ function clearCart(){
 
 /* ═══ AI 변환 (이미지 문항 → 텍스트·수식, 사용자 API 키) ═══ */
 function aiSettings(){
-  return { key: localStorage.getItem('sp-lab-apikey')||'', model: localStorage.getItem('sp-lab-aimodel')||'claude-haiku-5-5' };
+  return { key: localStorage.getItem('sp-lab-apikey')||'', model: localStorage.getItem('sp-lab-aimodel')||'claude-haiku-5-5',
+    wsid: localStorage.getItem('sp-lab-wsid')||'' };
 }
+function aiHeaders(){ // 공통 API 헤더. 워크스페이스 ID가 저장돼 있으면 함께 전송
+  const {key, wsid} = aiSettings();
+  const h = { 'content-type':'application/json', 'x-api-key':key,
+    'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' };
+  if(wsid) h['anthropic-workspace-id'] = wsid;
+  return h;
+}
+const AI_WS_HELP = '이 API 키는 워크스페이스에 속하지 않은 키입니다. 해결 방법 두 가지 중 하나를 쓰세요.\n'
+  +'① (권장) console.anthropic.com → API Keys → [Create Key]에서 Workspace를 선택해 새 키를 만들고, 여기 키 칸에 바꿔 넣고 [저장]\n'
+  +'② console.anthropic.com → Settings → Workspaces에서 워크스페이스 ID(wrkspc_...)를 복사해 아래 "워크스페이스 ID" 칸에 넣고 [저장]';
 function saveAiSettings(){
   const key = $('#ai-key').value.trim();
   if(key) localStorage.setItem('sp-lab-apikey', key);
   localStorage.setItem('sp-lab-aimodel', $('#ai-model').value);
-  $('#ai-status').textContent = aiSettings().key ? '✅ 저장됨 — AI 변환을 사용할 수 있습니다.' : '키를 입력하세요.';
+  const wsid = $('#ai-wsid').value.trim();
+  if(wsid) localStorage.setItem('sp-lab-wsid', wsid);
+  else localStorage.removeItem('sp-lab-wsid');
+  $('#ai-status').textContent = aiSettings().key ? '✅ 저장됨 — AI 변환을 사용할 수 있습니다. [연결 테스트]로 확인해 보세요.' : '키를 입력하세요.';
 }
 function clearAiSettings(){
   localStorage.removeItem('sp-lab-apikey');
-  $('#ai-key').value='';
+  localStorage.removeItem('sp-lab-wsid');
+  $('#ai-key').value=''; $('#ai-wsid').value='';
   $('#ai-status').textContent = '키를 삭제했습니다.';
 }
 function curriculumBrief(){
@@ -2617,12 +2636,7 @@ async function aiTranscribeImage(dataURL){
   if(!m) throw new Error('이미지 형식 오류');
   const call = ()=>fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
-    },
+    headers: aiHeaders(),
     body: JSON.stringify({
       model, max_tokens: 2000,
       messages: [{ role:'user', content: [
@@ -2646,6 +2660,7 @@ async function aiTranscribeImage(dataURL){
     let detail = t.slice(0,160);
     try{ const j = JSON.parse(t); if(j.error && j.error.message) detail = j.error.message.slice(0,200); }catch(e){}
     if(r.status===401) throw new Error('API 키가 올바르지 않습니다 (401). 키를 다시 확인하세요.');
+    if(r.status===400 && /workspace/i.test(detail)) throw new Error('워크스페이스 설정 필요 (400) — [백업·데이터 → AI 변환 설정]에서 해결하세요.\n'+AI_WS_HELP);
     throw new Error('API 오류 '+r.status+': '+detail);
   }
   const data = await r.json();
@@ -2744,8 +2759,7 @@ async function testAiConnection(){
     try{
       r = await fetch('https://api.anthropic.com/v1/messages', {
         method:'POST',
-        headers:{ 'content-type':'application/json', 'x-api-key':key,
-          'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
+        headers: aiHeaders(),
         body: JSON.stringify({ model, max_tokens:32, messages:[{role:'user', content:'OK 라고만 답하세요.'}] })
       });
     }catch(e){
@@ -2756,6 +2770,7 @@ async function testAiConnection(){
       let detail = t.slice(0,200);
       try{ const j = JSON.parse(t); if(j.error && j.error.message) detail = j.error.message; }catch(e){}
       if(r.status===401) throw new Error('키가 올바르지 않습니다 (401): '+detail+' — console.anthropic.com에서 발급한 sk-ant-api... 키인지 확인하세요.');
+      if(r.status===400 && /workspace/i.test(detail)) throw new Error('워크스페이스 설정 필요 (400).\n'+AI_WS_HELP);
       if(r.status===400 && /credit|balance/i.test(detail)) throw new Error('크레딧 부족 (400): '+detail+' — console.anthropic.com → Billing에서 크레딧을 충전하세요.');
       throw new Error('API 오류 '+r.status+': '+detail);
     }
@@ -3786,6 +3801,7 @@ function renderDash(){
   renderJobLog();
   const ai = aiSettings();
   if(ai.key) $('#ai-key').value = ai.key;
+  if(ai.wsid) $('#ai-wsid').value = ai.wsid;
   $('#ai-model').value = ai.model;
   if(ai.key) $('#ai-status').textContent = '✅ 키 저장됨 — AI 변환 사용 가능';
  }catch(e){
