@@ -234,6 +234,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
   .pr-cols-2{column-count:2;column-gap:28px;column-rule:1px solid #bbb}
   .pr-q{break-inside:avoid;margin-bottom:18px}
   .pr-q .qn{font-weight:900}
+  .pr-q .condbox{border:.5pt solid #000;padding:5pt 8pt;margin:5pt 0 5pt 10pt;white-space:pre-wrap}
   .pr-q img{max-width:100%;max-height:220px;display:block;margin:6px auto}
   .pr-q .choices{margin-top:5px}
   .pr-ans{page-break-before:always}
@@ -2156,7 +2157,7 @@ function problemCardHTML(p, idx){
       <span style="flex:1"></span>
       <button class="btn ${inCart?'gold':'ghost'} sm" onclick="toggleCart('${p.id}')">${inCart?'담김 ✓':'담기'}</button>
     </div>
-    ${p.question?`<div class="pc-text" onclick="openDetail('${p.id}')">${esc(p.question)}</div>`:''}
+    ${p.question?`<div class="pc-text" onclick="openDetail('${p.id}')">${esc(stripBoxMarks(p.question))}</div>`:''}
     ${hasImg(p)?`<div class="pimgs" onclick="openDetail('${p.id}')"><img data-pid="${p.id}" alt="문항 이미지" style="min-height:40px;background:#f3f3ee"></div>`:''}
     ${!p.question&&!hasImg(p)?`<div class="hint" onclick="openDetail('${p.id}')">(내용 없음)</div>`:''}
     <div class="pc-tags">
@@ -2682,7 +2683,8 @@ function aiPrompt(){
   +'"subject":"",  // 아래 분류표의 과목명 중 하나. 불확실하면 ""\n'
   +'"chapter":"",  // 그 과목의 대단원명 중 하나. 불확실하면 ""\n'
   +'"difficulty": 3}  // 1~5 난이도 추정(정수)\n'
-  +'분류표:\n'+curriculumBrief()+'\n읽을 수 없는 글자는 [판독불가]로 표시하세요.';
+  +'분류표:\n'+curriculumBrief()+'\n읽을 수 없는 글자는 [판독불가]로 표시하세요.\n'
+  +'테두리 상자 안의 조건((가), (나) 등)이나 <보기>(ㄱ, ㄴ, ㄷ)는 반드시 question 안에서 상자 내용 바로 앞줄에 [박스], 바로 뒷줄에 [/박스] 를 한 줄씩 넣어 표시하세요. 상자 밖 문장과 섞지 마세요. 원본의 그림·표·도형·상자 배치를 최대한 충실하게 옮기세요.';
 }
 async function aiJsonCall(content, maxTokens){ // 공용: content 배열 → JSON 응답 (재시도·오류 안내 포함)
   const {key, model} = aiSettings();
@@ -3004,6 +3006,35 @@ function setPoint(id, v){
   localStorage.setItem('sp-lab-points', JSON.stringify(state.points));
   renderSheetSummary();
 }
+/* ── 조건 상자((가)(나)·<보기>) 처리 ──
+   AI 변환은 상자 구간을 [박스]…[/박스] 줄로 표시한다. 표시가 없어도
+   연속된 "(가)…" 줄은 자동으로 상자로 묶는다. 출력(한글·인쇄)에서 테두리 상자로 조판. */
+function splitBoxBlocks(text){
+  const out = []; let buf = [], boxBuf = null;
+  const flushText = ()=>{ if(buf.length){ out.push({box:false, lines:buf}); buf=[]; } };
+  const lines = String(text||'').split('\n');
+  for(let i=0;i<lines.length;i++){
+    const t = lines[i].trim();
+    if(boxBuf !== null){
+      if(/^\[\/박스\]$/.test(t)){ out.push({box:true, lines:boxBuf}); boxBuf=null; }
+      else boxBuf.push(lines[i]);
+      continue;
+    }
+    if(/^\[박스\]$/.test(t)){ flushText(); boxBuf=[]; continue; }
+    if(/^\((가|나|다|라|마)\)/.test(t)){                     // (가)(나)… 연속 줄 자동 상자
+      flushText();
+      const grp = [lines[i]];
+      while(i+1<lines.length && /^\((가|나|다|라|마)\)/.test(lines[i+1].trim())) grp.push(lines[++i]);
+      out.push({box:true, lines:grp});
+      continue;
+    }
+    buf.push(lines[i]);
+  }
+  if(boxBuf) out.push({box:true, lines:boxBuf});             // 닫는 표시 누락 허용
+  flushText();
+  return out;
+}
+function stripBoxMarks(q){ return String(q||'').replace(/^\s*\[\/?박스\]\s*$/gm,'').replace(/\n{3,}/g,'\n\n'); }
 function mathSafeSlice(q, n){ // 미리보기용 자르기 — $...$ 수식 중간에서 끊지 않는다
   let s = String(q||'');
   if(s.length<=n) return s;
@@ -3034,7 +3065,7 @@ function renderSheet(){
     <div class="sheet-item">
       <div class="num">${i+1}</div>
       <div class="txt">
-        <div class="sq">${esc(mathSafeSlice(p.question,200))}</div>
+        <div class="sq">${esc(mathSafeSlice(stripBoxMarks(p.question),200))}</div>
         <div class="pmeta"><span class="tag">${esc([p.subject,p.chapter].filter(Boolean).join(' › ')||'미분류')}</span>
         <span class="tag diff">${'●'.repeat(p.difficulty||3)}</span>
         ${(p.solution||'').trim()?'<span class="tag" style="background:#e4f2e8;color:var(--ok)">해설</span>':''}
@@ -3101,7 +3132,7 @@ async function printSheet(){
 
   const qHTML = list.map((p,i)=>`
     <div class="pr-q">
-      <span class="qn">${i+1}.</span>${pts(p)!=null?` <span style="font-size:8.5pt">[${pts(p)}점]</span>`:''} <span>${esc(p.question)}</span>
+      <span class="qn">${i+1}.</span>${pts(p)!=null?` <span style="font-size:8.5pt">[${pts(p)}점]</span>`:''} ${splitBoxBlocks(p.question).map(b=>b.box?`<div class="condbox">${b.lines.map(esc).join('<br>')}</div>`:`<span>${esc(b.lines.join('\n'))}</span>`).join('')}
       ${(imgsMap.get(p.id)||[]).map(d=>`<img src="${d}" alt="">`).join('')}
       ${p.choices&&p.choices.length?`<div class="choices">${p.choices.map(c=>esc(c)).join('&nbsp;&nbsp; ')}</div>`:''}
       ${withMeta&&p.srcName?`<div style="font-size:8pt;color:#777">[${esc(p.srcType)} · ${esc(p.srcName)}${p.srcYear?' '+esc(p.srcYear):''}]</div>`:''}
@@ -3319,7 +3350,7 @@ function hwpxHeaderXML(){
 <hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>
 <hh:refList>
 ${hwpxFontfaces()}
-<hh:borderFills itemCnt="2">${hwpxBorderFill(1)}${hwpxBorderFill(2)}</hh:borderFills>
+<hh:borderFills itemCnt="3">${hwpxBorderFill(1)}${hwpxBorderFill(2)}${hwpxBorderFill(3,{all:'0.12 mm'})}</hh:borderFills>
 <hh:charProperties itemCnt="3">${hwpxCharPr(0,1000,false)}${hwpxCharPr(1,1000,true)}${hwpxCharPr(2,1600,true)}</hh:charProperties>
 <hh:tabProperties itemCnt="1"><hh:tabPr id="0" autoTabLeft="0" autoTabRight="0"/></hh:tabProperties>
 <hh:paraProperties itemCnt="2">${hwpxParaPr(0,'JUSTIFY')}${hwpxParaPr(1,'CENTER')}</hh:paraProperties>
@@ -3572,8 +3603,20 @@ async function downloadHWPX(){
     for(let i=0;i<list.length;i++){
       const p = list[i];
       const headTxt = (i+1)+'.'+(pts(p)!=null?` [${pts(p)}점]`:'')+' ';
-      const lines = (headTxt+p.question).split('\n');
-      lines.forEach((l,li)=>paras.push(hwpxP(l, li===0?1:0, 0)));
+      const blocks = splitBoxBlocks(p.question);
+      let firstDone = false;
+      for(const b of blocks){
+        if(b.box){                                    // 조건 상자 → 테두리 표
+          if(!firstDone){ paras.push(hwpxP(headTxt, 1, 0)); firstDone = true; }
+          paras.push(hwpxBoxP(b.lines, {w:40000, borderFill:3}));
+          continue;
+        }
+        for(const l of b.lines){
+          if(!firstDone){ paras.push(hwpxP(headTxt+l, 1, 0)); firstDone = true; }
+          else paras.push(hwpxP(l, 0, 0));
+        }
+      }
+      if(!firstDone) paras.push(hwpxP(headTxt, 1, 0));
       paras.push(...await hwpxImageParas(await imagesOf(p)));
       if(p.choices && p.choices.length) paras.push(hwpxP(p.choices.join('    '), 0, 0));
       if(withMeta && p.srcName) paras.push(hwpxP(`[${p.srcType||'출처'} · ${p.srcName}${p.srcYear?' '+p.srcYear:''}]`, 0, 0));
@@ -3649,10 +3692,18 @@ function mockSlotTbl(paras, h, opts){ // 1×1 표. opts:{w, borderFill(기본 1=
   return `<hp:tbl id="${HWPX_TBL_ID}" zOrder="${HWPX_TBL_ID-1950000000}" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="NONE" repeatHeader="0" rowCnt="1" colCnt="1" cellSpacing="0" borderFillIDRef="${bf}" noAdjust="0">`
   +`<hp:sz width="${w}" widthRelTo="ABSOLUTE" height="${h}" heightRelTo="ABSOLUTE" protect="0"/>`
   +`<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>`
-  +`<hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:inMargin left="0" right="0" top="0" bottom="0"/>`
+  +`<hp:outMargin left="0" right="0" top="${opts.outV||0}" bottom="${opts.outV||0}"/><hp:inMargin left="${(opts.inMarg||{}).l||0}" right="${(opts.inMarg||{}).r||0}" top="${(opts.inMarg||{}).t||0}" bottom="${(opts.inMarg||{}).b||0}"/>`
   +`<hp:tr><hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="${bf}">`
   +`<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="${opts.vert||'TOP'}" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${paras.join('')}</hp:subList>`
-  +`<hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="${w}" height="${h}"/><hp:cellMargin left="0" right="0" top="0" bottom="0"/></hp:tc></hp:tr></hp:tbl>`;
+  +`<hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="${w}" height="${h}"/><hp:cellMargin left="${(opts.inMarg||{}).l||0}" right="${(opts.inMarg||{}).r||0}" top="${(opts.inMarg||{}).t||0}" bottom="${(opts.inMarg||{}).b||0}"/></hp:tc></hp:tr></hp:tbl>`;
+}
+function hwpxBoxP(lines, opts){ // 조건 상자: 테두리 1×1 표(treatAsChar)를 담은 문단. 높이는 최소값 — 내용만큼 늘어남
+  opts = opts||{};
+  const inner = lines.map(l=>hwpxP(l, opts.charPr||0, opts.paraPr!=null?opts.paraPr:0));
+  const h = Math.max(1200, lines.length*1900 + 1400);
+  const tbl = mockSlotTbl(inner, h, { w:opts.w||40000, borderFill:opts.borderFill||3,
+    outV:283, inMarg:{l:1130, r:1130, t:850, b:850} });
+  return `<hp:p paraPrIDRef="${opts.wrapPr!=null?opts.wrapPr:0}" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0">${tbl}</hp:run></hp:p>`;
 }
 function mockSlotP(tbl, brk, extraRun){ // 슬롯 표를 담는 문단(줄간격 100%). brk:'col'|'page'
   return `<hp:p paraPrIDRef="6" styleIDRef="0" pageBreak="${brk==='page'?1:0}" columnBreak="${brk==='col'?1:0}" merged="0">`
@@ -3685,14 +3736,25 @@ function mockChoiceParas(choices){ // §7: 가장 긴 선택지 폭으로 1줄/3
 async function mockItemParas(p, no, pts, label){ // 한 문항 → 슬롯 안 문단들
   const out = [];
   if(label) out.push(mockLabelP(label));
-  const lines = String(p.question||'').split('\n').map(s=>s.trim()).filter(Boolean);
-  if(!lines.length) lines.push('');
-  if(pts!=null) lines[lines.length-1] += ` [${pts}점]`;   // §5-3: 질문 끝 공백 1칸 뒤 배점
-  out.push(`<hp:p paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="3"><hp:t>${xesc(no+'. ')}</hp:t></hp:run>${hwpxRuns(lines[0], 0)}</hp:p>`);
-  for(let i=1;i<lines.length;i++){
-    const l = lines[i];
-    if(/^\$\$?[^$]+\$\$?$/.test(l)) out.push(hwpxP(l, 0, 3)); // 독립 수식: 왼쪽+추가 들여쓰기(§6)
-    else out.push(hwpxP(l, 0, 2));
+  const blocks = splitBoxBlocks(String(p.question||'')).map(b=>({box:b.box, lines:b.lines.map(s=>s.trim()).filter(Boolean)})).filter(b=>b.lines.length);
+  if(!blocks.length) blocks.push({box:false, lines:['']});
+  if(pts!=null){                                             // §5-3: 배점은 마지막 질문 문장 끝에
+    const lastText = [...blocks].reverse().find(b=>!b.box) || blocks[blocks.length-1];
+    lastText.lines[lastText.lines.length-1] += ` [${pts}점]`;
+  }
+  let firstDone = false;
+  const numP = txt=>`<hp:p paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="3"><hp:t>${xesc(no+'. ')}</hp:t></hp:run>${hwpxRuns(txt, 0)}</hp:p>`;
+  for(const b of blocks){
+    if(b.box){                                               // 조건 상자(§8-4): 들여쓰기 폭의 테두리 표
+      if(!firstDone){ out.push(numP('')); firstDone = true; }
+      out.push(hwpxBoxP(b.lines, {w:30400, borderFill:4, paraPr:2, wrapPr:2}));
+      continue;
+    }
+    for(const l of b.lines){
+      if(!firstDone){ out.push(numP(l)); firstDone = true; continue; }
+      if(/^\$\$?[^$]+\$\$?$/.test(l)) out.push(hwpxP(l, 0, 3)); // 독립 수식: 왼쪽+추가 들여쓰기(§6)
+      else out.push(hwpxP(l, 0, 2));
+    }
   }
   const imgs = await imagesOf(p);
   if(imgs.length) out.push(...await hwpxImageParas(imgs, {maxW:14470, maxH:17000, paraPr:1})); // 단 폭 45%·최대 60mm·가운데(§8)
@@ -3703,12 +3765,15 @@ async function mockItemParas(p, no, pts, label){ // 한 문항 → 슬롯 안 �
 async function mockEstimateHU(p, hasLabel, pts){ // §9 사전 높이 추정(HWPUNIT)
   let h = 0;
   if(hasLabel) h += 2350 + 2570;
-  const lines = String(p.question||'').split('\n').map(s=>s.trim()).filter(Boolean);
-  if(pts!=null && lines.length) lines[lines.length-1] += ` [${pts}점]`;
-  const usable = (MOCK.COLW - MOCK.INDENT)/100;           // 사용 가능 폭(pt)
-  for(const l of lines){
-    if(/^\$\$?[^$]+\$\$?$/.test(l)){ h += Math.max(Math.round(eqMeasure(latexToHwpEq(l.replace(/\$/g,''))).h*1.1), MOCK.LINE) + 2800; continue; }
-    h += Math.max(1, Math.ceil(mockVisPt(l)/usable)) * MOCK.LINE;
+  const usable = (MOCK.COLW - MOCK.INDENT)/100;           // 사용 가능 폭(pt). 배점 표기 길이는 근사상 무시
+  const blocks = splitBoxBlocks(String(p.question||''));
+  for(const b of blocks){
+    const ls = b.lines.map(s=>s.trim()).filter(Boolean);
+    for(const l of ls){
+      if(!b.box && /^\$\$?[^$]+\$\$?$/.test(l)){ h += Math.max(Math.round(eqMeasure(latexToHwpEq(l.replace(/\$/g,''))).h*1.1), MOCK.LINE) + 2800; continue; }
+      h += Math.max(1, Math.ceil(mockVisPt(l)/usable)) * MOCK.LINE;
+    }
+    if(b.box) h += 2600;                                   // 상자 안팎 여백(§8-4)
   }
   for(const d0 of await imagesOf(p)){
     const d = await trimImageWhite(d0);      // 실제 삽입될(여백 제거된) 크기로 추정

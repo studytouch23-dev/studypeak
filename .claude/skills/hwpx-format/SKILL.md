@@ -20,6 +20,9 @@ description: HWPX(한글 OWPML) 파일 생성·파싱과 한글 수식 스크립
 >   `left=1130 + intent=-1130`처럼 쓰면 첫 줄이 left만큼 밀린다 — 첫 줄은 left 위치, 이후 줄은 |intent| 위치.
 > - 문항 이미지는 `hwpxImageParas`가 `trimImageWhite()`로 흰 여백을 자르고 내용 없는 이미지는 버린다
 >   (AI 변환이 남긴 크롭 여백·빈 이미지 대책). 넘침 추정(`mockEstimateHU`)도 트리밍 후 크기 기준.
+> - **조건 상자**: question 안의 `[박스]`…`[/박스]` 줄, 또는 연속된 `(가)(나)…` 줄을 `splitBoxBlocks()`가
+>   상자 블록으로 분리 → 출력 시 `hwpxBoxP()`(테두리 1×1 표, 일반=borderFill 3 / 모의고사=4, 안여백 1130/850).
+>   AI 프롬프트가 상자를 [박스] 마커로 표시하게 지시함. 미리보기에선 `stripBoxMarks()`로 마커 숨김.
 
 lab/index.html의 구현은 실제 한컴오피스에서 열리는 것이 사용자 확인됨. 구조 변경 금지,
 확장만 할 것.
