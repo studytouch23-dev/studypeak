@@ -1,0 +1,1818 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스터디피크 수학 랩 — 나만의 수학 문제 DB</title>
+<meta name="description" content="쌓여 있는 수학 자료를 나만의 문제 DB로 만들고, 필요한 문제만 골라 시험지로 출력하세요. 등록 → 태그 보강 → 검색 → 출력.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="스터디피크 수학 랩 — 나만의 수학 문제 DB">
+<meta property="og:description" content="문제 등록 → 태그 보강 → 의미 검색 → 시험지 출력. 내 브라우저에 저장되는 비공개 수학 문제 연구소.">
+<meta property="og:url" content="https://www.studypeak.co.kr/lab/">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/contrib/auto-render.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{
+  --green:#1F3A2E; --green-2:#2c5242; --green-3:#16281f; --gold:#D8B97C; --gold-2:#c4a159;
+  --bg:#f6f7f4; --card:#ffffff; --ink:#22281f; --muted:#6b7266;
+  --line:#e4e2d9; --danger:#b4432f; --ok:#2e7d4f; --sbw:232px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{font-size:16px}
+body{background:var(--bg);color:var(--ink);font-family:"Pretendard","Apple SD Gothic Neo",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;line-height:1.55}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:.95rem;border:1px solid var(--line);border-radius:8px;padding:.55rem .7rem;background:#fff;color:var(--ink);width:100%}
+input:focus,select:focus,textarea:focus{outline:2px solid rgba(31,58,46,.35);border-color:var(--green)}
+textarea{resize:vertical;min-height:90px}
+label{font-size:.82rem;font-weight:700;color:var(--green);display:block;margin-bottom:.3rem}
+.hint{font-size:.78rem;color:var(--muted)}
+
+/* ── 레이아웃: 사이드바 + 메인 ── */
+#layout{display:flex;min-height:100vh}
+#sidebar{width:var(--sbw);flex:0 0 var(--sbw);background:var(--green);color:#e8ede8;display:flex;flex-direction:column;position:fixed;top:0;bottom:0;left:0;z-index:70;overflow-y:auto;transition:transform .2s}
+#sidebar .brand{display:flex;align-items:center;gap:.55rem;font-weight:800;font-size:1.02rem;color:#fff;padding:1rem .9rem .8rem;white-space:nowrap}
+#sidebar .brand .logo{background:var(--gold);color:var(--green);font-weight:900;border-radius:8px;padding:.1rem .45rem}
+#sidebar .brand small{display:block;font-weight:600;color:var(--gold);font-size:.68rem;letter-spacing:.08em}
+#sidebar .group{font-size:.68rem;font-weight:800;letter-spacing:.09em;color:#9eb3a4;padding:1rem .95rem .3rem}
+#sidebar nav button{display:flex;align-items:center;gap:.5rem;width:calc(100% - 1rem);margin:.1rem .5rem;text-align:left;background:transparent;border:0;color:#dfe7df;padding:.5rem .55rem;border-radius:8px;font-size:.9rem;font-weight:600}
+#sidebar nav button:hover{background:rgba(255,255,255,.1)}
+#sidebar nav button.active{background:var(--gold);color:var(--green);font-weight:800}
+#sidebar nav button .badge{margin-left:auto;background:rgba(255,255,255,.92);color:var(--green);border-radius:99px;font-size:.68rem;padding:0 .4rem;font-weight:800}
+#sidebar .sb-foot{margin-top:auto;padding:1rem .95rem;font-size:.7rem;color:#9eb3a4}
+#sidebar .sb-foot a{color:var(--gold)}
+#mainwrap{flex:1;margin-left:var(--sbw);display:flex;flex-direction:column;min-width:0}
+#topbar{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.94);backdrop-filter:blur(4px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:.8rem;padding:.55rem 1.1rem;flex-wrap:wrap}
+#topbar .vt-top{font-weight:800;color:var(--green);font-size:1rem}
+#hamburger{display:none;background:none;border:1px solid var(--line);border-radius:8px;padding:.25rem .55rem;font-size:1.05rem}
+.usage{margin-left:auto;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.usage .pill{background:#eef2ec;color:var(--green);border:1px solid #d7e0d4;border-radius:99px;font-size:.78rem;font-weight:800;padding:.2rem .7rem}
+.usage .pill.warn{background:#faf0dc;border-color:#e8d4a8;color:#7a5c1e}
+.usage .pill.cartp{background:var(--green);color:#fff;border-color:var(--green);cursor:pointer}
+main{max-width:1240px;width:100%;margin:0 auto;padding:1.2rem 18px 4rem}
+@media(max-width:900px){
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:none;box-shadow:4px 0 18px rgba(0,0,0,.3)}
+  #mainwrap{margin-left:0}
+  #hamburger{display:block}
+}
+#sb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:65;display:none}
+#sb-overlay.show{display:block}
+
+.view{display:none}
+.view.active{display:block}
+h2.vt{font-size:1.3rem;color:var(--green);margin-bottom:.2rem}
+p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1.1rem;margin-bottom:1rem}
+.card h3{color:var(--green);font-size:1.02rem;margin-bottom:.7rem}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:.8rem}
+@media(max-width:760px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
+.row{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
+.spread{display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap}
+.field{margin-bottom:.8rem}
+
+.btn{border:0;border-radius:9px;padding:.55rem 1rem;font-weight:700;font-size:.9rem;background:var(--green);color:#fff}
+.btn:hover{background:var(--green-2)}
+.btn.gold{background:var(--gold);color:var(--green)}
+.btn.gold:hover{background:var(--gold-2)}
+.btn.ghost{background:#fff;color:var(--green);border:1px solid var(--line)}
+.btn.ghost:hover{border-color:var(--green)}
+.btn.danger{background:#fff;color:var(--danger);border:1px solid #e3c2ba}
+.btn.danger:hover{background:#fbf0ee}
+.btn.sm{padding:.3rem .6rem;font-size:.8rem;border-radius:7px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+
+.tag{display:inline-flex;align-items:center;gap:.25rem;background:#eef2ec;color:var(--green);border-radius:99px;padding:.12rem .6rem;font-size:.76rem;font-weight:700;margin:.12rem .18rem .12rem 0}
+.tag.src{background:#f4ecdc;color:#7a5c1e}
+.tag.diff{background:#e8eef9;color:#2c4a7c}
+.tag.user{background:#efe8f6;color:#5b3c82}
+
+/* dashboard */
+.stat{display:flex;flex-direction:column;gap:.15rem;padding:1rem;border:1px solid var(--line);border-radius:12px;background:#fff}
+.stat b{font-size:1.7rem;color:var(--green)}
+.stat span{font-size:.8rem;color:var(--muted)}
+.step{border:1px solid var(--line);border-radius:12px;padding:1rem;background:#fff}
+.step .no{color:var(--gold-2);font-weight:900;font-size:.78rem;letter-spacing:.06em}
+.step h4{color:var(--green);margin:.2rem 0 .3rem}
+.step p{font-size:.84rem;color:var(--muted)}
+
+/* 태그 관리 */
+.subj-chip{display:inline-flex;align-items:center;gap:.4rem;border:1.5px solid var(--line);background:#fff;border-radius:99px;padding:.3rem .8rem;font-size:.85rem;font-weight:700;color:var(--ink);margin:.2rem .25rem .2rem 0;cursor:pointer}
+.subj-chip:hover{border-color:var(--green)}
+.subj-chip.sel{border-color:var(--green);background:#eef2ec;color:var(--green)}
+.subj-chip .mini{background:none;border:0;font-size:.8rem;opacity:.55;padding:0 .1rem}
+.subj-chip .mini:hover{opacity:1}
+.cascade{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+@media(max-width:760px){.cascade{grid-template-columns:1fr}}
+.col-box{border:1px solid var(--line);border-radius:12px;background:#fff;display:flex;flex-direction:column;min-height:300px}
+.col-box .col-h{display:flex;justify-content:space-between;align-items:center;padding:.6rem .8rem;border-bottom:1px solid var(--line);font-weight:800;color:var(--green);font-size:.88rem}
+.col-box .col-h .cnt{color:var(--muted);font-weight:700;font-size:.78rem}
+.col-list{flex:1;overflow:auto;max-height:420px}
+.col-item{display:flex;align-items:center;gap:.4rem;padding:.5rem .8rem;border-bottom:1px solid #f0efe8;cursor:pointer;font-size:.9rem}
+.col-item:hover{background:#f7f8f4}
+.col-item.sel{background:#eef2ec;font-weight:800;color:var(--green)}
+.col-item .n{margin-left:auto;font-size:.72rem;color:var(--muted);background:#f1f1ea;border-radius:99px;padding:0 .45rem}
+.col-item .mini{background:none;border:0;font-size:.78rem;opacity:.5;padding:0 .1rem}
+.col-item .mini:hover{opacity:1}
+.col-add{border-top:1px solid var(--line);padding:.55rem}
+.col-add button{width:100%}
+.colmuted{padding:2rem .8rem;color:var(--muted);text-align:center;font-size:.85rem}
+
+/* problem list */
+.toolbar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.8rem}
+.toolbar input[type=search]{flex:1;min-width:220px}
+.toolbar select{width:auto}
+.plist{display:flex;flex-direction:column;gap:.7rem}
+.pitem{background:#fff;border:1px solid var(--line);border-radius:12px;padding:.9rem 1rem;display:flex;gap:.8rem}
+.pitem.selected{outline:2px solid var(--gold);background:#fffdf6}
+.pitem .chk{flex:0 0 auto;padding-top:.2rem}
+.pitem .body{flex:1;min-width:0}
+.ptext{font-size:.95rem;white-space:pre-wrap;word-break:break-word;max-height:7.5em;overflow:hidden;cursor:pointer}
+.ptext.open{max-height:none}
+.pimgs{display:flex;gap:.4rem;margin-top:.4rem;flex-wrap:wrap}
+.pimgs img{max-height:90px;border:1px solid var(--line);border-radius:6px}
+.pmeta{margin-top:.45rem}
+.pacts{display:flex;gap:.35rem;margin-top:.55rem;flex-wrap:wrap}
+.simscore{font-weight:800;color:var(--ok);font-size:.8rem}
+.empty{padding:2.2rem;text-align:center;color:var(--muted);border:1.5px dashed var(--line);border-radius:12px;background:#fff}
+
+/* suggestions */
+.sugg{background:#f4f7f2;border:1px solid #dbe5d6;border-radius:10px;padding:.7rem .8rem;margin:.6rem 0}
+.sugg b{color:var(--green);font-size:.82rem}
+.sugg .tag{cursor:pointer;border:1px dashed #9db39a;background:#fff}
+.sugg .tag:hover{background:#eef2ec}
+.dropzone{border:2px dashed #b9c4b4;border-radius:12px;background:#fbfcf9;padding:1.4rem;text-align:center;cursor:pointer;margin-bottom:.6rem;color:var(--green)}
+.dropzone:hover,.dropzone.over{border-color:var(--green);background:#f1f5ee}
+
+/* 담기 바 */
+#cartbar{position:fixed;bottom:0;left:var(--sbw);right:0;background:var(--green);color:#fff;z-index:60;display:none;box-shadow:0 -3px 12px rgba(0,0,0,.2)}
+@media(max-width:900px){#cartbar{left:0}}
+#cartbar.show{display:block}
+#cartbar .inner{max-width:1240px;margin:0 auto;padding:.6rem 18px;display:flex;align-items:center;gap:.8rem;flex-wrap:wrap}
+
+/* modal */
+.modal-bg{position:fixed;inset:0;background:rgba(20,28,22,.55);z-index:80;display:none;align-items:flex-start;justify-content:center;overflow:auto;padding:3vh 12px}
+.modal-bg.show{display:flex}
+.modal{background:#fff;border-radius:14px;max-width:860px;width:100%;padding:1.3rem;margin-bottom:5vh}
+.modal h3{color:var(--green);margin-bottom:.8rem}
+.modal .close{float:right;background:none;border:0;font-size:1.3rem;color:var(--muted)}
+
+/* sheet builder */
+.sheet-item{display:flex;gap:.6rem;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:10px;padding:.6rem .7rem;margin-bottom:.5rem}
+.sheet-item .num{font-weight:900;color:var(--gold-2);flex:0 0 1.6rem}
+.sheet-item .txt{flex:1;font-size:.88rem;max-height:4.6em;overflow:hidden}
+.sheet-item .mv{display:flex;flex-direction:column;gap:.2rem}
+
+#toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:var(--green);color:#fff;padding:.6rem 1.1rem;border-radius:99px;font-size:.88rem;font-weight:700;z-index:100;display:none;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+
+/* print */
+#print-area{display:none}
+@media print{
+  body>*:not(#print-area){display:none !important}
+  body{background:#fff}
+  #print-area{display:block;font-size:10.5pt}
+  .pr-head{text-align:center;border-bottom:2.5px solid #000;padding-bottom:8px;margin-bottom:6px}
+  .pr-head h1{font-size:17pt;margin-bottom:2px}
+  .pr-head .sub{font-size:9.5pt;color:#333}
+  .pr-info{display:flex;justify-content:space-between;font-size:9.5pt;border-bottom:1px solid #000;padding:4px 2px;margin-bottom:14px}
+  .pr-cols-2{column-count:2;column-gap:28px;column-rule:1px solid #bbb}
+  .pr-q{break-inside:avoid;margin-bottom:18px}
+  .pr-q .qn{font-weight:900}
+  .pr-q img{max-width:100%;max-height:220px;display:block;margin:6px auto}
+  .pr-q .choices{margin-top:5px}
+  .pr-ans{page-break-before:always}
+  .pr-ans h2{font-size:13pt;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:10px}
+  .pr-ans .arow{margin-bottom:10px;break-inside:avoid}
+}
+</style>
+</head>
+<body>
+
+<div id="sb-overlay" onclick="toggleSidebar(false)"></div>
+<div id="layout">
+
+<!-- ───── 사이드바 ───── -->
+<aside id="sidebar">
+  <div class="brand"><span class="logo">SP</span><span>스터디피크 수학 랩<small>MY MATH LAB</small></span></div>
+  <nav id="sbnav">
+    <div class="group">마이 랩</div>
+    <button data-view="dashboard" class="active">📊 대시보드</button>
+    <div class="group">태그 관리</div>
+    <button data-view="tags">🏷 단원태그</button>
+    <div class="group">문제 DB 관리</div>
+    <button data-view="add">📝 문제 등록</button>
+    <button data-view="db">🔍 문제 검색·작업 <span class="badge" id="nav-count">0</span></button>
+    <button data-view="sheet">📄 학습지 생성·관리 <span class="badge" id="nav-cart">0</span></button>
+    <div class="group">데이터</div>
+    <button data-view="data">💾 백업·데이터</button>
+  </nav>
+  <div class="sb-foot">공부는 데이터다<br><a href="/">studypeak.co.kr</a><br>데이터는 이 브라우저에만 저장됩니다.</div>
+</aside>
+
+<div id="mainwrap">
+  <div id="topbar">
+    <button id="hamburger" onclick="toggleSidebar()">☰</button>
+    <span class="vt-top" id="topbar-title">대시보드</span>
+    <div class="usage">
+      <span class="pill" id="usage-db">0 / 1,000 DB</span>
+      <span class="pill cartp" onclick="go('sheet')">🧺 담은 문제 <span id="cart-n">0</span></span>
+    </div>
+  </div>
+
+<main>
+
+<!-- ───────────────── 대시보드 ───────────────── -->
+<section class="view active" id="view-dashboard">
+  <h2 class="vt">문제 저장소가 아닌, 나만의 수학 연구소</h2>
+  <p class="vd">쌓여 있는 수학 자료를 문제 단위 DB로 만들고, 필요한 문제만 골라 시험지로 다시 출력하세요. 모든 데이터는 이 브라우저에만 저장되는 <b>비공개 개인 DB</b>입니다.</p>
+
+  <div class="grid4" style="margin-bottom:1rem">
+    <div class="stat"><b id="st-problems">0</b><span>등록된 문제</span></div>
+    <div class="stat"><b id="st-units">0</b><span>사용 중인 단원</span></div>
+    <div class="stat"><b id="st-tags">0</b><span>나만의 태그</span></div>
+    <div class="stat"><b id="st-sheets">0</b><span>만든 학습지</span></div>
+  </div>
+
+  <div class="grid3">
+    <div class="step">
+      <div class="no">STEP 01</div>
+      <h4>문제 올리기</h4>
+      <p><b>한글(HWPX)·PDF 파일을 그대로 업로드</b>하면 문제 단위로 자동 분할됩니다. 직접 입력·붙여넣기·그림 첨부도 가능합니다.</p>
+      <button class="btn gold sm" style="margin-top:.6rem" onclick="go('add')">등록 시작</button>
+    </div>
+    <div class="step">
+      <div class="no">STEP 02</div>
+      <h4>DB 보강하기</h4>
+      <p>출처·단원·난이도·나만의 태그를 붙입니다. 문제 내용을 분석해 단원 태그를 자동 추천하고, 직접 검수해 확정합니다.</p>
+      <button class="btn ghost sm" style="margin-top:.6rem" onclick="go('db')">DB 열기</button>
+    </div>
+    <div class="step">
+      <div class="no">STEP 03</div>
+      <h4>검색하고 출력하기</h4>
+      <p>키워드·태그·<b>유사 문제 검색</b>으로 문제를 찾고, 순서를 정해 인쇄용 학습지(PDF)로 출력합니다. 정답·해설지 포함.</p>
+      <button class="btn ghost sm" style="margin-top:.6rem" onclick="go('sheet')">학습지 만들기</button>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:1rem">
+    <div class="spread">
+      <div>
+        <h3 style="margin-bottom:.2rem">샘플 기출 DB로 바로 시작</h3>
+        <p class="hint">등록할 자료가 아직 없어도 괜찮습니다. 수능·모평 스타일 샘플 문제 세트를 불러와 검색과 학습지 출력을 먼저 체험해 보세요.</p>
+      </div>
+      <button class="btn" onclick="loadSeed()">샘플 문제 불러오기</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>운영 기준</h3>
+    <div class="grid3">
+      <div><b style="color:var(--green)">비공개 개인 DB</b><p class="hint">등록한 문제는 서버로 전송되지 않고 이 브라우저(IndexedDB)에만 저장됩니다.</p></div>
+      <div><b style="color:var(--green)">소유권은 나에게</b><p class="hint">내 자료는 내 것. JSON 백업으로 언제든 통째로 내보내고 다른 기기로 옮길 수 있습니다.</p></div>
+      <div><b style="color:var(--green)">내 기준으로 분류</b><p class="hint">교육과정 단원 프리셋 위에 과목·단원을 직접 편집하고 나만의 태그를 더해 관리합니다.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────── 단원태그 관리 ───────────────── -->
+<section class="view" id="view-tags">
+  <h2 class="vt">단원 태그</h2>
+  <p class="vd">과목 안에서 대단원 → 중단원 계층으로 단원 태그를 구성합니다. 프리셋 위에 내 기준대로 추가·수정하세요.</p>
+
+  <div class="grid3" style="margin-bottom:1rem">
+    <div class="stat"><b id="tg-subjects">0</b><span>등록 과목</span></div>
+    <div class="stat"><b id="tg-units">0</b><span>선택 과목 단원 수</span></div>
+    <div class="stat"><b id="tg-used">0</b><span>선택 과목 문제 수</span></div>
+  </div>
+
+  <div class="card">
+    <div class="spread">
+      <h3 style="margin:0">과목 <span class="hint">태그를 편집할 과목을 선택하세요</span></h3>
+      <div class="row">
+        <button class="btn ghost sm" onclick="addSubject()">＋ 과목 추가</button>
+        <button class="btn ghost sm" onclick="resetCurriculum()">프리셋 복원</button>
+      </div>
+    </div>
+    <div id="subj-chips" style="margin-top:.6rem"></div>
+  </div>
+
+  <div class="card">
+    <h3>단원 태그 구조 <span class="hint" id="casc-subject-label"></span></h3>
+    <div class="cascade">
+      <div class="col-box">
+        <div class="col-h"><span>대단원</span><span class="cnt" id="chap-cnt"></span></div>
+        <div class="col-list" id="chap-list"></div>
+        <div class="col-add"><button class="btn ghost sm" onclick="addChapter()">＋ 대단원 추가</button></div>
+      </div>
+      <div class="col-box">
+        <div class="col-h"><span>중단원</span><span class="cnt" id="sect-cnt"></span></div>
+        <div class="col-list" id="sect-list"></div>
+        <div class="col-add"><button class="btn ghost sm" onclick="addSection()">＋ 중단원 추가</button></div>
+      </div>
+    </div>
+    <p class="hint" style="margin-top:.6rem">더 세분화된 유형(소단원·상세유형)은 문제의 <b>나만의 태그</b>로 붙이면 검색·필터에 그대로 쓸 수 있습니다. 숫자 배지는 해당 태그가 붙은 내 문제 수입니다.</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>출처태그 <span class="hint">학교 · 교재 · 기출 연도</span></h3>
+      <div id="srctag-list" class="hint">아직 출처가 등록된 문제가 없습니다.</div>
+    </div>
+    <div class="card">
+      <h3>나만의태그 <span class="hint">난이도 · 기술적 태그</span></h3>
+      <div id="usertag-list" class="hint">아직 나만의 태그가 없습니다.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────── 문제 등록 ───────────────── -->
+<section class="view" id="view-add">
+  <h2 class="vt">문제 등록</h2>
+  <p class="vd">한 문제씩 정성껏 등록하거나, 문제지를 통째로 붙여넣어 일괄 분할하세요. 수식은 <code>$...$</code>(인라인), <code>$$...$$</code>(블록) 으로 쓰면 자동 렌더링됩니다.</p>
+
+  <div class="row" style="margin-bottom:1rem">
+    <button class="btn" id="mode-single" onclick="setAddMode('single')">단건 등록</button>
+    <button class="btn ghost" id="mode-bulk" onclick="setAddMode('bulk')">일괄 등록 (붙여넣기 분할)</button>
+  </div>
+
+  <div id="add-single">
+    <div class="card">
+      <h3>① 문제 내용</h3>
+      <div class="field"><label>문제 본문 *</label>
+        <textarea id="f-question" placeholder="예) 함수 $f(x)=x^3-3x^2+a$ 의 극댓값이 7일 때, 상수 $a$ 의 값을 구하시오."></textarea>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>보기 (객관식이면 한 줄에 하나씩)</label>
+          <textarea id="f-choices" placeholder="① 1&#10;② 3&#10;③ 5&#10;④ 7&#10;⑤ 9" style="min-height:70px"></textarea>
+        </div>
+        <div>
+          <div class="field"><label>정답</label><input id="f-answer" placeholder="예) ④ 또는 7"></div>
+          <div class="field"><label>그림 첨부</label><input type="file" id="f-images" accept="image/*" multiple>
+            <div class="pimgs" id="f-images-preview"></div>
+          </div>
+        </div>
+      </div>
+      <div class="field"><label>해설</label><textarea id="f-solution" placeholder="풀이 과정을 적어 두면 해설지에 함께 출력됩니다." style="min-height:70px"></textarea></div>
+      <div class="sugg" id="sugg-box" style="display:none">
+        <b>🔎 자동 태그 추천</b> <span class="hint">문제 내용을 분석해 추천합니다. 클릭하면 적용돼요.</span>
+        <div id="sugg-tags" style="margin-top:.3rem"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>② 태그 보강 — 내 기준으로 분류</h3>
+      <div class="grid3">
+        <div class="field"><label>과목</label><select id="f-subject"></select></div>
+        <div class="field"><label>대단원</label><select id="f-chapter"></select></div>
+        <div class="field"><label>중단원</label><select id="f-section"></select></div>
+      </div>
+      <div class="grid4">
+        <div class="field"><label>출처 유형</label>
+          <select id="f-srctype"><option>기출</option><option>교재</option><option>학교</option><option>자작</option><option>기타</option></select></div>
+        <div class="field"><label>출처 이름</label><input id="f-srcname" placeholder="예) 2024 수능 / OO고 중간"></div>
+        <div class="field"><label>연도</label><input id="f-srcyear" placeholder="예) 2024"></div>
+        <div class="field"><label>학년</label><select id="f-grade"></select></div>
+        <div class="field"><label>난이도</label>
+          <select id="f-diff"><option value="1">● 1 (쉬움)</option><option value="2">●● 2</option><option value="3" selected>●●● 3 (보통)</option><option value="4">●●●● 4</option><option value="5">●●●●● 5 (킬러)</option></select></div>
+      </div>
+      <div class="field"><label>나만의 태그 (쉼표로 구분)</label><input id="f-tags" placeholder="예) 오답노트, 계산주의, 3점"></div>
+      <div class="row">
+        <button class="btn gold" id="btn-save-single" onclick="saveSingle()">문제 저장</button>
+        <button class="btn ghost" onclick="clearSingle()">입력 초기화</button>
+        <span class="hint" id="single-status"></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="add-bulk" style="display:none">
+    <div class="card">
+      <h3>① 문제 파일 업로드 또는 붙여넣기</h3>
+      <p class="hint" style="margin-bottom:.5rem">한글(HWPX)·PDF·TXT 파일을 올리면 텍스트를 추출해 <b>1. / 2. / 3)</b> 번호 기준으로 문제를 자동 분할합니다. 구형 <b>.hwp</b>는 한글에서 ‘다른 이름으로 저장 → .hwpx’ 후 올려주세요.</p>
+      <div class="dropzone" id="dropzone">
+        <b>📂 클릭 또는 드래그하여 파일 업로드</b><br>
+        <span class="hint">.hwpx · .pdf · .txt — 여러 파일 선택 가능</span>
+      </div>
+      <input type="file" id="bulk-files" accept=".hwpx,.hwp,.pdf,.txt" multiple style="display:none">
+      <div class="hint" id="upload-status" style="margin:.4rem 0"></div>
+      <textarea id="bulk-text" style="min-height:200px" placeholder="또는 여기에 직접 붙여넣기:&#10;1. 두 수 a, b에 대하여 ...&#10;&#10;2. 함수 f(x)=... 일 때 ...&#10;&#10;3. 등차수열 {a_n}에서 ..."></textarea>
+      <div class="field" style="margin-top:.7rem">
+        <label>해설 파일 업로드 (선택) — 해설도 1. 2. 3) 번호로 시작하면 문제와 자동으로 짝지어집니다</label>
+        <input type="file" id="sol-files" accept=".hwpx,.pdf,.txt">
+        <textarea id="bulk-sol" style="min-height:70px;margin-top:.4rem" placeholder="또는 해설 텍스트 붙여넣기"></textarea>
+      </div>
+      <div class="row" style="margin-top:.6rem">
+        <button class="btn" onclick="splitBulk()">문제 분할 미리보기</button>
+        <span class="hint" id="bulk-status"></span>
+      </div>
+    </div>
+    <div class="card" id="bulk-preview-card" style="display:none">
+      <h3>② 분할 결과 확인 후 일괄 저장</h3>
+      <div class="grid4">
+        <div class="field"><label>공통 과목</label><select id="b-subject"></select></div>
+        <div class="field"><label>공통 출처 이름</label><input id="b-srcname" placeholder="예) 2024 6월 모평"></div>
+        <div class="field"><label>공통 학년</label><select id="b-grade"></select></div>
+        <div class="field"><label>공통 난이도</label>
+          <select id="b-diff"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option></select></div>
+      </div>
+      <div id="bulk-preview" class="plist" style="max-height:420px;overflow:auto;margin:.6rem 0"></div>
+      <button class="btn gold" onclick="saveBulk()">전체 저장</button>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────── 문제 검색·작업 ───────────────── -->
+<section class="view" id="view-db">
+  <h2 class="vt">문제 검색·작업</h2>
+  <p class="vd">내 분류 기준 그대로 찾고, 키워드가 기억나지 않으면 <b>유사 문제 검색</b>으로 의미가 비슷한 문제를 찾습니다.</p>
+
+  <div class="card">
+    <div class="toolbar">
+      <input type="search" id="q" placeholder="🔍 키워드 검색 — 또는 문장을 쓰고 [유사 검색]을 눌러보세요 (예: 도르래가 나오는 역학 문제)">
+      <button class="btn" id="btn-search" onclick="state.lastResults=null;renderDB()">검색</button>
+      <button class="btn gold" onclick="semanticSearch()">유사 검색</button>
+    </div>
+    <div class="toolbar">
+      <select id="filter-subject"><option value="">과목 전체</option></select>
+      <select id="filter-chapter"><option value="">대단원 전체</option></select>
+      <select id="filter-grade"><option value="">학년 전체</option></select>
+      <select id="filter-diff"><option value="">난이도 전체</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
+      <select id="filter-src"><option value="">출처 전체</option></select>
+      <select id="sort"><option value="new">최신순</option><option value="old">오래된순</option><option value="diff-desc">난이도 높은순</option><option value="diff-asc">난이도 낮은순</option></select>
+      <button class="btn ghost sm" onclick="resetFilters()">필터 초기화</button>
+    </div>
+    <div class="spread">
+      <span class="hint" id="db-count"></span>
+      <div class="row">
+        <span class="hint">빠른 담기:</span>
+        <button class="btn ghost sm" onclick="quickPick(5)">+5</button>
+        <button class="btn ghost sm" onclick="quickPick(10)">+10</button>
+        <button class="btn ghost sm" onclick="quickPick(20)">+20</button>
+        <button class="btn ghost sm" onclick="selectAllVisible()">보이는 문제 모두 담기</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="plist" id="plist"></div>
+</section>
+
+<!-- ───────────────── 학습지 생성·관리 ───────────────── -->
+<section class="view" id="view-sheet">
+  <h2 class="vt">학습지 생성·관리</h2>
+  <p class="vd">담아 둔 문제의 순서를 정하고, 인쇄용 학습지로 출력하세요. 브라우저 인쇄에서 <b>PDF로 저장</b>을 선택하면 PDF 파일이 됩니다.</p>
+
+  <div class="card">
+    <h3>① 학습지 정보</h3>
+    <div class="grid4">
+      <div class="field"><label>제목</label><input id="s-title" value="수학 연습 문제"></div>
+      <div class="field"><label>부제 (범위 등)</label><input id="s-sub" placeholder="예) 수학Ⅱ 미분 단원"></div>
+      <div class="field"><label>출제자 / 학원명</label><input id="s-author" placeholder="예) 스터디피크"></div>
+      <div class="field"><label>날짜</label><input id="s-date" type="date"></div>
+    </div>
+    <div class="row">
+      <label style="margin:0;display:flex;align-items:center;gap:.35rem;font-weight:600"><input type="checkbox" id="s-2col" checked style="width:auto"> 2단 편집</label>
+      <label style="margin:0;display:flex;align-items:center;gap:.35rem;font-weight:600"><input type="checkbox" id="s-answers" checked style="width:auto"> 정답·해설지 포함</label>
+      <label style="margin:0;display:flex;align-items:center;gap:.35rem;font-weight:600"><input type="checkbox" id="s-meta" style="width:auto"> 문제별 출처 표기</label>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="spread"><h3 style="margin:0">② 문제 구성 <span class="hint" id="sheet-count"></span></h3>
+      <div class="row">
+        <button class="btn ghost sm" onclick="shuffleSheet()">순서 섞기</button>
+        <button class="btn danger sm" onclick="clearCart()">모두 비우기</button>
+      </div>
+    </div>
+    <div id="sheet-list" style="margin-top:.7rem"></div>
+    <div class="empty" id="sheet-empty">아직 담긴 문제가 없습니다. <b>문제 검색·작업</b>에서 문제를 담아 오세요.
+      <div style="margin-top:.6rem"><button class="btn sm" onclick="go('db')">문제 찾으러 가기</button></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <button class="btn gold" id="btn-hwpx" onclick="downloadHWPX()">📥 한글 파일(HWPX) 다운로드</button>
+    <button class="btn" id="btn-print" onclick="printSheet()">🖨 인쇄 / PDF 저장</button>
+    <button class="btn ghost" onclick="saveWorksheet()">학습지 구성 저장</button>
+  </div>
+  <p class="hint" style="margin-top:.4rem">HWPX는 한글(한컴오피스)에서 바로 열어 이어서 편집할 수 있습니다. 수식은 <code>$...$</code> 텍스트로 출력되므로 필요한 부분만 한글 수식으로 바꿔 쓰세요.</p>
+
+  <div class="card" style="margin-top:1rem">
+    <h3>저장된 학습지</h3>
+    <div id="ws-list" class="hint">저장된 학습지가 없습니다.</div>
+  </div>
+</section>
+
+<!-- ───────────────── 백업·데이터 ───────────────── -->
+<section class="view" id="view-data">
+  <h2 class="vt">백업·데이터 관리</h2>
+  <p class="vd">모든 데이터는 이 브라우저에만 저장됩니다. 다른 기기로 옮기거나 안전하게 보관하려면 JSON으로 내보내세요.</p>
+  <div class="grid2">
+    <div class="card">
+      <h3>내보내기 (백업)</h3>
+      <p class="hint" style="margin-bottom:.6rem">문제·단원체계·학습지 전체를 JSON 파일 하나로 내려받습니다.</p>
+      <button class="btn" onclick="exportJSON()">전체 백업 다운로드</button>
+    </div>
+    <div class="card">
+      <h3>가져오기 (복원)</h3>
+      <p class="hint" style="margin-bottom:.6rem">백업 JSON을 불러옵니다. 같은 문제(id)는 덮어쓰고 나머지는 추가됩니다.</p>
+      <input type="file" id="import-file" accept="application/json">
+    </div>
+  </div>
+  <div class="card">
+    <h3 style="color:var(--danger)">전체 삭제</h3>
+    <p class="hint" style="margin-bottom:.6rem">모든 문제와 학습지를 삭제합니다. 되돌릴 수 없으니 먼저 백업하세요.</p>
+    <button class="btn danger" onclick="wipeAll()">전체 데이터 삭제</button>
+  </div>
+</section>
+
+</main>
+</div><!-- /mainwrap -->
+</div><!-- /layout -->
+
+<!-- 담기 바 -->
+<div id="cartbar"><div class="inner">
+  <b>🧺 담은 문제 <span id="cart-n2">0</span>개</b>
+  <span style="flex:1"></span>
+  <button class="btn gold sm" onclick="go('sheet')">학습지 만들러 가기 →</button>
+  <button class="btn sm" style="background:rgba(255,255,255,.15)" onclick="clearCart()">비우기</button>
+</div></div>
+
+<!-- 상세/수정 모달 -->
+<div class="modal-bg" id="modal-bg" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal-body"></div>
+</div>
+
+<div id="toast"></div>
+<div id="print-area"></div>
+
+<script>
+'use strict';
+/* ═══════════════ 교육과정 단원 프리셋 ═══════════════ */
+const PRESET_CURRICULUM = {
+  "수학(상)": {"다항식":["다항식의 연산","나머지정리","인수분해"],
+    "방정식과 부등식":["복소수","이차방정식","이차방정식과 이차함수","여러 가지 방정식","여러 가지 부등식"],
+    "도형의 방정식":["평면좌표","직선의 방정식","원의 방정식","도형의 이동"]},
+  "수학(하)": {"집합과 명제":["집합","명제"],
+    "함수":["함수","합성함수와 역함수","유리함수","무리함수"],
+    "경우의 수":["경우의 수","순열","조합"]},
+  "수학Ⅰ": {"지수함수와 로그함수":["지수와 로그","지수함수","로그함수","지수·로그 방정식과 부등식"],
+    "삼각함수":["삼각함수의 뜻과 그래프","사인법칙과 코사인법칙"],
+    "수열":["등차수열","등비수열","수열의 합","수학적 귀납법"]},
+  "수학Ⅱ": {"함수의 극한과 연속":["함수의 극한","함수의 연속"],
+    "미분":["미분계수와 도함수","도함수의 활용"],
+    "적분":["부정적분","정적분","정적분의 활용"]},
+  "미적분": {"수열의 극한":["수열의 극한","급수"],
+    "미분법":["지수·로그함수의 미분","삼각함수의 미분","여러 가지 미분법","도함수의 활용"],
+    "적분법":["여러 가지 적분법","정적분의 활용"]},
+  "확률과 통계": {"경우의 수":["순열과 조합","이항정리"],
+    "확률":["확률의 뜻과 활용","조건부확률"],
+    "통계":["확률분포","정규분포","통계적 추정"]},
+  "기하": {"이차곡선":["포물선","타원","쌍곡선"],
+    "평면벡터":["벡터의 연산","평면벡터의 성분과 내적"],
+    "공간도형과 공간좌표":["공간도형","공간좌표"]},
+  "중등 수학": {"수와 연산":["소인수분해","정수와 유리수","제곱근과 실수"],
+    "문자와 식":["일차방정식","연립방정식","이차방정식","다항식의 곱셈과 인수분해"],
+    "함수":["좌표평면과 그래프","일차함수","이차함수"],
+    "기하":["평면도형","삼각형과 사각형의 성질","도형의 닮음","피타고라스 정리","원의 성질"],
+    "확률과 통계":["자료의 정리","확률","대푯값과 산포도"]}
+};
+let CURRICULUM = loadCurriculum();
+function loadCurriculum(){
+  try{
+    const raw = localStorage.getItem('sp-lab-curriculum');
+    if(raw){ const c = JSON.parse(raw); if(c && typeof c==='object' && Object.keys(c).length) return c; }
+  }catch(e){}
+  return JSON.parse(JSON.stringify(PRESET_CURRICULUM));
+}
+function saveCurriculum(){ localStorage.setItem('sp-lab-curriculum', JSON.stringify(CURRICULUM)); }
+
+/* 자동 태그 추천용 키워드 사전: 키워드 → [과목, 대단원, 중단원] */
+const KEYWORD_MAP = [
+  [["인수분해"],["수학(상)","다항식","인수분해"]],
+  [["나머지정리","조립제법"],["수학(상)","다항식","나머지정리"]],
+  [["복소수","허수"],["수학(상)","방정식과 부등식","복소수"]],
+  [["판별식","근과 계수"],["수학(상)","방정식과 부등식","이차방정식"]],
+  [["이차함수"],["수학(상)","방정식과 부등식","이차방정식과 이차함수"]],
+  [["원의 방정식","접선의 방정식"],["수학(상)","도형의 방정식","원의 방정식"]],
+  [["직선의 방정식","기울기"],["수학(상)","도형의 방정식","직선의 방정식"]],
+  [["평행이동","대칭이동"],["수학(상)","도형의 방정식","도형의 이동"]],
+  [["집합","부분집합","교집합","합집합"],["수학(하)","집합과 명제","집합"]],
+  [["명제","필요조건","충분조건","대우"],["수학(하)","집합과 명제","명제"]],
+  [["역함수","합성함수"],["수학(하)","함수","합성함수와 역함수"]],
+  [["유리함수","점근선"],["수학(하)","함수","유리함수"]],
+  [["무리함수"],["수학(하)","함수","무리함수"]],
+  [["지수법칙","거듭제곱근"],["수학Ⅰ","지수함수와 로그함수","지수와 로그"]],
+  [["로그","상용로그"],["수학Ⅰ","지수함수와 로그함수","로그함수"]],
+  [["지수함수"],["수학Ⅰ","지수함수와 로그함수","지수함수"]],
+  [["사인법칙","코사인법칙"],["수학Ⅰ","삼각함수","사인법칙과 코사인법칙"]],
+  [["삼각함수","sin","cos","tan","라디안"],["수학Ⅰ","삼각함수","삼각함수의 뜻과 그래프"]],
+  [["등차수열","공차"],["수학Ⅰ","수열","등차수열"]],
+  [["등비수열","공비"],["수학Ⅰ","수열","등비수열"]],
+  [["수열의 합","시그마","\\sum"],["수학Ⅰ","수열","수열의 합"]],
+  [["수학적 귀납법","귀납법"],["수학Ⅰ","수열","수학적 귀납법"]],
+  [["극한","lim","수렴","발산"],["수학Ⅱ","함수의 극한과 연속","함수의 극한"]],
+  [["연속","사잇값"],["수학Ⅱ","함수의 극한과 연속","함수의 연속"]],
+  [["미분계수","도함수","접선","f'("],["수학Ⅱ","미분","미분계수와 도함수"]],
+  [["극댓값","극솟값","증가","감소","변곡"],["수학Ⅱ","미분","도함수의 활용"]],
+  [["부정적분"],["수학Ⅱ","적분","부정적분"]],
+  [["정적분","적분","\\int","넓이","속도와 거리"],["수학Ⅱ","적분","정적분"]],
+  [["급수","무한급수"],["미적분","수열의 극한","급수"]],
+  [["치환적분","부분적분"],["미적분","적분법","여러 가지 적분법"]],
+  [["음함수","매개변수"],["미적분","미분법","여러 가지 미분법"]],
+  [["순열","조합","경우의 수","팩토리얼"],["확률과 통계","경우의 수","순열과 조합"]],
+  [["이항정리","이항계수"],["확률과 통계","경우의 수","이항정리"]],
+  [["조건부확률","독립시행"],["확률과 통계","확률","조건부확률"]],
+  [["확률"],["확률과 통계","확률","확률의 뜻과 활용"]],
+  [["정규분포","표준편차","이항분포"],["확률과 통계","통계","정규분포"]],
+  [["신뢰구간","모평균","표본"],["확률과 통계","통계","통계적 추정"]],
+  [["포물선","초점","준선"],["기하","이차곡선","포물선"]],
+  [["타원"],["기하","이차곡선","타원"]],
+  [["쌍곡선"],["기하","이차곡선","쌍곡선"]],
+  [["벡터","내적"],["기하","평면벡터","평면벡터의 성분과 내적"]],
+  [["피타고라스"],["중등 수학","기하","피타고라스 정리"]],
+  [["닮음"],["중등 수학","기하","도형의 닮음"]],
+  [["소인수분해","최대공약수","최소공배수"],["중등 수학","수와 연산","소인수분해"]],
+  [["연립방정식"],["중등 수학","문자와 식","연립방정식"]],
+  [["일차함수"],["중등 수학","함수","일차함수"]]
+];
+
+/* ═══════════════ IndexedDB ═══════════════ */
+const DB = {
+  db: null,
+  open(){ return new Promise((res,rej)=>{
+    const r = indexedDB.open('sp-math-lab', 1);
+    r.onupgradeneeded = e=>{
+      const d = e.target.result;
+      if(!d.objectStoreNames.contains('problems')) d.createObjectStore('problems',{keyPath:'id'});
+      if(!d.objectStoreNames.contains('worksheets')) d.createObjectStore('worksheets',{keyPath:'id'});
+    };
+    r.onsuccess = ()=>{ DB.db = r.result; res(); };
+    r.onerror = ()=>rej(r.error);
+  });},
+  req(q){ return new Promise((res,rej)=>{ q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); },
+  store(name,mode){ return DB.db.transaction(name,mode||'readonly').objectStore(name); },
+  getAll(name){ return DB.req(DB.store(name).getAll()); },
+  put(name,v){ return DB.req(DB.store(name,'readwrite').put(v)); },
+  del(name,id){ return DB.req(DB.store(name,'readwrite').delete(id)); },
+  clear(name){ return DB.req(DB.store(name,'readwrite').clear()); }
+};
+
+/* ═══════════════ 상태 ═══════════════ */
+const state = {
+  problems: [], worksheets: [],
+  cart: JSON.parse(localStorage.getItem('sp-lab-cart')||'[]'),
+  pendingImages: [], bulkDrafts: [],
+  lastResults: null,
+  tagSubject: null, tagChapter: null   // 단원태그 편집기 선택 상태
+};
+const VIEW_TITLES = {dashboard:'대시보드', tags:'태그 관리 · 단원태그', add:'문제 DB 관리 · 문제 등록',
+  db:'문제 DB 관리 · 문제 검색·작업', sheet:'학습지 생성·관리', data:'백업·데이터'};
+const GRADES = ['미지정','초등','중1','중2','중3','고1','고2','고3','N수'];
+const $ = s=>document.querySelector(s);
+const $$ = s=>Array.from(document.querySelectorAll(s));
+const uid = ()=> Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const esc = s=> String(s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function toast(msg){
+  const t=$('#toast'); t.textContent=msg; t.style.display='block';
+  clearTimeout(t._tm); t._tm=setTimeout(()=>t.style.display='none',2200);
+}
+function renderMath(el){
+  if(window.renderMathInElement){
+    try{ renderMathInElement(el,{delimiters:[
+      {left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},
+      {left:'\\(',right:'\\)',display:false},{left:'\\[',right:'\\]',display:true}
+    ],throwOnError:false}); }catch(e){}
+  }
+}
+
+/* ═══════════════ 네비게이션 ═══════════════ */
+function toggleSidebar(force){
+  const sb = $('#sidebar');
+  const open = force!==undefined ? force : !sb.classList.contains('open');
+  sb.classList.toggle('open', open);
+  $('#sb-overlay').classList.toggle('show', open);
+}
+function go(view){
+  $$('#sbnav button').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
+  $$('.view').forEach(v=>v.classList.toggle('active', v.id==='view-'+view));
+  $('#topbar-title').textContent = VIEW_TITLES[view]||'';
+  if(view==='db') renderDB();
+  if(view==='sheet') renderSheet();
+  if(view==='dashboard') renderDash();
+  if(view==='tags') renderTags();
+  persistCart();
+  toggleSidebar(false);
+  window.scrollTo({top:0});
+}
+$('#sbnav').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(b) go(b.dataset.view);
+});
+
+/* ═══════════════ 단원 셀렉트 ═══════════════ */
+function fillSubjectSelect(sel, withEmpty){
+  const cur = sel.value;
+  sel.innerHTML = (withEmpty?'<option value="">과목 전체</option>':'') +
+    Object.keys(CURRICULUM).map(s=>`<option>${esc(s)}</option>`).join('');
+  if(cur && Object.keys(CURRICULUM).includes(cur)) sel.value = cur;
+}
+function linkUnitSelects(subjSel, chapSel, sectSel){
+  function fillChap(){
+    const ch = CURRICULUM[subjSel.value]||{};
+    chapSel.innerHTML = Object.keys(ch).map(c=>`<option>${esc(c)}</option>`).join('');
+    fillSect();
+  }
+  function fillSect(){
+    const ch = (CURRICULUM[subjSel.value]||{})[chapSel.value]||[];
+    sectSel.innerHTML = ch.map(s=>`<option>${esc(s)}</option>`).join('');
+  }
+  subjSel.addEventListener('change', fillChap);
+  chapSel.addEventListener('change', fillSect);
+  fillChap();
+}
+function refreshUnitSelects(){
+  fillSubjectSelect($('#f-subject'));
+  $('#f-subject').dispatchEvent(new Event('change'));
+  fillSubjectSelect($('#b-subject'));
+  fillSubjectSelect($('#filter-subject'), true);
+}
+
+/* ═══════════════ 단원태그 관리 화면 ═══════════════ */
+function countBy(fn){
+  const m = new Map();
+  for(const p of state.problems){ const k = fn(p); if(!k) continue; m.set(k,(m.get(k)||0)+1); }
+  return m;
+}
+function renderTags(){
+  const subjects = Object.keys(CURRICULUM);
+  if(!state.tagSubject || !subjects.includes(state.tagSubject)) state.tagSubject = subjects[0]||null;
+  const chapters = state.tagSubject ? Object.keys(CURRICULUM[state.tagSubject]) : [];
+  if(!state.tagChapter || !chapters.includes(state.tagChapter)) state.tagChapter = chapters[0]||null;
+
+  // 통계
+  $('#tg-subjects').textContent = subjects.length;
+  let unitCount = 0;
+  if(state.tagSubject){
+    for(const c of chapters) unitCount += 1 + (CURRICULUM[state.tagSubject][c]||[]).length;
+  }
+  $('#tg-units').textContent = unitCount;
+  $('#tg-used').textContent = state.problems.filter(p=>p.subject===state.tagSubject).length;
+  $('#casc-subject-label').textContent = state.tagSubject ? `— ‘${state.tagSubject}’ 과목의 단원 태그를 편집하세요` : '';
+
+  // 과목 칩
+  const subjCnt = countBy(p=>p.subject);
+  const chips = $('#subj-chips');
+  chips.innerHTML = '';
+  for(const s of subjects){
+    const chip = document.createElement('span');
+    chip.className = 'subj-chip'+(s===state.tagSubject?' sel':'');
+    chip.innerHTML = `<span class="nm"></span><span class="hint">${subjCnt.get(s)||0}</span>
+      <button class="mini" title="이름 수정">✎</button><button class="mini" title="삭제">🗑</button>`;
+    chip.querySelector('.nm').textContent = s;
+    chip.addEventListener('click', e=>{
+      if(e.target.closest('.mini')) return;
+      state.tagSubject = s; state.tagChapter = null; renderTags();
+    });
+    const [btnE, btnD] = chip.querySelectorAll('.mini');
+    btnE.addEventListener('click', ()=>renameSubject(s));
+    btnD.addEventListener('click', ()=>deleteSubject(s));
+    chips.appendChild(chip);
+  }
+
+  // 대단원 컬럼
+  const chapCnt = countBy(p=>p.subject===state.tagSubject ? p.chapter : null);
+  const chapList = $('#chap-list'); chapList.innerHTML = '';
+  $('#chap-cnt').textContent = chapters.length+'개';
+  if(!chapters.length) chapList.innerHTML = '<div class="colmuted">대단원을 추가해 주세요.</div>';
+  for(const c of chapters){
+    const it = document.createElement('div');
+    it.className = 'col-item'+(c===state.tagChapter?' sel':'');
+    it.innerHTML = `<span class="nm"></span><span class="n">${chapCnt.get(c)||0}</span>
+      <button class="mini" title="이름 수정">✎</button><button class="mini" title="삭제">🗑</button>`;
+    it.querySelector('.nm').textContent = c;
+    it.addEventListener('click', e=>{
+      if(e.target.closest('.mini')) return;
+      state.tagChapter = c; renderTags();
+    });
+    const [btnE, btnD] = it.querySelectorAll('.mini');
+    btnE.addEventListener('click', ()=>renameChapter(c));
+    btnD.addEventListener('click', ()=>deleteChapter(c));
+    chapList.appendChild(it);
+  }
+
+  // 중단원 컬럼
+  const sects = (state.tagSubject && state.tagChapter) ? (CURRICULUM[state.tagSubject][state.tagChapter]||[]) : [];
+  const sectCnt = countBy(p=>(p.subject===state.tagSubject&&p.chapter===state.tagChapter)?p.section:null);
+  const sectList = $('#sect-list'); sectList.innerHTML = '';
+  $('#sect-cnt').textContent = sects.length+'개';
+  if(!state.tagChapter) sectList.innerHTML = '<div class="colmuted">대단원을 먼저 선택해 주세요.</div>';
+  else if(!sects.length) sectList.innerHTML = '<div class="colmuted">중단원을 추가해 주세요.</div>';
+  for(const sName of sects){
+    const it = document.createElement('div');
+    it.className = 'col-item';
+    it.innerHTML = `<span class="nm"></span><span class="n">${sectCnt.get(sName)||0}</span>
+      <button class="mini" title="이름 수정">✎</button><button class="mini" title="삭제">🗑</button>`;
+    it.querySelector('.nm').textContent = sName;
+    const [btnE, btnD] = it.querySelectorAll('.mini');
+    btnE.addEventListener('click', ()=>renameSection(sName));
+    btnD.addEventListener('click', ()=>deleteSection(sName));
+    sectList.appendChild(it);
+  }
+
+  // 출처태그 / 나만의태그 요약
+  const srcCnt = countBy(p=>p.srcName);
+  $('#srctag-list').innerHTML = srcCnt.size
+    ? [...srcCnt.entries()].sort((a,b)=>b[1]-a[1]).map(([s,n])=>`<span class="tag src">${esc(s)} · ${n}문제</span>`).join('')
+    : '아직 출처가 등록된 문제가 없습니다.';
+  const userCnt = new Map();
+  for(const p of state.problems) for(const t of (p.tags||[])) userCnt.set(t,(userCnt.get(t)||0)+1);
+  $('#usertag-list').innerHTML = userCnt.size
+    ? [...userCnt.entries()].sort((a,b)=>b[1]-a[1]).map(([t,n])=>`<span class="tag user">#${esc(t)} · ${n}문제</span>`).join('')
+    : '아직 나만의 태그가 없습니다.';
+}
+/* 과목/단원 CRUD — 이름 변경 시 기존 문제의 태그도 함께 이동 */
+async function remapProblems(filter, patch){
+  let n=0;
+  for(const p of state.problems){
+    if(!filter(p)) continue;
+    Object.assign(p, patch, {updatedAt:Date.now()});
+    await DB.put('problems', p); n++;
+  }
+  return n;
+}
+function addSubject(){
+  const name = (prompt('추가할 과목 이름을 입력하세요. (예: 2022개정 대수)')||'').trim();
+  if(!name) return;
+  if(CURRICULUM[name]){ toast('이미 있는 과목입니다.'); return; }
+  CURRICULUM[name] = {}; saveCurriculum();
+  state.tagSubject = name; state.tagChapter = null;
+  renderTags(); refreshUnitSelects();
+  toast('과목이 추가되었습니다. 대단원을 추가해 주세요.');
+}
+async function renameSubject(old){
+  const name = (prompt('과목 이름 수정', old)||'').trim();
+  if(!name || name===old) return;
+  if(CURRICULUM[name]){ toast('이미 있는 과목 이름입니다.'); return; }
+  CURRICULUM[name] = CURRICULUM[old]; delete CURRICULUM[old]; saveCurriculum();
+  const n = await remapProblems(p=>p.subject===old, {subject:name});
+  if(state.tagSubject===old) state.tagSubject = name;
+  renderTags(); refreshUnitSelects();
+  toast(`과목 이름을 바꾸고 문제 ${n}개의 태그를 함께 옮겼습니다.`);
+}
+async function deleteSubject(s){
+  const used = state.problems.filter(p=>p.subject===s).length;
+  if(!confirm(`‘${s}’ 과목을 삭제할까요?`+(used?`\n이 과목 태그가 붙은 문제 ${used}개는 ‘미분류’가 됩니다.`:''))) return;
+  delete CURRICULUM[s]; saveCurriculum();
+  await remapProblems(p=>p.subject===s, {subject:'', chapter:'', section:''});
+  if(state.tagSubject===s){ state.tagSubject=null; state.tagChapter=null; }
+  renderTags(); refreshUnitSelects(); renderDash();
+  toast('과목을 삭제했습니다.');
+}
+function addChapter(){
+  if(!state.tagSubject){ toast('과목을 먼저 선택하세요.'); return; }
+  const name = (prompt('추가할 대단원 이름')||'').trim();
+  if(!name) return;
+  if(CURRICULUM[state.tagSubject][name]){ toast('이미 있는 대단원입니다.'); return; }
+  CURRICULUM[state.tagSubject][name] = []; saveCurriculum();
+  state.tagChapter = name;
+  renderTags(); refreshUnitSelects();
+}
+async function renameChapter(old){
+  const name = (prompt('대단원 이름 수정', old)||'').trim();
+  if(!name || name===old) return;
+  const subj = CURRICULUM[state.tagSubject];
+  if(subj[name]){ toast('이미 있는 대단원 이름입니다.'); return; }
+  subj[name] = subj[old]; delete subj[old]; saveCurriculum();
+  const n = await remapProblems(p=>p.subject===state.tagSubject&&p.chapter===old, {chapter:name});
+  if(state.tagChapter===old) state.tagChapter = name;
+  renderTags(); refreshUnitSelects();
+  toast(`대단원 이름을 바꾸고 문제 ${n}개의 태그를 함께 옮겼습니다.`);
+}
+async function deleteChapter(c){
+  const used = state.problems.filter(p=>p.subject===state.tagSubject&&p.chapter===c).length;
+  if(!confirm(`‘${c}’ 대단원을 삭제할까요?`+(used?`\n문제 ${used}개의 단원 태그가 비워집니다.`:''))) return;
+  delete CURRICULUM[state.tagSubject][c]; saveCurriculum();
+  await remapProblems(p=>p.subject===state.tagSubject&&p.chapter===c, {chapter:'', section:''});
+  if(state.tagChapter===c) state.tagChapter=null;
+  renderTags(); refreshUnitSelects();
+}
+function addSection(){
+  if(!state.tagSubject || !state.tagChapter){ toast('대단원을 먼저 선택하세요.'); return; }
+  const name = (prompt('추가할 중단원 이름')||'').trim();
+  if(!name) return;
+  const arr = CURRICULUM[state.tagSubject][state.tagChapter];
+  if(arr.includes(name)){ toast('이미 있는 중단원입니다.'); return; }
+  arr.push(name); saveCurriculum();
+  renderTags(); refreshUnitSelects();
+}
+async function renameSection(old){
+  const name = (prompt('중단원 이름 수정', old)||'').trim();
+  if(!name || name===old) return;
+  const arr = CURRICULUM[state.tagSubject][state.tagChapter];
+  if(arr.includes(name)){ toast('이미 있는 중단원 이름입니다.'); return; }
+  arr[arr.indexOf(old)] = name; saveCurriculum();
+  const n = await remapProblems(p=>p.subject===state.tagSubject&&p.chapter===state.tagChapter&&p.section===old, {section:name});
+  renderTags(); refreshUnitSelects();
+  toast(`중단원 이름을 바꾸고 문제 ${n}개의 태그를 함께 옮겼습니다.`);
+}
+async function deleteSection(sName){
+  const used = state.problems.filter(p=>p.subject===state.tagSubject&&p.chapter===state.tagChapter&&p.section===sName).length;
+  if(!confirm(`‘${sName}’ 중단원을 삭제할까요?`+(used?`\n문제 ${used}개의 중단원 태그가 비워집니다.`:''))) return;
+  const arr = CURRICULUM[state.tagSubject][state.tagChapter];
+  arr.splice(arr.indexOf(sName),1); saveCurriculum();
+  await remapProblems(p=>p.subject===state.tagSubject&&p.chapter===state.tagChapter&&p.section===sName, {section:''});
+  renderTags(); refreshUnitSelects();
+}
+function resetCurriculum(){
+  if(!confirm('단원 체계를 기본 프리셋(교육과정)으로 복원할까요?\n직접 추가·수정한 과목/단원 구성이 프리셋으로 대체됩니다. (문제 데이터는 유지)')) return;
+  CURRICULUM = JSON.parse(JSON.stringify(PRESET_CURRICULUM)); saveCurriculum();
+  state.tagSubject = null; state.tagChapter = null;
+  renderTags(); refreshUnitSelects();
+  toast('프리셋으로 복원했습니다.');
+}
+
+/* ═══════════════ 자동 태그 추천 ═══════════════ */
+function suggestTags(text){
+  const found = [];
+  const seen = new Set();
+  for(const [keys, unit] of KEYWORD_MAP){
+    for(const k of keys){
+      if(text.includes(k)){
+        const sig = unit.join('>');
+        if(!seen.has(sig)){ seen.add(sig); found.push({keyword:k, unit}); }
+        break;
+      }
+    }
+  }
+  return found.slice(0,4);
+}
+let suggTimer=null;
+$('#f-question').addEventListener('input', ()=>{
+  clearTimeout(suggTimer);
+  suggTimer = setTimeout(()=>{
+    const txt = $('#f-question').value;
+    const box = $('#sugg-box'), wrap=$('#sugg-tags');
+    if(txt.trim().length < 6){ box.style.display='none'; return; }
+    const sg = suggestTags(txt);
+    if(!sg.length){ box.style.display='none'; return; }
+    box.style.display='block';
+    wrap.innerHTML = sg.map((s,i)=>
+      `<span class="tag" data-i="${i}">📌 ${esc(s.unit[0])} › ${esc(s.unit[1])} › ${esc(s.unit[2])} <small>("${esc(s.keyword)}")</small></span>`).join('');
+    wrap.querySelectorAll('.tag').forEach(el=>el.addEventListener('click',()=>{
+      const u = sg[+el.dataset.i].unit;
+      if(!CURRICULUM[u[0]]){ CURRICULUM[u[0]] = {}; }
+      if(!CURRICULUM[u[0]][u[1]]){ CURRICULUM[u[0]][u[1]] = []; }
+      if(!CURRICULUM[u[0]][u[1]].includes(u[2])) CURRICULUM[u[0]][u[1]].push(u[2]);
+      saveCurriculum(); refreshUnitSelects();
+      $('#f-subject').value=u[0]; $('#f-subject').dispatchEvent(new Event('change'));
+      $('#f-chapter').value=u[1]; $('#f-chapter').dispatchEvent(new Event('change'));
+      $('#f-section').value=u[2];
+      toast('단원 태그를 적용했습니다: '+u.join(' › '));
+    }));
+  }, 350);
+});
+
+/* ═══════════════ 이미지 첨부 ═══════════════ */
+$('#f-images').addEventListener('change', async e=>{
+  for(const file of e.target.files){
+    if(file.size > 2.5*1024*1024){ toast('2.5MB 이하 이미지만 첨부할 수 있어요: '+file.name); continue; }
+    const dataURL = await new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(file); });
+    state.pendingImages.push(dataURL);
+  }
+  e.target.value='';
+  renderPendingImages();
+});
+function renderPendingImages(){
+  $('#f-images-preview').innerHTML = state.pendingImages.map((d,i)=>
+    `<span style="position:relative;display:inline-block"><img src="${d}" alt="첨부 이미지">
+     <button class="btn danger sm" style="position:absolute;top:2px;right:2px;padding:0 .35rem" onclick="state.pendingImages.splice(${i},1);renderPendingImages()">×</button></span>`).join('');
+}
+
+/* ═══════════════ 등록: 단건 ═══════════════ */
+function setAddMode(m){
+  $('#add-single').style.display = m==='single'?'block':'none';
+  $('#add-bulk').style.display = m==='bulk'?'block':'none';
+  $('#mode-single').className = 'btn'+(m==='single'?'':' ghost');
+  $('#mode-bulk').className = 'btn'+(m==='bulk'?'':' ghost');
+}
+function collectSingle(){
+  return {
+    id: uid(),
+    question: $('#f-question').value.trim(),
+    choices: $('#f-choices').value.split('\n').map(s=>s.trim()).filter(Boolean),
+    answer: $('#f-answer').value.trim(),
+    solution: $('#f-solution').value.trim(),
+    images: state.pendingImages.slice(),
+    subject: $('#f-subject').value, chapter: $('#f-chapter').value, section: $('#f-section').value,
+    grade: $('#f-grade').value==='미지정' ? '' : $('#f-grade').value,
+    srcType: $('#f-srctype').value, srcName: $('#f-srcname').value.trim(), srcYear: $('#f-srcyear').value.trim(),
+    difficulty: +$('#f-diff').value,
+    tags: $('#f-tags').value.split(',').map(s=>s.trim()).filter(Boolean),
+    createdAt: Date.now(), updatedAt: Date.now()
+  };
+}
+async function saveSingle(){
+  const p = collectSingle();
+  if(!p.question && !p.images.length){ toast('문제 본문 또는 그림이 필요합니다.'); return; }
+  await DB.put('problems', p);
+  state.problems.push(p);
+  clearSingle(false);
+  $('#single-status').textContent = '✅ 저장 완료 — 계속 입력하거나 DB에서 확인하세요.';
+  refreshCounts();
+  toast('문제가 저장되었습니다.');
+}
+function clearSingle(clearTagsToo){
+  ['f-question','f-choices','f-answer','f-solution'].forEach(id=>$('#'+id).value='');
+  if(clearTagsToo!==false) $('#f-tags').value='';
+  state.pendingImages=[]; renderPendingImages();
+  $('#sugg-box').style.display='none';
+}
+
+/* ═══════════════ 등록: 일괄 (파일 업로드 + 분할) ═══════════════ */
+const NUM_SPLIT = /\n(?=\s*\d{1,3}\s*[.)]\s)/;
+const NUM_HEAD = /^\s*(\d{1,3})\s*[.)]\s*/;
+function splitProblemsText(raw){
+  return raw.replace(/\r/g,'').split(NUM_SPLIT).map(s=>s.trim()).filter(s=>s.length>3);
+}
+function splitBulk(){
+  const raw = $('#bulk-text').value;
+  if(!raw.trim()){ toast('파일을 올리거나 텍스트를 먼저 붙여넣으세요.'); return; }
+  const parts = splitProblemsText(raw);
+  // 해설 매칭: 같은 번호(1. 2. 3))끼리 짝지음
+  const solMap = {};
+  const solRaw = $('#bulk-sol').value;
+  if(solRaw.trim()){
+    for(const s of splitProblemsText(solRaw)){
+      const m = s.match(NUM_HEAD);
+      if(m) solMap[m[1]] = s.replace(NUM_HEAD,'');
+    }
+  }
+  state.bulkDrafts = parts.map(t=>{
+    const m = t.match(NUM_HEAD);
+    const num = m ? m[1] : null;
+    return { text:t, num, sol: (num && solMap[num]) ? solMap[num] : '' };
+  });
+  const matched = state.bulkDrafts.filter(d=>d.sol).length;
+  $('#bulk-status').textContent = parts.length+'개 문제로 분할'+(matched?` · 해설 ${matched}개 자동 매칭`:'');
+  $('#bulk-preview-card').style.display='block';
+  rerenderBulk();
+}
+function rerenderBulk(){
+  $('#bulk-preview').innerHTML = state.bulkDrafts.map((d,i)=>
+    `<div class="pitem"><div style="font-weight:900;color:var(--gold-2)">${i+1}</div>
+      <div class="body"><div class="ptext">${esc(d.text)}</div>
+        ${d.sol?`<div class="pmeta"><span class="tag">해설 매칭 ✓</span></div>`:''}</div>
+      <button class="btn danger sm" onclick="state.bulkDrafts.splice(${i},1);rerenderBulk()">삭제</button></div>`).join('');
+  $('#bulk-status').textContent = state.bulkDrafts.length+'개 문제';
+  renderMath($('#bulk-preview'));
+}
+async function saveBulk(){
+  if(!state.bulkDrafts.length){ toast('저장할 문제가 없습니다.'); return; }
+  const subject = $('#b-subject').value, srcName = $('#b-srcname').value.trim(), diff = +$('#b-diff').value;
+  const grade = $('#b-grade').value==='미지정' ? '' : $('#b-grade').value;
+  let n=0;
+  for(const d of state.bulkDrafts){
+    const sg = suggestTags(d.text);
+    const useSg = sg.length && CURRICULUM[sg[0].unit[0]];
+    const p = {
+      id: uid()+n, question: d.text.replace(NUM_HEAD,''), choices: [], answer:'', solution: d.sol||'', images: [],
+      subject: useSg ? sg[0].unit[0] : subject,
+      chapter: useSg ? sg[0].unit[1] : (Object.keys(CURRICULUM[subject]||{})[0]||''),
+      section: useSg ? sg[0].unit[2] : '',
+      grade, srcType:'기출', srcName, srcYear:'', difficulty:diff, tags:[],
+      createdAt: Date.now()+n, updatedAt: Date.now()+n
+    };
+    await DB.put('problems', p); state.problems.push(p); n++;
+  }
+  state.bulkDrafts=[]; $('#bulk-text').value=''; $('#bulk-preview-card').style.display='none';
+  $('#bulk-status').textContent='';
+  refreshCounts();
+  toast(n+'개 문제가 저장되었습니다. (단원 태그 자동 추천 적용)');
+  go('db');
+}
+
+/* ═══════════════ 파일 업로드 파서 (HWPX·PDF·TXT) ═══════════════ */
+async function parseHWPX(file){
+  if(!window.JSZip) throw new Error('구성요소(JSZip)가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.');
+  const zip = await JSZip.loadAsync(file);
+  const sections = Object.keys(zip.files)
+    .filter(nm=>/^Contents\/section\d+\.xml$/i.test(nm))
+    .sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+  if(!sections.length) throw new Error(file.name+' — HWPX 본문(section)을 찾지 못했습니다.');
+  const out = [];
+  for(const sname of sections){
+    const xml = await zip.file(sname).async('string');
+    const doc = new DOMParser().parseFromString(xml,'application/xml');
+    if(doc.querySelector('parsererror')) throw new Error(file.name+' — XML 해석 실패');
+    // 문단(p) 단위로 <hp:t> 텍스트 수집 (표 안 중첩 문단도 중복 없이)
+    const order = []; const map = new Map();
+    for(const el of doc.getElementsByTagName('*')){
+      if(el.localName!=='t') continue;
+      let a = el.parentNode;
+      while(a && a.localName!=='p') a = a.parentNode;
+      const key = a || doc;
+      if(!map.has(key)){ map.set(key,''); order.push(key); }
+      map.set(key, map.get(key)+el.textContent);
+    }
+    out.push(order.map(k=>map.get(k)).join('\n'));
+  }
+  return out.join('\n');
+}
+async function parsePDF(file){
+  if(!window.pdfjsLib) throw new Error('PDF 구성요소가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const pdf = await pdfjsLib.getDocument({data: await file.arrayBuffer()}).promise;
+  const out = [];
+  for(let i=1;i<=pdf.numPages;i++){
+    const page = await pdf.getPage(i);
+    const tc = await page.getTextContent();
+    let line='', lastY=null; const lines=[];
+    for(const it of tc.items){
+      const y = it.transform[5];
+      if(lastY!==null && Math.abs(y-lastY)>2.5){ lines.push(line); line=''; }
+      line += it.str;
+      lastY = y;
+    }
+    lines.push(line);
+    out.push(lines.join('\n'));
+  }
+  return out.join('\n');
+}
+async function extractTextFromFile(file){
+  const nm = file.name.toLowerCase();
+  if(nm.endsWith('.hwpx')) return parseHWPX(file);
+  if(nm.endsWith('.hwp')) throw new Error(file.name+' — 구형 .hwp는 한글에서 [다른 이름으로 저장 → .hwpx] 후 올려주세요.');
+  if(nm.endsWith('.pdf')) return parsePDF(file);
+  return file.text();
+}
+async function handleUploadFiles(files, targetSel){
+  const status = $('#upload-status');
+  let ok=0;
+  for(const file of files){
+    try{
+      status.textContent = `⏳ ${file.name} 처리 중…`;
+      const text = (await extractTextFromFile(file)).trim();
+      if(!text){ status.textContent = `⚠ ${file.name} — 추출된 텍스트가 없습니다 (스캔본 PDF는 글자 인식이 필요합니다).`; continue; }
+      const ta = $(targetSel);
+      ta.value = (ta.value.trim() ? ta.value.replace(/\s+$/,'')+'\n\n' : '') + text;
+      ok++;
+    }catch(err){
+      status.textContent = '⚠ '+(err.message||'파일 처리 실패');
+      toast(err.message||'파일 처리에 실패했습니다.');
+    }
+  }
+  if(ok){
+    status.textContent = `✅ 파일 ${ok}개에서 텍스트를 추출했습니다. 분할 결과를 확인하세요.`;
+    if(targetSel==='#bulk-text') splitBulk();
+  }
+}
+const dz = $('#dropzone');
+dz.addEventListener('click', ()=>$('#bulk-files').click());
+dz.addEventListener('dragover', e=>{ e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', ()=>dz.classList.remove('over'));
+dz.addEventListener('drop', e=>{
+  e.preventDefault(); dz.classList.remove('over');
+  if(e.dataTransfer.files.length) handleUploadFiles([...e.dataTransfer.files], '#bulk-text');
+});
+$('#bulk-files').addEventListener('change', e=>{
+  if(e.target.files.length) handleUploadFiles([...e.target.files], '#bulk-text');
+  e.target.value='';
+});
+$('#sol-files').addEventListener('change', e=>{
+  if(e.target.files.length) handleUploadFiles([...e.target.files], '#bulk-sol');
+  e.target.value='';
+});
+
+/* ═══════════════ DB 목록/검색 ═══════════════ */
+function problemsFiltered(){
+  const q = $('#q').value.trim().toLowerCase();
+  const fs = $('#filter-subject').value, fc = $('#filter-chapter').value,
+        fd = $('#filter-diff').value, fsrc = $('#filter-src').value, fg = $('#filter-grade').value;
+  let list = state.problems.filter(p=>{
+    if(fs && p.subject!==fs) return false;
+    if(fc && p.chapter!==fc) return false;
+    if(fg && (p.grade||'')!==fg) return false;
+    if(fd && String(p.difficulty)!==fd) return false;
+    if(fsrc && p.srcName!==fsrc) return false;
+    if(q && !state.lastResults){
+      const hay = [p.question,p.answer,p.solution,p.srcName,p.subject,p.chapter,p.section,(p.tags||[]).join(' ')].join(' ').toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  if(state.lastResults){
+    list = list.filter(p=>state.lastResults.has(p.id));
+    list.sort((a,b)=>state.lastResults.get(b.id)-state.lastResults.get(a.id));
+  } else {
+    const s = $('#sort').value;
+    if(s==='new') list.sort((a,b)=>b.createdAt-a.createdAt);
+    if(s==='old') list.sort((a,b)=>a.createdAt-b.createdAt);
+    if(s==='diff-desc') list.sort((a,b)=>b.difficulty-a.difficulty);
+    if(s==='diff-asc') list.sort((a,b)=>a.difficulty-b.difficulty);
+  }
+  return list;
+}
+function problemCardHTML(p){
+  const inCart = state.cart.includes(p.id);
+  const sim = state.lastResults && state.lastResults.has(p.id)
+    ? `<span class="simscore">유사도 ${(state.lastResults.get(p.id)*100).toFixed(0)}%</span>` : '';
+  const unit = [p.subject,p.chapter,p.section].filter(Boolean).join(' › ');
+  const no = state.numOf ? state.numOf.get(p.id) : null;
+  return `<div class="pitem ${inCart?'selected':''}" data-id="${p.id}">
+    <div class="chk"><input type="checkbox" style="width:auto;transform:scale(1.25)" ${inCart?'checked':''} onchange="toggleCart('${p.id}')"></div>
+    <div class="body">
+      ${no?`<div style="font-weight:800;color:var(--muted);font-size:.78rem;margin-bottom:.2rem"># ${no}</div>`:''}
+      <div class="ptext" onclick="this.classList.toggle('open')">${esc(p.question)}</div>
+      ${p.images&&p.images.length?`<div class="pimgs">${p.images.map(d=>`<img src="${d}" alt="문제 그림">`).join('')}</div>`:''}
+      <div class="pmeta">
+        ${sim}
+        <span class="tag">${esc(unit||'미분류')}</span>
+        ${p.grade?`<span class="tag diff">${esc(p.grade)}</span>`:''}
+        <span class="tag diff">난이도 ${'●'.repeat(p.difficulty||3)}</span>
+        ${p.srcName?`<span class="tag src">${esc(p.srcType||'출처')} · ${esc(p.srcName)}${p.srcYear?' ('+esc(p.srcYear)+')':''}</span>`:''}
+        ${(p.tags||[]).map(t=>`<span class="tag user">#${esc(t)}</span>`).join('')}
+      </div>
+      <div class="pacts">
+        <button class="btn ghost sm" onclick="openDetail('${p.id}')">상세·수정</button>
+        <button class="btn ghost sm" onclick="findSimilar('${p.id}')">이 문제와 비슷한 문제</button>
+        <button class="btn ${inCart?'gold':''} sm" onclick="toggleCart('${p.id}')">${inCart?'담김 ✓':'학습지에 담기'}</button>
+        <button class="btn danger sm" onclick="removeProblem('${p.id}')">삭제</button>
+      </div>
+    </div>
+  </div>`;
+}
+function renderDB(){
+  const srcs = [...new Set(state.problems.map(p=>p.srcName).filter(Boolean))];
+  const fsrc = $('#filter-src'); const cur = fsrc.value;
+  fsrc.innerHTML = '<option value="">출처 전체</option>'+srcs.map(s=>`<option>${esc(s)}</option>`).join('');
+  fsrc.value = cur;
+  const fs = $('#filter-subject').value, fchap = $('#filter-chapter'); const curC = fchap.value;
+  const chaps = fs ? Object.keys(CURRICULUM[fs]||{}) : [...new Set(state.problems.map(p=>p.chapter).filter(Boolean))];
+  fchap.innerHTML = '<option value="">대단원 전체</option>'+chaps.map(c=>`<option>${esc(c)}</option>`).join('');
+  fchap.value = curC;
+
+  const list = problemsFiltered();
+  state.numOf = new Map(state.problems.slice().sort((a,b)=>a.createdAt-b.createdAt).map((p,i)=>[p.id,i+1]));
+  state.viewList = list.map(p=>p.id);
+  const wrap = $('#plist');
+  $('#db-count').textContent = state.lastResults
+    ? `유사 검색 결과 ${list.length}건 — 다시 전체를 보려면 [필터 초기화]`
+    : `${list.length}건 / 전체 ${state.problems.length}건`;
+  wrap.innerHTML = list.length
+    ? list.map(problemCardHTML).join('')
+    : `<div class="empty">조건에 맞는 문제가 없습니다.<div style="margin-top:.6rem"><button class="btn sm" onclick="go('add')">문제 등록하러 가기</button></div></div>`;
+  renderMath(wrap);
+}
+function resetFilters(){
+  $('#q').value=''; $('#filter-subject').value=''; $('#filter-chapter').value='';
+  $('#filter-diff').value=''; $('#filter-src').value='';
+  state.lastResults = null;
+  renderDB();
+}
+['filter-subject','filter-chapter','filter-grade','filter-diff','filter-src','sort'].forEach(id=>
+  $('#'+id).addEventListener('change', renderDB));
+function quickPick(n){
+  let added=0;
+  for(const p of problemsFiltered()){
+    if(added>=n) break;
+    if(!state.cart.includes(p.id)){ state.cart.push(p.id); added++; }
+  }
+  persistCart(); renderDB();
+  toast(added? added+'개 문제를 담았습니다.' : '더 담을 문제가 없습니다.');
+}
+$('#q').addEventListener('keydown', e=>{ if(e.key==='Enter'){ state.lastResults=null; renderDB(); }});
+
+/* ═══ 유사(의미) 검색: 문자 bigram 코사인 유사도 ═══ */
+function bigrams(text){
+  const t = text.replace(/\s+/g,' ').toLowerCase();
+  const m = new Map();
+  for(let i=0;i<t.length-1;i++){
+    const g = t.slice(i,i+2);
+    m.set(g,(m.get(g)||0)+1);
+  }
+  return m;
+}
+function cosine(a,b){
+  let dot=0, na=0, nb=0;
+  for(const v of a.values()) na+=v*v;
+  for(const v of b.values()) nb+=v*v;
+  const [small,big] = a.size<b.size ? [a,b] : [b,a];
+  for(const [g,v] of small){ const w = big.get(g); if(w) dot+=v*w; }
+  return (na&&nb) ? dot/Math.sqrt(na*nb) : 0;
+}
+function rankSimilar(queryText, excludeId){
+  const qv = bigrams(queryText);
+  const scores = new Map();
+  for(const p of state.problems){
+    if(p.id===excludeId) continue;
+    const text = [p.question, p.subject, p.chapter, p.section, (p.tags||[]).join(' ')].join(' ');
+    const s = cosine(qv, bigrams(text));
+    if(s>0.08) scores.set(p.id, Math.min(s*1.6,0.99));
+  }
+  return scores;
+}
+function semanticSearch(){
+  const q = $('#q').value.trim();
+  if(q.length<4){ toast('유사 검색은 문장(4자 이상)으로 입력해 주세요.'); return; }
+  state.lastResults = rankSimilar(q, null);
+  if(!state.lastResults.size){ toast('비슷한 문제를 찾지 못했습니다.'); state.lastResults=null; return; }
+  renderDB();
+  toast('의미가 비슷한 문제 '+state.lastResults.size+'건을 찾았습니다.');
+}
+function findSimilar(id){
+  const p = state.problems.find(x=>x.id===id); if(!p) return;
+  state.lastResults = rankSimilar([p.question,p.chapter,p.section].join(' '), id);
+  if(!state.lastResults.size){ toast('비슷한 문제가 아직 없습니다.'); state.lastResults=null; return; }
+  go('db'); renderDB();
+  toast('이 문제와 비슷한 문제 '+state.lastResults.size+'건');
+}
+
+/* ═══════════════ 상세·수정 모달 ═══════════════ */
+function openDetail(id){
+  const p = state.problems.find(x=>x.id===id); if(!p) return;
+  const m = $('#modal-body');
+  const nav = state.viewList && state.viewList.length ? state.viewList : state.problems.map(x=>x.id);
+  const pos = nav.indexOf(id);
+  const no = state.numOf ? state.numOf.get(id) : null;
+  const inCart = state.cart.includes(id);
+  m.innerHTML = `
+    <button class="close" onclick="closeModal()">✕</button>
+    <div class="spread" style="margin-bottom:.6rem">
+      <h3 style="margin:0">문제 상세·수정 ${no?`<span class="hint"># ${no}</span>`:''}</h3>
+      <div class="row">
+        <button class="btn ghost sm" ${pos<=0?'disabled':''} onclick="openDetail('${pos>0?nav[pos-1]:''}')">← 이전</button>
+        <span class="hint">${pos>=0?(pos+1)+' / '+nav.length:''}</span>
+        <button class="btn ghost sm" ${pos<0||pos>=nav.length-1?'disabled':''} onclick="openDetail('${pos>=0&&pos<nav.length-1?nav[pos+1]:''}')">다음 →</button>
+        <button class="btn ${inCart?'gold':''} sm" onclick="toggleCart('${id}');openDetail('${id}')">${inCart?'담김 ✓':'🧺 학습지에 담기'}</button>
+      </div>
+    </div>
+    <div class="field"><label>문제 본문</label><textarea id="e-question">${esc(p.question)}</textarea></div>
+    <div class="grid2">
+      <div class="field"><label>보기 (한 줄에 하나)</label><textarea id="e-choices" style="min-height:70px">${esc((p.choices||[]).join('\n'))}</textarea></div>
+      <div>
+        <div class="field"><label>정답</label><input id="e-answer" value="${esc(p.answer)}"></div>
+        <div class="field"><label>난이도</label><select id="e-diff">${[1,2,3,4,5].map(d=>`<option value="${d}" ${p.difficulty===d?'selected':''}>${'●'.repeat(d)} ${d}</option>`).join('')}</select></div>
+      </div>
+    </div>
+    <div class="field"><label>해설</label><textarea id="e-solution" style="min-height:70px">${esc(p.solution)}</textarea></div>
+    <div class="grid3">
+      <div class="field"><label>과목</label><select id="e-subject"></select></div>
+      <div class="field"><label>대단원</label><select id="e-chapter"></select></div>
+      <div class="field"><label>중단원</label><select id="e-section"></select></div>
+    </div>
+    <div class="grid4">
+      <div class="field"><label>출처 유형</label><select id="e-srctype">${['기출','교재','학교','자작','기타'].map(s=>`<option ${p.srcType===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="field"><label>출처 이름</label><input id="e-srcname" value="${esc(p.srcName)}"></div>
+      <div class="field"><label>연도</label><input id="e-srcyear" value="${esc(p.srcYear)}"></div>
+      <div class="field"><label>학년</label><select id="e-grade">${GRADES.map(g=>`<option ${(p.grade||'미지정')===g?'selected':''}>${g}</option>`).join('')}</select></div>
+    </div>
+    <div class="field"><label>나만의 태그 (쉼표 구분)</label><input id="e-tags" value="${esc((p.tags||[]).join(', '))}"></div>
+    ${p.images&&p.images.length?`<div class="pimgs" style="margin-bottom:.8rem">${p.images.map(d=>`<img src="${d}" style="max-height:140px" alt="문제 그림">`).join('')}</div>`:''}
+    <div class="row">
+      <button class="btn gold" onclick="saveDetail('${p.id}')">수정 저장</button>
+      <button class="btn ghost" onclick="closeModal()">닫기</button>
+    </div>`;
+  fillSubjectSelect($('#e-subject'));
+  $('#e-subject').value = CURRICULUM[p.subject] ? p.subject : Object.keys(CURRICULUM)[0];
+  linkUnitSelects($('#e-subject'), $('#e-chapter'), $('#e-section'));
+  if((CURRICULUM[p.subject]||{})[p.chapter]){ $('#e-chapter').value=p.chapter; $('#e-chapter').dispatchEvent(new Event('change')); }
+  const sects = (CURRICULUM[$('#e-subject').value]||{})[$('#e-chapter').value]||[];
+  if(sects.includes(p.section)) $('#e-section').value = p.section;
+  $('#modal-bg').classList.add('show');
+}
+async function saveDetail(id){
+  const p = state.problems.find(x=>x.id===id); if(!p) return;
+  p.question = $('#e-question').value.trim();
+  p.choices = $('#e-choices').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  p.answer = $('#e-answer').value.trim();
+  p.solution = $('#e-solution').value.trim();
+  p.difficulty = +$('#e-diff').value;
+  p.subject = $('#e-subject').value; p.chapter = $('#e-chapter').value; p.section = $('#e-section').value;
+  p.srcType = $('#e-srctype').value; p.srcName = $('#e-srcname').value.trim(); p.srcYear = $('#e-srcyear').value.trim();
+  p.grade = $('#e-grade').value==='미지정' ? '' : $('#e-grade').value;
+  p.tags = $('#e-tags').value.split(',').map(s=>s.trim()).filter(Boolean);
+  p.updatedAt = Date.now();
+  await DB.put('problems', p);
+  closeModal(); renderDB(); refreshCounts();
+  toast('수정되었습니다.');
+}
+function closeModal(){ $('#modal-bg').classList.remove('show'); }
+
+async function removeProblem(id){
+  if(!confirm('이 문제를 삭제할까요? 되돌릴 수 없습니다.')) return;
+  await DB.del('problems', id);
+  state.problems = state.problems.filter(p=>p.id!==id);
+  state.cart = state.cart.filter(c=>c!==id); persistCart();
+  renderDB(); refreshCounts();
+  toast('삭제되었습니다.');
+}
+
+/* ═══════════════ 담기(장바구니) ═══════════════ */
+function persistCart(){
+  localStorage.setItem('sp-lab-cart', JSON.stringify(state.cart));
+  $('#nav-cart').textContent = state.cart.length;
+  $('#cart-n').textContent = state.cart.length;
+  $('#cart-n2').textContent = state.cart.length;
+  $('#cartbar').classList.toggle('show', state.cart.length>0 && !$('#view-sheet').classList.contains('active'));
+}
+function toggleCart(id){
+  const i = state.cart.indexOf(id);
+  if(i>=0) state.cart.splice(i,1); else state.cart.push(id);
+  persistCart();
+  if($('#view-db').classList.contains('active')) renderDB();
+  if($('#view-sheet').classList.contains('active')) renderSheet();
+}
+function selectAllVisible(){
+  for(const p of problemsFiltered()) if(!state.cart.includes(p.id)) state.cart.push(p.id);
+  persistCart(); renderDB();
+  toast('보이는 문제를 모두 담았습니다.');
+}
+function clearCart(){
+  state.cart=[]; persistCart();
+  if($('#view-db').classList.contains('active')) renderDB();
+  if($('#view-sheet').classList.contains('active')) renderSheet();
+}
+
+/* ═══════════════ 학습지 빌더 ═══════════════ */
+function cartProblems(){
+  return state.cart.map(id=>state.problems.find(p=>p.id===id)).filter(Boolean);
+}
+function renderSheet(){
+  persistCart();
+  const list = cartProblems();
+  $('#sheet-count').textContent = list.length? `(${list.length}문항)` : '';
+  $('#sheet-empty').style.display = list.length? 'none':'block';
+  $('#sheet-list').innerHTML = list.map((p,i)=>`
+    <div class="sheet-item">
+      <div class="num">${i+1}</div>
+      <div class="txt">${esc(p.question.slice(0,160))}${p.question.length>160?'…':''}
+        <div class="pmeta"><span class="tag">${esc([p.subject,p.chapter].filter(Boolean).join(' › ')||'미분류')}</span>
+        <span class="tag diff">${'●'.repeat(p.difficulty||3)}</span></div>
+      </div>
+      <div class="mv">
+        <button class="btn ghost sm" onclick="moveCart(${i},-1)" ${i===0?'disabled':''}>▲</button>
+        <button class="btn ghost sm" onclick="moveCart(${i},1)" ${i===list.length-1?'disabled':''}>▼</button>
+        <button class="btn danger sm" onclick="toggleCart('${p.id}')">빼기</button>
+      </div>
+    </div>`).join('');
+  renderMath($('#sheet-list'));
+  renderWorksheetList();
+}
+function moveCart(i,dir){
+  const j=i+dir; if(j<0||j>=state.cart.length) return;
+  [state.cart[i],state.cart[j]]=[state.cart[j],state.cart[i]];
+  persistCart(); renderSheet();
+}
+function shuffleSheet(){
+  for(let i=state.cart.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [state.cart[i],state.cart[j]]=[state.cart[j],state.cart[i]];
+  }
+  persistCart(); renderSheet();
+}
+
+/* 인쇄 */
+function printSheet(){
+  const list = cartProblems();
+  if(!list.length){ toast('담긴 문제가 없습니다.'); return; }
+  const title = $('#s-title').value||'수학 연습 문제';
+  const sub = $('#s-sub').value, author = $('#s-author').value, date = $('#s-date').value;
+  const twoCol = $('#s-2col').checked, withAns = $('#s-answers').checked, withMeta = $('#s-meta').checked;
+
+  const qHTML = list.map((p,i)=>`
+    <div class="pr-q">
+      <span class="qn">${i+1}.</span> <span>${esc(p.question)}</span>
+      ${p.images&&p.images.length?p.images.map(d=>`<img src="${d}" alt="">`).join(''):''}
+      ${p.choices&&p.choices.length?`<div class="choices">${p.choices.map(c=>esc(c)).join('&nbsp;&nbsp; ')}</div>`:''}
+      ${withMeta&&p.srcName?`<div style="font-size:8pt;color:#777">[${esc(p.srcType)} · ${esc(p.srcName)}${p.srcYear?' '+esc(p.srcYear):''}]</div>`:''}
+    </div>`).join('');
+
+  const ansHTML = withAns ? `
+    <div class="pr-ans">
+      <h2>정답 및 해설 — ${esc(title)}</h2>
+      ${list.map((p,i)=>`<div class="arow"><b>${i+1}.</b> <b>${esc(p.answer||'—')}</b>
+        ${p.solution?`<div style="font-size:9.5pt;color:#333;margin-top:2px;white-space:pre-wrap">${esc(p.solution)}</div>`:''}</div>`).join('')}
+    </div>` : '';
+
+  $('#print-area').innerHTML = `
+    <div class="pr-head"><h1>${esc(title)}</h1>${sub?`<div class="sub">${esc(sub)}</div>`:''}</div>
+    <div class="pr-info">
+      <span>${date?esc(date):''} ${author?'· '+esc(author):''}</span>
+      <span>총 ${list.length}문항</span>
+      <span>이름: ______________</span>
+    </div>
+    <div class="${twoCol?'pr-cols-2':''}">${qHTML}</div>
+    ${ansHTML}`;
+  renderMath($('#print-area'));
+  setTimeout(()=>window.print(), 150);
+}
+
+/* ═══════════════ HWPX(한글 파일) 생성 ═══════════════ */
+function xesc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+const HWPX_NS = {
+  hs:'http://www.hancom.co.kr/hwpml/2011/section',
+  hp:'http://www.hancom.co.kr/hwpml/2011/paragraph',
+  hc:'http://www.hancom.co.kr/hwpml/2011/core',
+  hh:'http://www.hancom.co.kr/hwpml/2011/head'
+};
+const HWPX_VERSION_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<hv:HCFVersion xmlns:hv="http://www.hancom.co.kr/hwpml/2011/version" tagetApplication="WORDPROCESSOR" major="5" minor="0" micro="5" buildNumber="0" os="1" xmlVersion="1.4" application="Hancom Office Hangul" appVersion="9, 1, 1, 5656"/>`;
+const HWPX_CONTAINER_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ocf:container xmlns:ocf="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:hpf="http://www.hancom.co.kr/schema/2011/hpf">
+<ocf:rootfiles><ocf:rootfile full-path="Contents/content.hpf" media-type="application/hwpml-package+xml"/></ocf:rootfiles>
+</ocf:container>`;
+const HWPX_MANIFEST_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<odf:manifest xmlns:odf="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">
+<odf:file-entry odf:full-path="/" odf:media-type="application/hwp+zip"/>
+<odf:file-entry odf:full-path="version.xml" odf:media-type="text/xml"/>
+<odf:file-entry odf:full-path="Contents/header.xml" odf:media-type="application/xml"/>
+<odf:file-entry odf:full-path="Contents/section0.xml" odf:media-type="application/xml"/>
+<odf:file-entry odf:full-path="settings.xml" odf:media-type="application/xml"/>
+</odf:manifest>`;
+const HWPX_SETTINGS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ha:HWPApplicationSetting xmlns:ha="http://www.hancom.co.kr/hwpml/2011/app" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0">
+<ha:CaretPosition listIDRef="0" paraIDRef="0" pos="0"/>
+</ha:HWPApplicationSetting>`;
+function hwpxContentHPF(title){
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<opf:package xmlns:opf="http://www.idpf.org/2007/opf/" xmlns:dc="http://purl.org/dc/elements/1.1/" version="" unique-identifier="" id="">
+<opf:metadata><opf:title>${xesc(title)}</opf:title><opf:language>ko</opf:language><opf:meta name="creator" content="StudyPeak Math Lab"/></opf:metadata>
+<opf:manifest>
+<opf:item id="header" href="Contents/header.xml" media-type="application/xml"/>
+<opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"/>
+<opf:item id="settings" href="settings.xml" media-type="application/xml"/>
+</opf:manifest>
+<opf:spine><opf:itemref idref="header" linear="yes"/><opf:itemref idref="section0" linear="yes"/></opf:spine>
+</opf:package>`;
+}
+function hwpxFontfaces(){
+  const langs = ['HANGUL','LATIN','HANJA','JAPANESE','OTHER','SYMBOL','USER'];
+  return `<hh:fontfaces itemCnt="7">`+langs.map(l=>
+    `<hh:fontface lang="${l}" fontCnt="1"><hh:font id="0" face="함초롬바탕" type="TTF" isEmbedded="0"><hh:typeInfo familyType="FCAT_GOTHIC" weight="6" proportion="4" contrast="0" strokeVariation="1" armStyle="1" letterform="1" midline="1" xHeight="1"/></hh:font></hh:fontface>`).join('')+`</hh:fontfaces>`;
+}
+function hwpxBorderFill(id){
+  return `<hh:borderFill id="${id}" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">
+<hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/>
+<hh:leftBorder type="NONE" width="0.1 mm" color="#000000"/><hh:rightBorder type="NONE" width="0.1 mm" color="#000000"/>
+<hh:topBorder type="NONE" width="0.1 mm" color="#000000"/><hh:bottomBorder type="NONE" width="0.1 mm" color="#000000"/>
+<hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/>
+</hh:borderFill>`;
+}
+function hwpxCharPr(id, height, bold){
+  return `<hh:charPr id="${id}" height="${height}" textColor="#000000" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="2">
+<hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>
+<hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/>
+<hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>
+<hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/>
+<hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>
+${bold?'<hh:bold/>':''}
+</hh:charPr>`;
+}
+function hwpxParaPr(id, align){
+  return `<hh:paraPr id="${id}" tabPrIDRef="0" condense="0" fontLineHeight="0" snapToGrid="1" suppressLineNumbers="0" checked="0">
+<hh:align horizontal="${align}" vertical="BASELINE"/>
+<hh:heading type="NONE" idRef="0" level="0"/>
+<hh:breakSetting breakLatinWord="KEEP_WORD" breakNonLatinWord="KEEP_WORD" widowOrphan="0" keepWithNext="0" keepLines="0" pageBreakBefore="0" lineWrap="BREAK"/>
+<hh:autoSpacing eAsianEng="0" eAsianNum="0"/>
+<hh:margin><hc:intent value="0" unit="HWPUNIT"/><hc:left value="0" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin>
+<hh:lineSpacing type="PERCENT" value="160" unit="HWPUNIT"/>
+<hh:border borderFillIDRef="2" offsetLeft="0" offsetRight="0" offsetTop="0" offsetBottom="0" connect="0" ignoreMargin="0"/>
+</hh:paraPr>`;
+}
+function hwpxHeaderXML(){
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<hh:head xmlns:hh="${HWPX_NS.hh}" xmlns:hp="${HWPX_NS.hp}" xmlns:hc="${HWPX_NS.hc}" version="1.4" secCnt="1">
+<hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>
+<hh:refList>
+${hwpxFontfaces()}
+<hh:borderFills itemCnt="2">${hwpxBorderFill(1)}${hwpxBorderFill(2)}</hh:borderFills>
+<hh:charProperties itemCnt="3">${hwpxCharPr(0,1000,false)}${hwpxCharPr(1,1000,true)}${hwpxCharPr(2,1600,true)}</hh:charProperties>
+<hh:tabProperties itemCnt="1"><hh:tabPr id="0" autoTabLeft="0" autoTabRight="0"/></hh:tabProperties>
+<hh:paraProperties itemCnt="2">${hwpxParaPr(0,'JUSTIFY')}${hwpxParaPr(1,'CENTER')}</hh:paraProperties>
+<hh:styles itemCnt="1"><hh:style id="0" type="PARA" name="바탕글" engName="Normal" paraPrIDRef="0" charPrIDRef="0" nextStyleIDRef="0" langID="1042" lockForm="0"/></hh:styles>
+</hh:refList>
+<hh:compatibleDocument targetProgram="HWP201X"><hh:layoutCompatibility/></hh:compatibleDocument>
+<hh:docOption><hh:linkinfo path="" pageInherit="0" footnoteInherit="0"/></hh:docOption>
+</hh:head>`;
+}
+const HWPX_SECPR = `<hp:secPr id="" textDirection="HORIZONTAL" spaceColumns="1134" tabStop="8000" tabStopVal="4000" tabStopUnit="HWPUNIT" outlineShapeIDRef="1" memoShapeIDRef="0" textVerticalWidthHead="0" masterPageCnt="0">
+<hp:grid lineGrid="0" charGrid="0" wonggojiFormat="0" strictVerSpace="0"/>
+<hp:startNum pageStartsOn="BOTH" page="0" pic="0" tbl="0" equation="0"/>
+<hp:visibility hideFirstHeader="0" hideFirstFooter="0" hideFirstMasterPage="0" border="SHOW_ALL" fill="SHOW_ALL" hideFirstPageNum="0" hideFirstEmptyLine="0" showLineNumber="0"/>
+<hp:lineNumberShape restartType="0" countBy="0" distance="0" startNumber="0"/>
+<hp:pagePr landscape="WIDELY" width="59528" height="84188" gutterType="LEFT_ONLY"><hp:margin header="4252" footer="4252" gutter="0" left="8504" right="8504" top="5668" bottom="4252"/></hp:pagePr>
+<hp:footNotePr><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/><hp:noteLine length="-1" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="283" belowLine="567" aboveLine="850"/><hp:numbering type="CONTINUOUS" newNum="1"/><hp:placement place="EACH_COLUMN" beneathText="0"/></hp:footNotePr>
+<hp:endNotePr><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/><hp:noteLine length="14692344" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="0" belowLine="567" aboveLine="850"/><hp:numbering type="CONTINUOUS" newNum="1"/><hp:placement place="END_OF_DOCUMENT" beneathText="0"/></hp:endNotePr>
+<hp:pageBorderFill type="BOTH" borderFillIDRef="1" textBorder="PAPER" headerInside="0" footerInside="0" fillArea="PAPER"><hp:offset left="1417" right="1417" top="1417" bottom="1417"/></hp:pageBorderFill>
+</hp:secPr>`;
+function hwpxP(text, charPr, paraPr, extraRun){
+  return `<hp:p paraPrIDRef="${paraPr||0}" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="${charPr||0}">${extraRun||''}<hp:t>${xesc(text)}</hp:t></hp:run></hp:p>`;
+}
+function hwpxSectionXML(title, bodyParas){
+  const first = hwpxP(title, 2, 1,
+    HWPX_SECPR+`<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl>`);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<hs:sec xmlns:hs="${HWPX_NS.hs}" xmlns:hp="${HWPX_NS.hp}" xmlns:hc="${HWPX_NS.hc}">
+${first}
+${bodyParas.join('\n')}
+</hs:sec>`;
+}
+async function downloadHWPX(){
+  const list = cartProblems();
+  if(!list.length){ toast('담긴 문제가 없습니다.'); return; }
+  if(!window.JSZip){ toast('구성요소(JSZip)가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
+  const title = $('#s-title').value||'수학 연습 문제';
+  const sub = $('#s-sub').value, author = $('#s-author').value, date = $('#s-date').value;
+  const withAns = $('#s-answers').checked, withMeta = $('#s-meta').checked;
+
+  const paras = [];
+  if(sub) paras.push(hwpxP(sub, 1, 1));
+  paras.push(hwpxP([date, author, '총 '+list.length+'문항', '이름: ______________'].filter(Boolean).join('    '), 0, 1));
+  paras.push(hwpxP('',0,0));
+  list.forEach((p,i)=>{
+    const lines = ((i+1)+'. '+p.question).split('\n');
+    lines.forEach((l,li)=>paras.push(hwpxP(l, li===0?1:0, 0)));
+    if(p.choices && p.choices.length) paras.push(hwpxP(p.choices.join('    '), 0, 0));
+    if(withMeta && p.srcName) paras.push(hwpxP(`[${p.srcType||'출처'} · ${p.srcName}${p.srcYear?' '+p.srcYear:''}]`, 0, 0));
+    paras.push(hwpxP('',0,0));
+  });
+  if(withAns){
+    paras.push(hwpxP('',0,0));
+    paras.push(hwpxP('정답 및 해설', 2, 1));
+    paras.push(hwpxP('',0,0));
+    list.forEach((p,i)=>{
+      paras.push(hwpxP(`${i+1}. 정답: ${p.answer||'—'}`, 1, 0));
+      if(p.solution) p.solution.split('\n').forEach(l=>paras.push(hwpxP(l,0,0)));
+      paras.push(hwpxP('',0,0));
+    });
+  }
+
+  const zip = new JSZip();
+  zip.file('mimetype', 'application/hwp+zip', {compression:'STORE'});
+  zip.file('version.xml', HWPX_VERSION_XML);
+  zip.file('settings.xml', HWPX_SETTINGS_XML);
+  zip.file('META-INF/manifest.xml', HWPX_MANIFEST_XML);
+  zip.file('META-INF/container.xml', HWPX_CONTAINER_XML);
+  zip.file('Contents/content.hpf', hwpxContentHPF(title));
+  zip.file('Contents/header.xml', hwpxHeaderXML());
+  zip.file('Contents/section0.xml', hwpxSectionXML(title, paras));
+  const blob = await zip.generateAsync({type:'blob', mimeType:'application/hwp+zip', compression:'DEFLATE'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = title.replace(/[\\/:*?"<>|]/g,'_')+'.hwpx';
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('한글 파일(HWPX)을 내려받았습니다. 한글에서 열어 이어서 편집하세요.');
+}
+
+/* 학습지 구성 저장/불러오기 */
+async function saveWorksheet(){
+  if(!state.cart.length){ toast('담긴 문제가 없습니다.'); return; }
+  const ws = { id: uid(), title: $('#s-title').value||'제목 없음', sub: $('#s-sub').value,
+    author: $('#s-author').value, date: $('#s-date').value, ids: state.cart.slice(), createdAt: Date.now() };
+  await DB.put('worksheets', ws);
+  state.worksheets.push(ws);
+  renderWorksheetList(); refreshCounts();
+  toast('학습지 구성이 저장되었습니다.');
+}
+function renderWorksheetList(){
+  const w = $('#ws-list');
+  if(!state.worksheets.length){ w.textContent='저장된 학습지가 없습니다.'; return; }
+  w.innerHTML = state.worksheets.slice().sort((a,b)=>b.createdAt-a.createdAt).map(ws=>`
+    <div class="spread" style="padding:.45rem 0;border-bottom:1px solid var(--line)">
+      <div><b style="color:var(--green)">${esc(ws.title)}</b>
+        <span class="hint"> ${ws.ids.length}문항 · ${new Date(ws.createdAt).toLocaleDateString('ko-KR')}</span></div>
+      <div class="row">
+        <button class="btn ghost sm" onclick="loadWorksheet('${ws.id}')">불러오기</button>
+        <button class="btn danger sm" onclick="deleteWorksheet('${ws.id}')">삭제</button>
+      </div>
+    </div>`).join('');
+}
+function loadWorksheet(id){
+  const ws = state.worksheets.find(w=>w.id===id); if(!ws) return;
+  state.cart = ws.ids.filter(i=>state.problems.some(p=>p.id===i));
+  $('#s-title').value=ws.title; $('#s-sub').value=ws.sub||''; $('#s-author').value=ws.author||''; $('#s-date').value=ws.date||'';
+  persistCart(); renderSheet();
+  toast('학습지 구성을 불러왔습니다.');
+}
+async function deleteWorksheet(id){
+  await DB.del('worksheets', id);
+  state.worksheets = state.worksheets.filter(w=>w.id!==id);
+  renderWorksheetList(); refreshCounts();
+}
+
+/* ═══════════════ 백업/복원/삭제 ═══════════════ */
+function exportJSON(){
+  const data = { app:'sp-math-lab', version:2, exportedAt:new Date().toISOString(),
+    curriculum: CURRICULUM, problems: state.problems, worksheets: state.worksheets };
+  const blob = new Blob([JSON.stringify(data,null,1)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'studypeak-math-lab-백업-'+new Date().toISOString().slice(0,10)+'.json';
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('백업 파일을 내려받았습니다.');
+}
+$('#import-file').addEventListener('change', async e=>{
+  const file = e.target.files[0]; if(!file) return;
+  try{
+    const data = JSON.parse(await file.text());
+    if(!Array.isArray(data.problems)) throw new Error('형식 오류');
+    let n=0;
+    for(const p of data.problems){ if(p&&p.id&&typeof p.question==='string'){ await DB.put('problems',p); n++; } }
+    for(const w of (data.worksheets||[])){ if(w&&w.id) await DB.put('worksheets',w); }
+    if(data.curriculum && typeof data.curriculum==='object'){
+      for(const [s,chs] of Object.entries(data.curriculum)){
+        if(!CURRICULUM[s]) CURRICULUM[s] = {};
+        for(const [c,sects] of Object.entries(chs||{})){
+          if(!CURRICULUM[s][c]) CURRICULUM[s][c] = [];
+          for(const sec of (sects||[])) if(!CURRICULUM[s][c].includes(sec)) CURRICULUM[s][c].push(sec);
+        }
+      }
+      saveCurriculum(); refreshUnitSelects();
+    }
+    state.problems = await DB.getAll('problems');
+    state.worksheets = await DB.getAll('worksheets');
+    refreshCounts(); renderDB();
+    toast(n+'개 문제를 가져왔습니다.');
+  }catch(err){ toast('가져오기 실패: 올바른 백업 파일인지 확인하세요.'); }
+  e.target.value='';
+});
+async function wipeAll(){
+  if(!confirm('정말 모든 데이터를 삭제할까요? 이 작업은 되돌릴 수 없습니다.')) return;
+  if(!confirm('마지막 확인: 백업 없이 삭제하면 복구할 수 없습니다. 삭제할까요?')) return;
+  await DB.clear('problems'); await DB.clear('worksheets');
+  state.problems=[]; state.worksheets=[]; state.cart=[]; persistCart();
+  refreshCounts(); renderDB(); renderSheet();
+  toast('모든 데이터가 삭제되었습니다.');
+}
+
+/* ═══════════════ 샘플 기출 DB ═══════════════ */
+const SEED = [
+  {q:"첫째항이 3, 공차가 4인 등차수열 $\\{a_n\\}$ 에 대하여 $a_{10}$ 의 값을 구하시오.", a:"39", sol:"$a_{10}=3+9\\times4=39$", u:["수학Ⅰ","수열","등차수열"], d:1, ch:[], src:"샘플 기출 DB"},
+  {q:"함수 $f(x)=x^3-3x^2+5$ 의 극댓값을 구하시오.", a:"5", sol:"$f'(x)=3x^2-6x=3x(x-2)$ 이므로 $x=0$에서 극댓값 $f(0)=5$.", u:["수학Ⅱ","미분","도함수의 활용"], d:2, ch:[], src:"샘플 기출 DB"},
+  {q:"$\\lim_{x\\to2}\\dfrac{x^2-4}{x-2}$ 의 값은?", a:"③", sol:"$\\dfrac{(x-2)(x+2)}{x-2}=x+2\\to4$", u:["수학Ⅱ","함수의 극한과 연속","함수의 극한"], d:1, ch:["① 0","② 2","③ 4","④ 6","⑤ 8"], src:"샘플 기출 DB"},
+  {q:"$\\log_2 8 + \\log_3 \\dfrac{1}{9}$ 의 값을 구하시오.", a:"1", sol:"$3+(-2)=1$", u:["수학Ⅰ","지수함수와 로그함수","지수와 로그"], d:1, ch:[], src:"샘플 기출 DB"},
+  {q:"두 사건 $A$, $B$ 에 대하여 $P(A)=\\dfrac{1}{3}$, $P(B|A)=\\dfrac{3}{5}$ 일 때, $P(A\\cap B)$ 의 값은?", a:"②", sol:"$P(A\\cap B)=P(A)P(B|A)=\\dfrac{1}{3}\\cdot\\dfrac{3}{5}=\\dfrac{1}{5}$", u:["확률과 통계","확률","조건부확률"], d:2, ch:["① 1/6","② 1/5","③ 1/4","④ 2/5","⑤ 3/5"], src:"샘플 기출 DB"},
+  {q:"곡선 $y=x^2$ 과 직선 $y=2x$ 로 둘러싸인 부분의 넓이를 구하시오.", a:"4/3", sol:"교점 $x=0,2$. $\\int_0^2(2x-x^2)dx=\\left[x^2-\\dfrac{x^3}{3}\\right]_0^2=4-\\dfrac{8}{3}=\\dfrac{4}{3}$", u:["수학Ⅱ","적분","정적분의 활용"], d:3, ch:[], src:"샘플 기출 DB"},
+  {q:"$0\\le x<2\\pi$ 에서 방정식 $2\\sin x=1$ 의 모든 해의 합은?", a:"④", sol:"$x=\\dfrac{\\pi}{6},\\dfrac{5\\pi}{6}$, 합은 $\\pi$.", u:["수학Ⅰ","삼각함수","삼각함수의 뜻과 그래프"], d:2, ch:["① π/3","② π/2","③ 2π/3","④ π","⑤ 3π/2"], src:"샘플 기출 DB"},
+  {q:"서로 다른 5개의 공을 3명에게 남김없이 나누어 주는 경우의 수를 구하시오. (단, 공을 받지 못하는 사람이 있을 수 있다.)", a:"243", sol:"각 공마다 3가지 선택이 가능하므로 $3^5=243$.", u:["확률과 통계","경우의 수","순열과 조합"], d:2, ch:[], src:"샘플 기출 DB"},
+  {q:"수열 $\\{a_n\\}$ 이 $a_1=2$, $a_{n+1}=a_n+2n$ 을 만족시킬 때, $a_5$ 의 값을 구하시오.", a:"22", sol:"$a_5=2+(2+4+6+8)=22$", u:["수학Ⅰ","수열","수열의 합"], d:2, ch:[], src:"샘플 기출 DB"},
+  {q:"함수 $f(x)=\\begin{cases}x^2+a & (x<1)\\\\ 3x-1 & (x\\ge1)\\end{cases}$ 가 실수 전체에서 연속일 때, 상수 $a$ 의 값을 구하시오.", a:"1", sol:"$x=1$에서 $1+a=2$ 이므로 $a=1$.", u:["수학Ⅱ","함수의 극한과 연속","함수의 연속"], d:2, ch:[], src:"샘플 기출 DB"},
+  {q:"타원 $\\dfrac{x^2}{25}+\\dfrac{y^2}{9}=1$ 의 두 초점 사이의 거리를 구하시오.", a:"8", sol:"$c^2=25-9=16$, $c=4$ 이므로 거리는 $8$.", u:["기하","이차곡선","타원"], d:2, ch:[], src:"샘플 기출 DB"},
+  {q:"$\\lim_{n\\to\\infty}\\dfrac{3n^2+n}{n^2+1}$ 의 값은?", a:"③", sol:"최고차항의 계수 비이므로 $3$.", u:["미적분","수열의 극한","수열의 극한"], d:1, ch:["① 1","② 2","③ 3","④ 4","⑤ ∞"], src:"샘플 기출 DB"},
+  {q:"직선 $3x+4y-12=0$ 과 원점 사이의 거리를 구하시오.", a:"12/5", sol:"$\\dfrac{|{-12}|}{\\sqrt{3^2+4^2}}=\\dfrac{12}{5}$", u:["수학(상)","도형의 방정식","직선의 방정식"], d:2, ch:[], src:"샘플 기출 DB"},
+  {q:"확률변수 $X$ 가 정규분포 $N(50,\\,10^2)$ 을 따를 때, $P(40\\le X\\le60)$ 을 표준정규분포표를 이용해 구한 값은? ($P(0\\le Z\\le1)=0.3413$)", a:"②", sol:"$P(-1\\le Z\\le1)=2\\times0.3413=0.6826$", u:["확률과 통계","통계","정규분포"], d:2, ch:["① 0.3413","② 0.6826","③ 0.8664","④ 0.9544","⑤ 0.9974"], src:"샘플 기출 DB"},
+  {q:"함수 $f(x)=e^x\\sin x$ 에 대하여 $f'(0)$ 의 값을 구하시오.", a:"1", sol:"$f'(x)=e^x(\\sin x+\\cos x)$, $f'(0)=1$.", u:["미적분","미분법","지수·로그함수의 미분"], d:2, ch:[], src:"샘플 기출 DB"},
+  {q:"집합 $A=\\{1,2,3,4\\}$ 의 부분집합 중 원소 $1$ 을 포함하는 부분집합의 개수를 구하시오.", a:"8", sol:"나머지 3개 원소의 포함 여부만 결정하면 되므로 $2^3=8$.", u:["수학(하)","집합과 명제","집합"], d:1, ch:[], src:"샘플 기출 DB"}
+];
+async function loadSeed(){
+  let n=0;
+  for(const s of SEED){
+    const exists = state.problems.some(p=>p.question===s.q);
+    if(exists) continue;
+    const gradeOf = {"수학(상)":"고1","수학(하)":"고1","수학Ⅰ":"고2","수학Ⅱ":"고2","미적분":"고3","확률과 통계":"고3","기하":"고3","중등 수학":"중3"};
+    const p = { id:uid()+n, question:s.q, choices:s.ch, answer:s.a, solution:s.sol, images:[],
+      subject:s.u[0], chapter:s.u[1], section:s.u[2], grade:gradeOf[s.u[0]]||'', srcType:'기출', srcName:s.src, srcYear:'2025',
+      difficulty:s.d, tags:['샘플'], createdAt:Date.now()+n, updatedAt:Date.now()+n };
+    await DB.put('problems',p); state.problems.push(p); n++;
+  }
+  refreshCounts();
+  if(n){ toast('샘플 문제 '+n+'개를 불러왔습니다.'); go('db'); }
+  else toast('샘플 문제가 이미 모두 등록되어 있습니다.');
+}
+
+/* ═══════════════ 통계·초기화 ═══════════════ */
+function refreshCounts(){
+  $('#nav-count').textContent = state.problems.length;
+  $('#usage-db').textContent = state.problems.length.toLocaleString('ko-KR')+' / 1,000 DB';
+  $('#usage-db').classList.toggle('warn', state.problems.length>900);
+  renderDash();
+}
+function renderDash(){
+  $('#st-problems').textContent = state.problems.length;
+  $('#st-units').textContent = new Set(state.problems.map(p=>p.subject+'›'+p.chapter).filter(s=>s!=='›')).size;
+  $('#st-tags').textContent = new Set(state.problems.flatMap(p=>p.tags||[])).size;
+  $('#st-sheets').textContent = state.worksheets.length;
+}
+
+(async function init(){
+  await DB.open();
+  state.problems = await DB.getAll('problems');
+  state.worksheets = await DB.getAll('worksheets');
+  fillSubjectSelect($('#f-subject'));
+  linkUnitSelects($('#f-subject'), $('#f-chapter'), $('#f-section'));
+  fillSubjectSelect($('#b-subject'));
+  fillSubjectSelect($('#filter-subject'), true);
+  $('#f-grade').innerHTML = GRADES.map(g=>`<option>${g}</option>`).join('');
+  $('#b-grade').innerHTML = GRADES.map(g=>`<option>${g}</option>`).join('');
+  $('#filter-grade').innerHTML = '<option value="">학년 전체</option>'+GRADES.slice(1).map(g=>`<option>${g}</option>`).join('');
+  $('#s-date').value = new Date().toISOString().slice(0,10);
+  state.cart = state.cart.filter(id=>state.problems.some(p=>p.id===id));
+  persistCart();
+  refreshCounts();
+})();
+</script>
+</body>
+</html>
