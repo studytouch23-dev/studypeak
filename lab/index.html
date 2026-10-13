@@ -540,6 +540,8 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
             <button class="btn ghost sm" onclick="quickPick(10)">+10</button>
             <button class="btn ghost sm" onclick="quickPick(20)">+20</button>
             <button class="btn ghost sm" onclick="selectAllVisible()">검색 결과 모두 담기</button>
+            <button class="btn ghost sm" onclick="selectPageAll()">이 페이지 전체 선택</button>
+            <button class="btn ghost sm" style="color:var(--danger)" onclick="clearCart()">선택 초기화</button>
           </div>
         </div>
         <p class="hint" style="margin-top:.3rem">체크박스를 <b>Shift+클릭</b>하면 범위를 한 번에 선택합니다. 카드 본문을 클릭하면 상세·수정이 열립니다.</p>
@@ -667,6 +669,35 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
       <button class="btn ghost" onclick="clearAiSettings()">키 삭제</button>
       <span class="hint" id="ai-status" style="white-space:pre-line"></span>
     </div>
+  </div>
+  <div class="card">
+    <h3>☁️ 구글 드라이브 백업·동기화</h3>
+    <p class="hint" style="margin-bottom:.6rem">
+      구글 계정으로 로그인하면 문제 DB를 <b>내 구글 드라이브의 앱 전용 공간</b>에 백업하고,
+      다른 컴퓨터에서 같은 계정으로 로그인해 그대로 복원할 수 있습니다(기기 간 동기화).
+      데이터는 선생님 드라이브에만 저장되며, 별도 아이디·비밀번호가 필요 없습니다.
+    </p>
+    <div class="grid2">
+      <div class="field"><label>구글 OAuth 클라이언트 ID <span class="hint">(최초 1회 설정)</span></label>
+        <input id="gd-cid" placeholder="xxxxx.apps.googleusercontent.com"></div>
+      <div class="field"><label>&nbsp;</label>
+        <button class="btn" onclick="gdSaveClientId()">저장</button></div>
+    </div>
+    <div class="row">
+      <button class="btn" onclick="gdLogin().catch(()=>{})">① 구글 로그인</button>
+      <button class="btn gold" onclick="gdBackup()">② 드라이브에 백업</button>
+      <button class="btn ghost" onclick="gdRestore()">드라이브에서 복원</button>
+    </div>
+    <p class="hint" id="gd-status" style="margin-top:.5rem;white-space:pre-line"></p>
+    <details style="margin-top:.5rem"><summary class="hint" style="cursor:pointer"><b>클라이언트 ID 만드는 방법 (최초 1회, 무료, 약 15분)</b></summary>
+      <ol class="hint" style="margin:.5rem 0 0 1.1rem;line-height:1.8">
+        <li>console.cloud.google.com 접속 → 구글 계정 로그인 → 상단 [프로젝트 선택] → [새 프로젝트] → 이름 예: studypeak-lab → 만들기</li>
+        <li>왼쪽 메뉴 [API 및 서비스] → [라이브러리] → "Google Drive API" 검색 → [사용] 클릭</li>
+        <li>[API 및 서비스] → [OAuth 동의 화면] → User Type <b>외부</b> 선택 → 앱 이름·본인 이메일 입력 → 저장. [테스트 사용자]에 <b>본인 Gmail 추가</b></li>
+        <li>[API 및 서비스] → [사용자 인증 정보] → [+ 사용자 인증 정보 만들기] → [OAuth 클라이언트 ID] → 유형 <b>웹 애플리케이션</b> → "승인된 자바스크립트 원본"에 <code>https://www.studypeak.co.kr</code> 추가 → 만들기</li>
+        <li>생성된 <b>클라이언트 ID</b>(…apps.googleusercontent.com)를 복사해 위 칸에 붙여넣고 [저장] → [① 구글 로그인]</li>
+      </ol>
+    </details>
   </div>
   <div class="card">
     <h3 style="color:var(--danger)">전체 삭제</h3>
@@ -2594,6 +2625,13 @@ function selectAllVisible(){
   persistCart(); renderDB();
   toast('보이는 문제를 모두 담았습니다.');
 }
+function selectPageAll(){ // 현재 페이지(최대 30개)만 선택
+  const PAGE = 30;
+  const ids = (state.viewList||[]).slice((state.page-1)*PAGE, state.page*PAGE);
+  for(const id of ids) if(!state.cart.includes(id)) state.cart.push(id);
+  persistCart(); renderDB();
+  toast(`이 페이지 ${ids.length}문항을 선택했습니다.`);
+}
 function clearCart(){
   state.cart=[]; persistCart();
   if($('#view-db').classList.contains('active')) renderDB();
@@ -2630,6 +2668,8 @@ function clearAiSettings(){
   $('#ai-key').value=''; $('#ai-wsid').value='';
   $('#ai-status').textContent = '키를 삭제했습니다.';
 }
+/* 본문이 그림·표·그래프를 언급하면 AI가 hasFigure=false라 해도 이미지를 지우지 않는다(표·그래프 유실 방지) */
+const AI_FIG_RE = /그림|그래프|도형|도표|다음 표|아래 표|주어진 표|(?<![가-힣])표[를는에와가]/;
 function curriculumBrief(){
   return Object.entries(CURRICULUM).map(([s,ch])=>s+': '+Object.keys(ch).join(', ')).join('\n');
 }
@@ -2638,7 +2678,7 @@ function aiPrompt(){
   +'{"question":"문제 본문 전체. 모든 수식은 $...$ 안에 LaTeX로 정확히 옮기세요(예: $\\\\dfrac{q}{p}$, $x^{2}$). 수식을 임의로 바꾸거나 생략하지 말고, 문자열 안의 줄바꿈은 \\\\n 으로 이스케이프",'
   +'"choices":["① $25$","② $30$"],  // 객관식 선택지. 없으면 []\n'
   +'"answer":"",  // 이미지에 정답 표기가 보일 때만\n'
-  +'"hasFigure": false,  // 그래프·도형·표 그림이 포함되어 있으면 true\n'
+  +'"hasFigure": false,  // 그림·그래프·도형·표가 하나라도 있으면 반드시 true. 글자와 수식뿐일 때만 false\n'
   +'"subject":"",  // 아래 분류표의 과목명 중 하나. 불확실하면 ""\n'
   +'"chapter":"",  // 그 과목의 대단원명 중 하나. 불확실하면 ""\n'
   +'"difficulty": 3}  // 1~5 난이도 추정(정수)\n'
@@ -2768,7 +2808,7 @@ async function aiTranscribeDrafts(){
         if(r.answer && !d.ans) d.ans = String(r.answer);
         if(r.subject && CURRICULUM[r.subject]){ d.aiSub=r.subject; if(r.chapter && CURRICULUM[r.subject][r.chapter]) d.aiChap=r.chapter; }
         const dd = Math.round(+r.difficulty); if(dd>=1 && dd<=5) d.aiDiff = dd;
-        if(r.hasFigure === false) d.img = null;       // 그림 없는 문항: 이미지 제거(내용 중복 방지)
+        if(r.hasFigure === false && !AI_FIG_RE.test(r.question||'')) d.img = null; // 그림 없는 문항만 이미지 제거(본문이 그림·표를 언급하면 보존)
         d.aiDone = true;
         ok++;
       }catch(e){
@@ -2814,7 +2854,7 @@ async function batchAiTranscribe(){
           if(r.chapter && CURRICULUM[r.subject][r.chapter]){ p.chapter = r.chapter; p.section=''; }
         }
         const dd = Math.round(+r.difficulty); if(dd>=1 && dd<=5) p.difficulty = dd;
-        if(r.hasFigure === false){ p.images = []; p.imgN = 0; }
+        if(r.hasFigure === false && !AI_FIG_RE.test(r.question||'')){ p.images = []; p.imgN = 0; }
         p.updatedAt = Date.now();
         await saveProblem(p); ok++;
       }catch(e){
@@ -3444,7 +3484,7 @@ function eqMeasure(s){
       let m = {w:520, h:1100};
       if(s[i]==='{'){ const g = readBraceGroup(s,i); if(g){ m = eqMeasure(g[0]); i = g[1]; } else i++; }
       else if(i<s.length){ m = {w:eqCharW(s[i]), h:1100}; i++; }
-      w += Math.round(m.w*0.62);
+      w += Math.round(m.w*0.72);
       h = Math.max(h, 1100 + Math.round(m.h*0.45));
     } else if(/[A-Za-z]/.test(ch)){
       const word = s.slice(i).match(/^[A-Za-z]+/)[0];
@@ -3479,7 +3519,8 @@ function hwpxEquation(script){
   HWPX_EQ_ID++; EQ_DIAG.count++;
   const m = eqMeasure(script);
   const k = EQ_BASE/1000;
-  const w = Math.min(44000, Math.round((m.w + 300)*k));
+  // 폭은 8% + 350HU 여유 — 추정이 모자라면 뒤 글자와 겹치므로 약간 넉넉하게
+  const w = Math.min(44000, Math.round((m.w*1.08 + 350)*k));
   const h = Math.round((m.h + 100)*k);
   return `<hp:equation id="${HWPX_EQ_ID}" zOrder="${HWPX_EQ_ID-1816200000}" numberingType="EQUATION" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" version="Equation Version 60" baseLine="65" textColor="#000000" baseUnit="${EQ_BASE}" lineMode="CHAR" font="HYhwpEQ"><hp:sz width="${w}" height="${h}" widthRelTo="ABSOLUTE" heightRelTo="ABSOLUTE" protect="0"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:outMargin left="56" right="56" top="56" bottom="56"/><hp:script>${xesc(script)}</hp:script></hp:equation>`;
 }
@@ -3813,11 +3854,8 @@ async function deleteWorksheet(id){
 }
 
 /* ═══════════════ 백업/복원/삭제 ═══════════════ */
-async function exportJSON(){
+async function buildBackupBlob(inclImg){
   // 수만 문항 대응: 커서로 한 건씩 직렬화해 Blob 조각으로 조립 (거대 문자열 생성 금지)
-  const inclImg = state.problems.some(p=>hasImg(p))
-    ? confirm('이미지도 포함해 백업할까요?\n[확인] 포함 (파일이 커질 수 있음) / [취소] 이미지 제외 (가벼움)')
-    : false;
   const parts = ['{"app":"sp-math-lab","version":3,"exportedAt":'+JSON.stringify(new Date().toISOString())
     +',"curriculum":'+JSON.stringify(CURRICULUM)
     +',"worksheets":'+JSON.stringify(state.worksheets)
@@ -3829,42 +3867,143 @@ async function exportJSON(){
     first = false; cnt++;
   });
   parts.push(']}');
-  const blob = new Blob(parts, {type:'application/json'});
+  return { blob: new Blob(parts, {type:'application/json'}), cnt };
+}
+async function exportJSON(){
+  const inclImg = state.problems.some(p=>hasImg(p))
+    ? confirm('이미지도 포함해 백업할까요?\n[확인] 포함 (파일이 커질 수 있음) / [취소] 이미지 제외 (가벼움)')
+    : false;
+  const { blob, cnt } = await buildBackupBlob(inclImg);
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'studypeak-math-lab-백업-'+new Date().toISOString().slice(0,10)+'.json';
   a.click(); URL.revokeObjectURL(a.href);
   toast(`백업 완료 — 문제 ${cnt.toLocaleString('ko-KR')}개`+(inclImg?' (이미지 포함)':' (이미지 제외)'));
 }
+async function importBackupData(data){ // 백업 JSON 객체를 현재 DB에 합침(같은 id는 덮어씀). 개수 반환
+  if(!data || !Array.isArray(data.problems)) throw new Error('형식 오류');
+  let n=0;
+  for(const p of data.problems){
+    if(p&&p.id&&typeof p.question==='string'){ p.imgN=(p.images||[]).length; await DB.put('problems',p); n++; }
+  }
+  for(const w of (data.worksheets||[])){ if(w&&w.id) await DB.put('worksheets',w); }
+  if(data.curriculum && typeof data.curriculum==='object'){
+    for(const [s,chs] of Object.entries(data.curriculum)){
+      if(!CURRICULUM[s]) CURRICULUM[s] = {};
+      for(const [c,sects] of Object.entries(chs||{})){
+        if(!CURRICULUM[s][c]) CURRICULUM[s][c] = [];
+        for(const sec of (sects||[])) if(!CURRICULUM[s][c].includes(sec)) CURRICULUM[s][c].push(sec);
+      }
+    }
+    saveCurriculum(); refreshUnitSelects();
+  }
+  const light = [];
+  await DB.each('problems', p=>light.push(lightenProblem(p)));
+  state.problems = light;
+  state.worksheets = await DB.getAll('worksheets');
+  IMG_CACHE.clear();
+  refreshCounts(); renderDB();
+  return n;
+}
 $('#import-file').addEventListener('change', async e=>{
   const file = e.target.files[0]; if(!file) return;
   try{
-    const data = JSON.parse(await file.text());
-    if(!Array.isArray(data.problems)) throw new Error('형식 오류');
-    let n=0;
-    for(const p of data.problems){
-      if(p&&p.id&&typeof p.question==='string'){ p.imgN=(p.images||[]).length; await DB.put('problems',p); n++; }
-    }
-    for(const w of (data.worksheets||[])){ if(w&&w.id) await DB.put('worksheets',w); }
-    if(data.curriculum && typeof data.curriculum==='object'){
-      for(const [s,chs] of Object.entries(data.curriculum)){
-        if(!CURRICULUM[s]) CURRICULUM[s] = {};
-        for(const [c,sects] of Object.entries(chs||{})){
-          if(!CURRICULUM[s][c]) CURRICULUM[s][c] = [];
-          for(const sec of (sects||[])) if(!CURRICULUM[s][c].includes(sec)) CURRICULUM[s][c].push(sec);
-        }
-      }
-      saveCurriculum(); refreshUnitSelects();
-    }
-    const light = [];
-    await DB.each('problems', p=>light.push(lightenProblem(p)));
-    state.problems = light;
-    state.worksheets = await DB.getAll('worksheets');
-    refreshCounts(); renderDB();
+    const n = await importBackupData(JSON.parse(await file.text()));
     toast(n+'개 문제를 가져왔습니다.');
   }catch(err){ toast('가져오기 실패: 올바른 백업 파일인지 확인하세요.'); }
   e.target.value='';
 });
+/* ═══ 구글 드라이브 백업·동기화 (서버 없음 — 내 드라이브의 앱 전용 공간에 저장) ═══ */
+const GD = { token:null, exp:0 };
+const GD_FILE = 'sp-math-lab-backup.json';
+function gdStatus(t){ const el=$('#gd-status'); if(el) el.textContent=t; }
+function gdSaveClientId(){
+  const v = $('#gd-cid').value.trim();
+  if(v) localStorage.setItem('sp-lab-gcid', v); else localStorage.removeItem('sp-lab-gcid');
+  GD.token=null; GD.exp=0;
+  gdStatus(v?'클라이언트 ID 저장됨 — [① 구글 로그인]을 누르세요.':'클라이언트 ID를 입력하세요.');
+}
+function gdLoadGis(){
+  return new Promise((res,rej)=>{
+    if(window.google && google.accounts && google.accounts.oauth2) return res();
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.onload = ()=>res();
+    s.onerror = ()=>rej(new Error('구글 로그인 구성요소를 불러오지 못했습니다 — 네트워크나 광고차단 확장프로그램을 확인하세요.'));
+    document.head.appendChild(s);
+  });
+}
+async function gdLogin(){
+  const cid = localStorage.getItem('sp-lab-gcid')||'';
+  if(!cid){ gdStatus('❌ 먼저 클라이언트 ID를 입력하고 [저장]을 누르세요 (아래 설정 방법 참고).'); throw new Error('클라이언트 ID 없음'); }
+  if(GD.token && Date.now() < GD.exp - 60000) return GD.token;
+  await gdLoadGis();
+  return new Promise((res,rej)=>{
+    try{
+      const tc = google.accounts.oauth2.initTokenClient({
+        client_id: cid,
+        scope: 'https://www.googleapis.com/auth/drive.appdata',
+        callback: r=>{
+          if(r && r.access_token){
+            GD.token = r.access_token; GD.exp = Date.now() + (+r.expires_in||3600)*1000;
+            gdStatus('✅ 구글 로그인됨 — 이제 [② 드라이브에 백업] 또는 [드라이브에서 복원]을 쓸 수 있습니다.');
+            res(GD.token);
+          } else rej(new Error('로그인이 취소되었거나 실패했습니다.'));
+        },
+        error_callback: e=>rej(new Error('로그인 실패: '+(e && e.type || '팝업이 차단되었을 수 있습니다')))
+      });
+      tc.requestAccessToken();
+    }catch(e){ rej(e); }
+  });
+}
+async function gdFindFile(){
+  const r = await fetch('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name,modifiedTime,size)&q='
+    +encodeURIComponent(`name='${GD_FILE}'`), { headers:{ Authorization:'Bearer '+GD.token } });
+  if(r.status===401){ GD.token=null; throw new Error('로그인이 만료되었습니다 — [① 구글 로그인]을 다시 누르세요.'); }
+  if(!r.ok) throw new Error('드라이브 조회 실패 ('+r.status+')');
+  const j = await r.json();
+  return (j.files && j.files[0]) || null;
+}
+async function gdBackup(){
+  try{
+    await gdLogin();
+    gdStatus('⏳ 백업 데이터를 만드는 중…');
+    const { blob, cnt } = await buildBackupBlob(true);
+    gdStatus(`⏳ 드라이브에 올리는 중… (${(blob.size/1048576).toFixed(1)}MB)`);
+    const existing = await gdFindFile();
+    const initUrl = existing
+      ? `https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=resumable`
+      : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable';
+    const init = await fetch(initUrl, {
+      method: existing?'PATCH':'POST',
+      headers: { Authorization:'Bearer '+GD.token, 'Content-Type':'application/json', 'X-Upload-Content-Type':'application/json' },
+      body: JSON.stringify(existing?{}:{ name:GD_FILE, parents:['appDataFolder'] })
+    });
+    if(!init.ok) throw new Error('업로드 시작 실패 ('+init.status+')');
+    const up = await fetch(init.headers.get('Location'), { method:'PUT', body: blob });
+    if(!up.ok) throw new Error('업로드 실패 ('+up.status+')');
+    localStorage.setItem('sp-lab-gdlast', new Date().toISOString());
+    gdStatus(`✅ 드라이브 백업 완료 — 문제 ${cnt.toLocaleString('ko-KR')}개, ${(blob.size/1048576).toFixed(1)}MB (${new Date().toLocaleString('ko-KR')})`);
+    logJob('드라이브 백업', GD_FILE, cnt+'문항');
+    toast('구글 드라이브에 백업했습니다.');
+  }catch(e){ gdStatus('❌ '+(e.message||e)); }
+}
+async function gdRestore(){
+  try{
+    await gdLogin();
+    gdStatus('⏳ 드라이브에서 백업을 찾는 중…');
+    const f = await gdFindFile();
+    if(!f){ gdStatus('드라이브에 백업이 없습니다 — 먼저 다른 기기에서 [② 드라이브에 백업]을 실행하세요.'); return; }
+    if(!confirm(`드라이브 백업(${new Date(f.modifiedTime).toLocaleString('ko-KR')} 저장)을 이 기기로 가져옵니다.\n현재 기기의 문제와 합쳐지며, 같은 문제는 백업 내용으로 덮어씁니다. 계속할까요?`)) return;
+    gdStatus('⏳ 내려받는 중…');
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, { headers:{ Authorization:'Bearer '+GD.token } });
+    if(!r.ok) throw new Error('내려받기 실패 ('+r.status+')');
+    const n = await importBackupData(await r.json());
+    gdStatus(`✅ 복원 완료 — 문제 ${n.toLocaleString('ko-KR')}개를 가져왔습니다.`);
+    logJob('드라이브 복원', GD_FILE, n+'문항');
+    toast('드라이브 백업에서 '+n+'개 문제를 가져왔습니다.');
+  }catch(e){ gdStatus('❌ '+(e.message||e)); }
+}
 async function wipeAll(){
   if(!confirm('정말 모든 데이터를 삭제할까요? 이 작업은 되돌릴 수 없습니다.')) return;
   if(!confirm('마지막 확인: 백업 없이 삭제하면 복구할 수 없습니다. 삭제할까요?')) return;
@@ -3951,6 +4090,12 @@ function renderDash(){
   if(ai.key) $('#ai-key').value = ai.key;
   if(ai.wsid) $('#ai-wsid').value = ai.wsid;
   $('#ai-model').value = ai.model;
+  const gcid = localStorage.getItem('sp-lab-gcid');
+  if(gcid) $('#gd-cid').value = gcid;
+  const gdlast = localStorage.getItem('sp-lab-gdlast');
+  gdStatus(gcid
+    ? (gdlast ? `마지막 드라이브 백업: ${new Date(gdlast).toLocaleString('ko-KR')}` : '클라이언트 ID 저장됨 — [① 구글 로그인] 후 백업하세요.')
+    : '처음이라면 아래 "클라이언트 ID 만드는 방법"을 열어 최초 1회 설정을 해주세요.');
   if(ai.key) $('#ai-status').textContent = '✅ 키 저장됨 — AI 변환 사용 가능';
  }catch(e){
   console.error(e);
