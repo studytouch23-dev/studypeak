@@ -406,8 +406,10 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
       </div>
       <div class="row" style="margin-top:.6rem">
         <button class="btn" onclick="splitBulk()">문제 분할 미리보기</button>
+        <button class="btn ghost" onclick="convertTextToHWPX()">📥 추출 텍스트 → 한글(HWPX) 변환</button>
         <span class="hint" id="bulk-status"></span>
       </div>
+      <p class="hint" style="margin-top:.3rem">PDF를 한글 파일로 바꾸고 싶을 때는 PDF 업로드 후 [추출 텍스트 → 한글(HWPX) 변환]을 누르세요. DB 등록 없이 변환만 할 수도 있습니다.</p>
     </div>
     <div class="card" id="bulk-preview-card" style="display:none">
       <h3>② 분할 결과 확인 후 일괄 저장</h3>
@@ -527,7 +529,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
     <button class="btn" id="btn-print" onclick="printSheet()">🖨 인쇄 / PDF 저장</button>
     <button class="btn ghost" onclick="saveWorksheet()">학습지 구성 저장</button>
   </div>
-  <p class="hint" style="margin-top:.4rem">HWPX는 한글(한컴오피스)에서 바로 열어 이어서 편집할 수 있습니다. 수식은 <code>$...$</code> 텍스트로 출력되므로 필요한 부분만 한글 수식으로 바꿔 쓰세요.</p>
+  <p class="hint" style="margin-top:.4rem">HWPX는 한글(한컴오피스)에서 바로 열어 이어서 편집할 수 있습니다. <code>$...$</code> 수식은 <b>한글 수식 개체</b>로 변환되어 더블클릭하면 수식 편집기로 열립니다. 변환하지 못한 수식 명령이 있으면 다운로드 시 알려드립니다.</p>
 
   <div class="card" style="margin-top:1rem">
     <h3>저장된 학습지</h3>
@@ -1134,6 +1136,19 @@ async function saveBulk(){
 }
 
 /* ═══════════════ 파일 업로드 파서 (HWPX·PDF·TXT) ═══════════════ */
+/* 한글 수식 스크립트 → LaTeX 근사 역변환 (가져오기용) */
+function hwpEqToLatex(s){
+  s = String(s).replace(/\s+/g,' ').trim();
+  let prev;
+  do{ prev = s; s = s.replace(/\{([^{}]*)\}\s*over\s*\{([^{}]*)\}/g, '\\dfrac{$1}{$2}'); }while(s!==prev);
+  s = s.replace(/\bsqrt\s*\{/g, '\\sqrt{');
+  const R = {leq:'\\le',geq:'\\ge',neq:'\\ne',inf:'\\infty',rarrow:'\\to',larrow:'\\leftarrow',
+    times:'\\times',cdot:'\\cdot',divide:'\\div',pi:'\\pi',alpha:'\\alpha',beta:'\\beta',gamma:'\\gamma',
+    theta:'\\theta',lbrace:'\\{',rbrace:'\\}',cap:'\\cap',cup:'\\cup',lim:'\\lim',int:'\\int',sum:'\\sum',
+    sin:'\\sin',cos:'\\cos',tan:'\\tan',log:'\\log',ln:'\\ln'};
+  s = s.replace(/\b(leq|geq|neq|inf|rarrow|larrow|times|cdot|divide|pi|alpha|beta|gamma|theta|lbrace|rbrace|cap|cup|lim|int|sum|sin|cos|tan|log|ln)\b/g, m=>R[m]);
+  return s;
+}
 async function parseHWPX(file){
   if(!window.JSZip) throw new Error('구성요소(JSZip)가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.');
   const zip = await JSZip.loadAsync(file);
@@ -1149,12 +1164,15 @@ async function parseHWPX(file){
     // 문단(p) 단위로 <hp:t> 텍스트 수집 (표 안 중첩 문단도 중복 없이)
     const order = []; const map = new Map();
     for(const el of doc.getElementsByTagName('*')){
-      if(el.localName!=='t') continue;
+      const inParaNS = el.namespaceURI && el.namespaceURI.includes('paragraph');
+      const isT = el.localName==='t' && inParaNS;
+      const isEq = el.localName==='script' && inParaNS;   // 수식 개체의 스크립트
+      if(!isT && !isEq) continue;
       let a = el.parentNode;
       while(a && a.localName!=='p') a = a.parentNode;
       const key = a || doc;
       if(!map.has(key)){ map.set(key,''); order.push(key); }
-      map.set(key, map.get(key)+el.textContent);
+      map.set(key, map.get(key) + (isT ? el.textContent : ' $'+hwpEqToLatex(el.textContent)+'$ '));
     }
     out.push(order.map(k=>map.get(k)).join('\n'));
   }
@@ -1773,8 +1791,108 @@ const HWPX_SECPR = `<hp:secPr id="" textDirection="HORIZONTAL" spaceColumns="113
 <hp:endNotePr><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/><hp:noteLine length="14692344" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="0" belowLine="567" aboveLine="850"/><hp:numbering type="CONTINUOUS" newNum="1"/><hp:placement place="END_OF_DOCUMENT" beneathText="0"/></hp:endNotePr>
 <hp:pageBorderFill type="BOTH" borderFillIDRef="1" textBorder="PAPER" headerInside="0" footerInside="0" fillArea="PAPER"><hp:offset left="1417" right="1417" top="1417" bottom="1417"/></hp:pageBorderFill>
 </hp:secPr>`;
+/* ── LaTeX → 한글(HWP) 수식 스크립트 변환 ──
+   스펙 정책: 변환 결과는 EQ_DIAG(export diagnostics)에 기록하고,
+   변환하지 못한 명령은 허위로 성공 처리하지 않고 사용자에게 보고한다. */
+const EQ_DIAG = { count:0, unknown:new Set() };
+function resetEqDiag(){ EQ_DIAG.count = 0; EQ_DIAG.unknown.clear(); }
+function eqDiagSummary(){
+  if(!EQ_DIAG.count) return '';
+  let s = ` · 수식 ${EQ_DIAG.count}개를 한글 수식 개체로 변환`;
+  if(EQ_DIAG.unknown.size)
+    s += ` · ⚠ 미지원 명령 ${EQ_DIAG.unknown.size}종(${[...EQ_DIAG.unknown].slice(0,5).join(', ')}) — 해당 수식은 한글에서 열어 확인하세요`;
+  return s;
+}
+function readBraceGroup(s, i){ // s[i]==='{' 가정, 균형 잡힌 그룹 [내용, 다음 인덱스] 반환
+  let depth = 0;
+  for(let j=i; j<s.length; j++){
+    if(s[j]==='{') depth++;
+    else if(s[j]==='}'){ depth--; if(depth===0) return [s.slice(i+1,j), j+1]; }
+  }
+  return null;
+}
+function convertFracs(s){ // \frac{A}{B} → {A} over {B}, 중첩 중괄호 안전
+  const re = /\\[dt]?frac\s*/;
+  for(let guard=0; guard<200; guard++){
+    const m = s.match(re);
+    if(!m) break;
+    const start = m.index; let i = start + m[0].length;
+    if(s[i]!=='{') break;
+    const g1 = readBraceGroup(s, i); if(!g1) break;
+    let k = g1[1]; while(s[k]===' ') k++;
+    if(s[k]!=='{') break;
+    const g2 = readBraceGroup(s, k); if(!g2) break;
+    s = s.slice(0,start)+'{'+convertFracs(g1[0])+'} over {'+convertFracs(g2[0])+'}'+s.slice(g2[1]);
+  }
+  return s;
+}
+function convertSqrts(s){ // \sqrt{A} → sqrt {A}, 중첩 중괄호 안전
+  const re = /\\sqrt\s*\{/;
+  for(let guard=0; guard<200; guard++){
+    const m = s.match(re);
+    if(!m) break;
+    const i = m.index + m[0].length - 1;  // '{' 위치
+    const g = readBraceGroup(s, i); if(!g) break;
+    s = s.slice(0, m.index)+'sqrt {'+g[0]+'}'+s.slice(g[1]);
+  }
+  return s;
+}
+function latexToHwpEq(tex){
+  let s = String(tex);
+  s = s.replace(/\\left\s*/g,'').replace(/\\right\s*/g,'');
+  s = convertFracs(s);
+  s = convertSqrts(s);
+  s = s.replace(/\\begin\{cases\}/g, ' cases{ ').replace(/\\end\{cases\}/g, ' } ');
+  s = s.replace(/\\\\/g, ' # ');          // 행 구분 (cases 등)
+  s = s.replace(/&/g, ' ');
+  s = s.replace(/\\\{/g, ' lbrace ').replace(/\\\}/g, ' rbrace ');
+  s = s.replace(/\\[,;!:]/g, ' ').replace(/\\q?quad/g, '  ');
+  const MAP = {times:'times',cdot:'cdot',div:'divide',pm:'+-',mp:'-+',
+    le:'leq',leq:'leq',ge:'geq',geq:'geq',ne:'neq',neq:'neq',
+    infty:'inf',to:'rarrow',rightarrow:'rarrow',leftarrow:'larrow',
+    Rightarrow:'rarrow',Leftrightarrow:'lrarrow',leftrightarrow:'lrarrow',
+    in:'in',notin:'notin',subset:'subset',supset:'supset',cap:'cap',cup:'cup',
+    emptyset:'emptyset',varnothing:'emptyset',therefore:'therefore',because:'because',
+    pi:'pi',theta:'theta',alpha:'alpha',beta:'beta',gamma:'gamma',delta:'delta',
+    lambda:'lambda',mu:'mu',sigma:'sigma',omega:'omega',phi:'phi',rho:'rho',
+    epsilon:'epsilon',varepsilon:'epsilon',
+    sin:'sin',cos:'cos',tan:'tan',sec:'sec',csc:'csc',cot:'cot',
+    log:'log',ln:'ln',lim:'lim',int:'int',sum:'sum',prod:'prod',max:'max',min:'min',
+    overline:'bar',bar:'bar',vec:'vec',triangle:'triangle',angle:'angle',
+    circ:'circ',degree:'circ',equiv:'equiv',approx:'approx',sim:'sim',
+    cdots:'cdots',ldots:'ldots',dots:'cdots',sqrt:'sqrt'};
+  s = s.replace(/\\([a-zA-Z]+)/g, (m,w)=>{
+    if(MAP[w]===undefined){ EQ_DIAG.unknown.add('\\'+w); return ' '+w+' '; }
+    return ' '+MAP[w]+' ';
+  });
+  return s.replace(/\s+/g,' ').trim();
+}
+let HWPX_EQ_ID = 1816200000;
+function hwpxEquation(script){
+  HWPX_EQ_ID++; EQ_DIAG.count++;
+  const plain = script.replace(/[{}^_]/g,'');
+  const w = Math.max(800, Math.min(30000, Math.round(plain.length*255)+200));
+  const h = /over|int|lim|sum|cases|sqrt/.test(script) ? 2050 : 1150;
+  return `<hp:equation id="${HWPX_EQ_ID}" zOrder="${HWPX_EQ_ID-1816200000}" numberingType="EQUATION" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" version="Equation Version 60" baseLine="65" textColor="#000000" baseUnit="1000" lineMode="CHAR" font="HYhwpEQ"><hp:sz width="${w}" height="${h}" widthRelTo="ABSOLUTE" heightRelTo="ABSOLUTE" protect="0"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:outMargin left="56" right="56" top="56" bottom="56"/><hp:script>${xesc(script)}</hp:script></hp:equation>`;
+}
+/* $...$ / $$...$$ 구간을 한글 수식 개체 run으로, 나머지는 텍스트 run으로 */
+function hwpxRuns(text, charPr){
+  const parts = String(text).split(/(\$\$[^$]+\$\$|\$[^$\n]+\$)/);
+  let out = '';
+  for(const part of parts){
+    if(!part) continue;
+    if(part.length>3 && part.startsWith('$$') && part.endsWith('$$'))
+      out += `<hp:run charPrIDRef="${charPr}">${hwpxEquation(latexToHwpEq(part.slice(2,-2)))}</hp:run>`;
+    else if(part.length>2 && part.startsWith('$') && part.endsWith('$'))
+      out += `<hp:run charPrIDRef="${charPr}">${hwpxEquation(latexToHwpEq(part.slice(1,-1)))}</hp:run>`;
+    else
+      out += `<hp:run charPrIDRef="${charPr}"><hp:t>${xesc(part)}</hp:t></hp:run>`;
+  }
+  return out || `<hp:run charPrIDRef="${charPr}"><hp:t></hp:t></hp:run>`;
+}
 function hwpxP(text, charPr, paraPr, extraRun){
-  return `<hp:p paraPrIDRef="${paraPr||0}" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="${charPr||0}">${extraRun||''}<hp:t>${xesc(text)}</hp:t></hp:run></hp:p>`;
+  const runs = (extraRun?`<hp:run charPrIDRef="${charPr||0}">${extraRun}</hp:run>`:'') + hwpxRuns(text, charPr||0);
+  return `<hp:p paraPrIDRef="${paraPr||0}" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">${runs}</hp:p>`;
 }
 function hwpxSectionXML(title, bodyParas){
   const first = hwpxP(title, 2, 1,
@@ -1789,6 +1907,7 @@ async function downloadHWPX(){
   const list = cartProblems();
   if(!list.length){ toast('담긴 문제가 없습니다.'); return; }
   if(!window.JSZip){ toast('구성요소(JSZip)가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
+  resetEqDiag();
   const title = $('#s-title').value||'수학 연습 문제';
   const sub = $('#s-sub').value, author = $('#s-author').value, date = $('#s-date').value;
   const withMeta = $('#s-meta').checked;
@@ -1826,6 +1945,10 @@ async function downloadHWPX(){
     });
   }
 
+  await saveHwpxFile(title, paras);
+  toast('한글 파일(HWPX) 다운로드 완료'+eqDiagSummary());
+}
+async function saveHwpxFile(title, paras){
   const zip = new JSZip();
   zip.file('mimetype', 'application/hwp+zip', {compression:'STORE'});
   zip.file('version.xml', HWPX_VERSION_XML);
@@ -1840,7 +1963,18 @@ async function downloadHWPX(){
   a.href = URL.createObjectURL(blob);
   a.download = title.replace(/[\\/:*?"<>|]/g,'_')+'.hwpx';
   a.click(); URL.revokeObjectURL(a.href);
-  toast('한글 파일(HWPX)을 내려받았습니다. 한글에서 열어 이어서 편집하세요.');
+}
+/* PDF 등에서 추출한 텍스트를 통째로 한글(HWPX) 문서로 변환 — '한글 타이핑' 역할 */
+async function convertTextToHWPX(){
+  const text = $('#bulk-text').value.trim();
+  if(!text){ toast('먼저 파일을 올리거나 텍스트를 붙여넣으세요.'); return; }
+  if(!window.JSZip){ toast('구성요소(JSZip)가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
+  resetEqDiag();
+  const title = $('#b-srcname').value.trim() || '변환 문서';
+  const paras = [];
+  text.split('\n').forEach(l=>paras.push(hwpxP(l, 0, 0)));
+  await saveHwpxFile(title, paras);
+  toast('추출 텍스트를 한글(HWPX) 파일로 변환했습니다'+eqDiagSummary());
 }
 
 /* 학습지 구성 저장/불러오기 */
