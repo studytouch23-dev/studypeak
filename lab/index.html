@@ -2600,14 +2600,14 @@ function aiHeaders(){ // 공통 API 헤더. 워크스페이스 ID가 저장돼 �
 const AI_WS_HELP = '이 API 키는 워크스페이스에 속하지 않은 키입니다. 해결 방법 두 가지 중 하나를 쓰세요.\n'
   +'① (권장) console.anthropic.com → API Keys → [Create Key]에서 Workspace를 선택해 새 키를 만들고, 여기 키 칸에 바꿔 넣고 [저장]\n'
   +'② console.anthropic.com → Settings → Workspaces에서 워크스페이스 ID(wrkspc_...)를 복사해 아래 "워크스페이스 ID" 칸에 넣고 [저장]';
-function saveAiSettings(){
+function saveAiSettings(quiet){
   const key = $('#ai-key').value.trim();
   if(key) localStorage.setItem('sp-lab-apikey', key);
   localStorage.setItem('sp-lab-aimodel', $('#ai-model').value);
-  const wsid = $('#ai-wsid').value.trim();
+  const wsid = $('#ai-wsid').value.replace(/\s+/g,'');
   if(wsid) localStorage.setItem('sp-lab-wsid', wsid);
   else localStorage.removeItem('sp-lab-wsid');
-  $('#ai-status').textContent = aiSettings().key ? '✅ 저장됨 — AI 변환을 사용할 수 있습니다. [연결 테스트]로 확인해 보세요.' : '키를 입력하세요.';
+  if(!quiet) $('#ai-status').textContent = aiSettings().key ? '✅ 저장됨 — AI 변환을 사용할 수 있습니다. [연결 테스트]로 확인해 보세요.' : '키를 입력하세요.';
 }
 function clearAiSettings(){
   localStorage.removeItem('sp-lab-apikey');
@@ -2751,9 +2751,11 @@ async function batchAiTranscribe(){
 /* AI 연결 테스트: 작은 텍스트 요청으로 키·네트워크·모델을 즉석 진단 */
 async function testAiConnection(){
   const st = $('#ai-status');
-  const {key, model} = aiSettings();
-  if(!key){ st.textContent = '❌ 키를 먼저 입력하고 [저장]을 누르세요.'; return; }
-  st.textContent = '⏳ 연결 테스트 중…';
+  saveAiSettings(true);                       // 화면의 입력값을 먼저 저장하고 테스트 ([저장] 생략 실수 방지)
+  const {key, model, wsid} = aiSettings();
+  if(!key){ st.textContent = '❌ 키를 먼저 입력하세요.'; return; }
+  if(/^sk-ant-admin/.test(key)){ st.textContent = '❌ 이 키는 관리용(Admin) 키라 AI 변환에 쓸 수 없습니다. console.anthropic.com → API Keys에서 일반 API 키(sk-ant-api03-...)를 새로 발급해 넣으세요.'; return; }
+  st.textContent = '⏳ 연결 테스트 중…'+(wsid?` (워크스페이스 ID ${wsid.slice(0,14)}… 포함)`:'');
   try{
     let r;
     try{
@@ -2770,7 +2772,9 @@ async function testAiConnection(){
       let detail = t.slice(0,200);
       try{ const j = JSON.parse(t); if(j.error && j.error.message) detail = j.error.message; }catch(e){}
       if(r.status===401) throw new Error('키가 올바르지 않습니다 (401): '+detail+' — console.anthropic.com에서 발급한 sk-ant-api... 키인지 확인하세요.');
-      if(r.status===400 && /workspace/i.test(detail)) throw new Error('워크스페이스 설정 필요 (400).\n'+AI_WS_HELP);
+      if(r.status===400 && /workspace/i.test(detail)) throw new Error(wsid
+        ? `워크스페이스 ID(${wsid})를 보냈는데도 거부되었습니다 (400).\n· ID가 console.anthropic.com → Settings → Workspaces에 보이는 wrkspc_... 값과 정확히 같은지 확인하세요(복사 시 앞뒤 글자 누락 주의).\n· 그래도 안 되면 API Keys → [Create Key]에서 Workspace를 선택해 새 키를 만들어 넣는 것이 가장 확실합니다.\n· 서버 응답: ${detail.slice(0,140)}`
+        : '워크스페이스 설정 필요 (400).\n'+AI_WS_HELP);
       if(r.status===400 && /credit|balance/i.test(detail)) throw new Error('크레딧 부족 (400): '+detail+' — console.anthropic.com → Billing에서 크레딧을 충전하세요.');
       throw new Error('API 오류 '+r.status+': '+detail);
     }
