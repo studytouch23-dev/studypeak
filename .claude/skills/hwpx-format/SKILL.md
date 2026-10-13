@@ -16,6 +16,10 @@ description: HWPX(한글 OWPML) 파일 생성·파싱과 한글 수식 스크립
 > - 단 나누기/쪽 나누기는 빈 문단이 아니라 **다음 슬롯 문단의** `columnBreak="1"`/`pageBreak="1"` 속성으로.
 > - 모의고사 전용 header.xml은 `mockHeaderXML()`(charPr 0~7, paraPr 0~6, borderFill 3=아래선 0.4mm, 4=사방 0.12mm).
 >   수식 크기는 전역 `EQ_BASE`(기본 1000, 모의고사 1100)로 바꾸고 **finally에서 복원**할 것.
+> - **내어쓰기(번호 문단)**: 한글은 `left=0 + intent=음수`로 저장한다(실파일 확인).
+>   `left=1130 + intent=-1130`처럼 쓰면 첫 줄이 left만큼 밀린다 — 첫 줄은 left 위치, 이후 줄은 |intent| 위치.
+> - 문항 이미지는 `hwpxImageParas`가 `trimImageWhite()`로 흰 여백을 자르고 내용 없는 이미지는 버린다
+>   (AI 변환이 남긴 크롭 여백·빈 이미지 대책). 넘침 추정(`mockEstimateHU`)도 트리밍 후 크기 기준.
 
 lab/index.html의 구현은 실제 한컴오피스에서 열리는 것이 사용자 확인됨. 구조 변경 금지,
 확장만 할 것.
