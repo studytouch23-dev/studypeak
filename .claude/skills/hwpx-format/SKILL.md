@@ -64,7 +64,9 @@ BinData/imageN.jpg        이미지 (registerHwpxBin)
 | `LEQ/le, GEQ/ge, !=` | `\le \ge \ne` | 소문자 `le`도 실파일에 등장 |
 | `cases{a # b}` | `\begin{cases}a\\b\end{cases}` | `#`=행 구분 |
 | `vec X` / `vec{X}` / `bar{X}` | `\vec{X}` / `\overline{X}` | 중괄호 없는 형태도 옴 |
-| `rm, it` | 제거 | 서체 전환 |
+| `rm, it` | 제거 | 서체 전환. 내보내기는 `\mathrm/\text/\operatorname/\mathbf → rm`, `\mathit → it` |
+| `PI, SIGMA, DELTA…`(전부 대문자) | `\Pi \Sigma \Delta…` | 대문자 그리스는 대문자 토큰. 소문자 `pi`=π와 구분 |
+| `{}_{3} H _{2}` | `_{3}H_{2}` (조합·중복순열) | 첨자로 시작하면 빈 그룹 `{}`를 앞에 붙여야 렌더됨 — 내보내기가 `^/_` 선행 시 자동 보정 |
 | `prime` | `'` | |
 | `THEREFORE, sim, inf, rarrow` | `\therefore \sim \infty \to` | |
 | `lim _{...}, int, sum` | `\lim_{...} \int \sum` | |
