@@ -1582,7 +1582,7 @@ async function parsePDF(file){
       const s = it.str.trim();
       pg.text += s;
       if(it.y < pg.h*0.06) continue;                       // 꼬리말(페이지 번호) 제외
-      if(/^\d{1,2}$/.test(s)) pg.anchors.push({num:String(+s), x:it.x, y:it.y});
+      if(/^\d{1,2}\.?$/.test(s)) pg.anchors.push({num:String(parseInt(s,10)), x:it.x, y:it.y});
       else pg.bodyLen += s.length;
     }
     pg.isQuickAns = pg.text.includes('빠른정답') || pg.text.includes('빠른 정답');
@@ -1590,23 +1590,21 @@ async function parsePDF(file){
     anchorTotal += pg.anchors.length; bodyTotal += pg.bodyLen;
     pages.push(pg);
   }
-  // 본문 텍스트가 거의 없고 번호 앵커만 있으면 "이미지형 PDF"로 판단
-  const imageMode = anchorTotal >= 3 && (bodyTotal/pages.length) < 150;
-  if(!imageMode){
-    const out = [];
-    for(const pg of pages){
-      let line='', lastY=null; const lines=[];
-      for(const it of pg.items){
-        if(lastY!==null && Math.abs(it.y-lastY)>2.5){ lines.push(line); line=''; }
-        line += it.str; lastY = it.y;
-      }
-      lines.push(line);
-      out.push(lines.join('\n'));
+  // 추출 텍스트는 항상 만들어 둔다(해설 업로드·"텍스트만 추출" 선택용)
+  const out = [];
+  for(const pg of pages){
+    let line='', lastY=null; const lines=[];
+    for(const it of pg.items){
+      if(lastY!==null && Math.abs(it.y-lastY)>2.5){ lines.push(line); line=''; }
+      line += it.str; lastY = it.y;
     }
-    return out.join('\n');
+    lines.push(line);
+    out.push(lines.join('\n'));
   }
-  // 이미지형: 페이지 선택 → 영역 인식·보정 에디터로 넘김
-  return { kind:'pdfEditor', pdf, pages, fileName:file.name };
+  // 본문 텍스트가 거의 없고 번호 앵커만 있으면 "이미지형 PDF"로 판단.
+  // 어느 쪽이든 영역 인식 에디터로 열 수 있도록 pdf를 함께 반환한다.
+  const imageMode = anchorTotal >= 3 && (bodyTotal/pages.length) < 150;
+  return { kind:'pdfEditor', pdf, pages, fileName:file.name, text:out.join('\n'), imageMode };
 }
 /* ── 번호 앵커 기반 영역 자동 인식: top-left 좌표계 rect 목록 ── */
 function detectRegionsByAnchors(pg, pageIdx){
@@ -2012,15 +2010,28 @@ async function handleUploadFiles(files, targetSel){
           continue;
         }
       }
-      const res = await extractTextFromFile(file);
+      let res = await extractTextFromFile(file);
       if(hash){ seen[hash] = {name:file.name, date:new Date().toISOString().slice(0,10)}; }
       if(targetSel==='#bulk-text' && !$('#b-srcname').value.trim())
         $('#b-srcname').value = file.name.replace(/\.(hwpx|hwp|pdf|txt)$/i,'');
       if(res && res.kind==='pdfEditor'){
-        // 이미지형 PDF: 페이지 선택 → 영역 인식·보정 에디터
-        status.innerHTML = `📄 <b>${esc(file.name)}: 이미지형 PDF 감지</b> — 페이지를 선택하고 문항 영역을 확인하세요.`;
-        await openPdfEditor(res);
-        ok++; continue;
+        // PDF는 종류와 관계없이 영역 인식 에디터로 열 수 있다.
+        // 해설 파일 업로드는 텍스트 추출만, 본문 업로드는 글자 있는 PDF일 때 선택지를 준다.
+        let useEditor = targetSel==='#bulk-text';
+        if(useEditor && !res.imageMode && String(res.text).trim()){
+          useEditor = confirm(
+            `‘${file.name}’ 은(는) 글자가 포함된 PDF입니다. 어떻게 처리할까요?\n\n`+
+            `[확인] 영역 인식으로 열기 (권장)\n — 문항별 범위를 지정해 이미지로 자른 뒤, AI 변환으로 수식·그림을 살린 한글(HWPX)까지 이어집니다.\n\n`+
+            `[취소] 텍스트만 추출\n — 번호 기준 자동 분할. 빠르지만 수식·그림·배치가 깨질 수 있습니다.`);
+        }
+        if(useEditor){
+          status.innerHTML = res.imageMode
+            ? `📄 <b>${esc(file.name)}: 이미지형 PDF 감지</b> — 페이지를 선택하고 문항 영역을 확인하세요.`
+            : `📄 <b>${esc(file.name)}: 영역 인식으로 엽니다</b> — 페이지를 선택하고 문항 영역을 확인하세요.`;
+          await openPdfEditor(res);
+          ok++; continue;
+        }
+        res = res.text;                                   // 텍스트 추출 선택(또는 해설 파일)
       }
       const text = String(res).trim();
       if(!text){ status.textContent = `⚠ ${file.name} — 추출된 텍스트가 없습니다 (스캔본 PDF는 글자 인식이 필요합니다).`; continue; }
