@@ -126,6 +126,39 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 .toolbar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.8rem}
 .toolbar input[type=search]{flex:1;min-width:220px}
 .toolbar select{width:auto}
+/* 검색·작업 레이아웃: 좌측 태그 트리 + 카드 그리드 */
+.db-layout{display:grid;grid-template-columns:225px minmax(0,1fr);gap:1rem;align-items:start}
+@media(max-width:980px){.db-layout{grid-template-columns:1fr}}
+.tagtree{padding:.7rem}
+.tagtree .tabs3{display:flex;gap:.25rem;margin-bottom:.6rem}
+.tagtree .tabs3 button{flex:1;border:1px solid var(--line);background:#fff;border-radius:8px;padding:.35rem 0;font-size:.82rem;font-weight:700;color:var(--muted)}
+.tagtree .tabs3 button.active{background:var(--green);border-color:var(--green);color:#fff}
+.titem{display:flex;align-items:center;gap:.4rem;padding:.38rem .5rem;border-radius:7px;font-size:.85rem;cursor:pointer}
+.titem:hover{background:#f3f5f0}
+.titem.sel{background:#eef2ec;color:var(--green);font-weight:800}
+.titem.sub{margin-left:.9rem;font-size:.8rem}
+.titem .n{margin-left:auto;font-size:.7rem;color:var(--muted);background:#f1f1ea;border-radius:99px;padding:0 .4rem}
+#tree-body{max-height:480px;overflow:auto;margin-bottom:.5rem}
+.mode-tgl{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.mode-tgl button{border:0;background:#fff;padding:.4rem .75rem;font-size:.84rem;font-weight:700;color:var(--muted)}
+.mode-tgl button.active{background:var(--green);color:#fff}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(265px,1fr));gap:.7rem;align-items:start}
+.pcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:.7rem .8rem;display:flex;flex-direction:column;gap:.4rem}
+.pcard.selected{outline:2px solid var(--gold);background:#fffdf6}
+.pc-top{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+.pc-top input{width:auto;transform:scale(1.15)}
+.pc-no{color:var(--muted);font-size:.78rem}
+.pc-text{font-size:.86rem;max-height:9.5em;overflow:hidden;cursor:pointer;white-space:pre-wrap;word-break:break-word}
+.pc-text:hover{color:var(--green)}
+.pcard .pimgs{cursor:pointer}
+.pcard .pimgs img{max-height:120px;max-width:100%}
+.pc-tags{border-top:1px solid #f0efe8;padding-top:.4rem}
+.trow{display:flex;gap:.35rem;align-items:flex-start;margin-bottom:.15rem}
+.trow .tl{flex:0 0 2.4rem;font-size:.7rem;font-weight:800;color:var(--muted);padding-top:.2rem}
+.pc-date{font-size:.7rem;color:#b2b5ac;text-align:right}
+#pager{display:flex;gap:.3rem;justify-content:center;align-items:center;margin-top:1rem;flex-wrap:wrap}
+.preset-chip{display:inline-flex;align-items:center;gap:.3rem;background:#eef2ec;border:1px solid #d7e0d4;border-radius:99px;padding:.15rem .6rem;font-size:.78rem;font-weight:700;color:var(--green);cursor:pointer;margin:.1rem .2rem .1rem 0}
+.preset-chip .x{opacity:.5}.preset-chip .x:hover{opacity:1}
 .plist{display:flex;flex-direction:column;gap:.7rem}
 .pitem{background:#fff;border:1px solid var(--line);border-radius:12px;padding:.9rem 1rem;display:flex;gap:.8rem}
 .pitem.selected{outline:2px solid var(--gold);background:#fffdf6}
@@ -423,6 +456,10 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
       <div id="bulk-preview" class="plist" style="max-height:420px;overflow:auto;margin:.6rem 0"></div>
       <button class="btn gold" onclick="saveBulk()">전체 저장</button>
     </div>
+    <div class="card">
+      <h3>최근 작업 내역</h3>
+      <div id="joblog" class="hint">아직 작업 내역이 없습니다.</div>
+    </div>
   </div>
 </section>
 
@@ -431,36 +468,64 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
   <h2 class="vt">문제 검색·작업</h2>
   <p class="vd">내 분류 기준 그대로 찾고, 키워드가 기억나지 않으면 <b>유사 문제 검색</b>으로 의미가 비슷한 문제를 찾습니다.</p>
 
-  <div class="card">
-    <div class="toolbar">
-      <input type="search" id="q" placeholder="🔍 키워드 검색 — 또는 문장을 쓰고 [유사 검색]을 눌러보세요 (예: 도르래가 나오는 역학 문제)">
-      <button class="btn" id="btn-search" onclick="state.lastResults=null;renderDB()">검색</button>
-      <button class="btn gold" onclick="semanticSearch()">유사 검색</button>
-    </div>
-    <div class="toolbar">
-      <select id="filter-subject"><option value="">과목 전체</option></select>
-      <select id="filter-chapter"><option value="">대단원 전체</option></select>
-      <select id="filter-grade"><option value="">학년 전체</option></select>
-      <select id="filter-reviewed"><option value="">검수 전체</option><option value="1">검수완료</option><option value="0">미검수</option></select>
-      <select id="filter-diff"><option value="">난이도 전체</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
-      <select id="filter-src"><option value="">출처 전체</option></select>
-      <select id="sort"><option value="new">최신순</option><option value="old">오래된순</option><option value="diff-desc">난이도 높은순</option><option value="diff-asc">난이도 낮은순</option></select>
-      <button class="btn ghost sm" onclick="resetFilters()">필터 초기화</button>
-      <button class="btn ghost sm" onclick="findDuplicates()">중복 검사</button>
-    </div>
-    <div class="spread">
-      <span class="hint" id="db-count"></span>
-      <div class="row">
-        <span class="hint">빠른 담기:</span>
-        <button class="btn ghost sm" onclick="quickPick(5)">+5</button>
-        <button class="btn ghost sm" onclick="quickPick(10)">+10</button>
-        <button class="btn ghost sm" onclick="quickPick(20)">+20</button>
-        <button class="btn ghost sm" onclick="selectAllVisible()">보이는 문제 모두 담기</button>
+  <div class="db-layout">
+    <aside class="card tagtree">
+      <div class="tabs3" id="tree-tabs">
+        <button data-tab="unit" class="active">단원</button>
+        <button data-tab="src">출처</button>
+        <button data-tab="mine">나만의</button>
       </div>
+      <div id="tree-body"></div>
+      <button class="btn ghost sm" style="width:100%" onclick="resetFilters()">선택 해제</button>
+    </aside>
+    <div style="min-width:0">
+      <div class="card">
+        <div class="row" style="margin-bottom:.5rem">
+          <div class="mode-tgl">
+            <button id="sm-kw" class="active" onclick="setSearchMode('kw')">🔎 키워드</button>
+            <button id="sm-sem" onclick="setSearchMode('sem')">💬 상황 설명</button>
+            <button id="sm-img" onclick="setSearchMode('img')">🖼 이미지</button>
+          </div>
+          <span class="hint"># 문제 번호로 검색 — <b>#12</b> 처럼 입력</span>
+        </div>
+        <div class="toolbar" style="margin-bottom:.5rem">
+          <input type="search" id="q" placeholder="정확한 단어 또는 #번호로 검색 (예: 이차방정식, #12)">
+          <input type="file" id="q-img" accept="image/*" style="display:none">
+          <button class="btn gold" id="btn-search" onclick="doSearch()">검색 →</button>
+        </div>
+        <div class="toolbar">
+          <select id="filter-subject"><option value="">과목 전체</option></select>
+          <select id="filter-chapter"><option value="">대단원 전체</option></select>
+          <select id="filter-grade"><option value="">학년 전체</option></select>
+          <select id="filter-reviewed"><option value="">검수 전체</option><option value="1">검수완료</option><option value="0">미검수</option></select>
+          <select id="filter-diff"><option value="">난이도 전체</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
+          <select id="filter-src"><option value="">출처 전체</option></select>
+          <select id="sort"><option value="new">최신순</option><option value="old">오래된순</option><option value="diff-desc">난이도 높은순</option><option value="diff-asc">난이도 낮은순</option></select>
+          <button class="btn ghost sm" onclick="resetFilters()">필터 초기화</button>
+          <button class="btn ghost sm" onclick="findDuplicates()">중복 검사</button>
+        </div>
+        <div class="row" style="margin-bottom:.3rem">
+          <span class="hint">📌 내 검색 필터:</span>
+          <span id="preset-list"></span>
+          <button class="btn ghost sm" onclick="savePreset()">현재 필터 저장</button>
+        </div>
+        <div class="spread">
+          <span class="hint" id="db-count"></span>
+          <div class="row">
+            <span class="hint">빠른 담기:</span>
+            <button class="btn ghost sm" onclick="quickPick(5)">+5</button>
+            <button class="btn ghost sm" onclick="quickPick(10)">+10</button>
+            <button class="btn ghost sm" onclick="quickPick(20)">+20</button>
+            <button class="btn ghost sm" onclick="selectAllVisible()">검색 결과 모두 담기</button>
+          </div>
+        </div>
+        <p class="hint" style="margin-top:.3rem">체크박스를 <b>Shift+클릭</b>하면 범위를 한 번에 선택합니다. 카드 본문을 클릭하면 상세·수정이 열립니다.</p>
+      </div>
+
+      <div class="pgrid" id="plist"></div>
+      <div id="pager"></div>
     </div>
   </div>
-
-  <div class="plist" id="plist"></div>
 </section>
 
 <!-- ───────────────── 학습지 생성·관리 ───────────────── -->
@@ -699,7 +764,9 @@ const state = {
   points: JSON.parse(localStorage.getItem('sp-lab-points')||'{}'),
   pendingImages: [], bulkDrafts: [],
   lastResults: null,
-  tagSubject: null, tagChapter: null   // 단원태그 편집기 선택 상태
+  tagSubject: null, tagChapter: null,  // 단원태그 편집기 선택 상태
+  page: 1, searchMode: 'kw', treeTab: 'unit', filterTag: null,
+  imgHashCache: new Map(), lastChecked: null
 };
 const VIEW_TITLES = {dashboard:'대시보드', tags:'태그 관리 · 단원태그', add:'문제 DB 관리 · 문제 등록',
   db:'문제 DB 관리 · 문제 검색·작업', sheet:'학습지 생성·관리', data:'백업·데이터'};
@@ -1077,8 +1144,8 @@ function splitBulk(){
   const raw = $('#bulk-text').value;
   if(!raw.trim()){ toast('파일을 올리거나 텍스트를 먼저 붙여넣으세요.'); return; }
   const parts = splitProblemsText(raw);
-  // 해설 매칭: 같은 번호(1. 2. 3))끼리 짝지음
-  const solMap = {};
+  // 해설 textarea 매칭: 같은 번호(1. 2. 3))끼리 짝지음
+  const solMap = {}, ansMap = {};
   const solRaw = $('#bulk-sol').value;
   if(solRaw.trim()){
     for(const s of splitProblemsText(solRaw)){
@@ -1086,20 +1153,48 @@ function splitBulk(){
       if(num) solMap[num] = s.replace(NUM_HEAD,'');
     }
   }
-  state.bulkDrafts = parts.map(t=>{
+  // 본문에 섞여 있는 "N. 정답: ..." 청크(내보낸 학습지의 해설 섹션 등)는 문제가 아니라
+  // 정답·해설로 자동 분리하고, 번호 없는 머리글(제목·날짜·이름칸)은 제외한다.
+  const SOL_HEAD = /^\s*(?:문제\s*)?\[?(\d{1,3})\]?\s*[.)번]?\s*정답\s*[:：]\s*/;
+  let solChunks = 0;
+  const drafts = [];
+  for(let t of parts){
+    t = t.replace(/\n\s*정답 및 해설\s*$/,'').trim();
+    if(!t) continue;
+    const sm = t.match(SOL_HEAD);
+    if(sm){
+      const n = sm[1], rest = t.slice(sm[0].length).trim();
+      const lines = rest.split('\n');
+      if(!ansMap[n]) ansMap[n] = lines[0].trim();
+      if(!solMap[n] && lines.length>1) solMap[n] = lines.slice(1).join('\n').trim();
+      solChunks++; continue;
+    }
+    drafts.push(t);
+  }
+  const numbered = drafts.filter(t=>headNum(t));
+  const headerChunks = numbered.length>=2 ? drafts.length - numbered.length : 0;
+  const finalDrafts = numbered.length>=2 ? numbered : drafts;
+  state.bulkDrafts = finalDrafts.map(t=>{
     const num = headNum(t);
-    return { text:t, num, sol: (num && solMap[num]) ? solMap[num] : '' };
+    return { text:t, num,
+      sol: (num && solMap[num]) ? solMap[num] : '',
+      ans: (num && ansMap[num]) ? ansMap[num] : '' };
   });
-  const matched = state.bulkDrafts.filter(d=>d.sol).length;
+  const matched = state.bulkDrafts.filter(d=>d.sol||d.ans).length;
   $('#bulk-preview-card').style.display='block';
   rerenderBulk();
-  $('#bulk-status').textContent = parts.length+'개 문제로 분할'+(matched?` · 해설 ${matched}개 자동 매칭`:'');
+  $('#bulk-status').textContent = finalDrafts.length+'개 문제로 분할'
+    +(matched?` · 정답·해설 ${matched}개 자동 매칭`:'')
+    +(solChunks?` · 해설 청크 ${solChunks}개 분리`:'')
+    +(headerChunks?` · 머리글 ${headerChunks}개 제외`:'');
 }
 function rerenderBulk(){
   $('#bulk-preview').innerHTML = state.bulkDrafts.map((d,i)=>
-    `<div class="pitem"><div style="font-weight:900;color:var(--gold-2)">${i+1}</div>
-      <div class="body"><div class="ptext">${esc(d.text)}</div>
-        ${d.sol?`<div class="pmeta"><span class="tag">해설 매칭 ✓</span></div>`:''}</div>
+    `<div class="pitem"><div style="font-weight:900;color:var(--gold-2)">${d.num||i+1}</div>
+      <div class="body">
+        ${d.text?`<div class="ptext">${esc(d.text)}</div>`:(d.img?'':'<div class="hint">(내용 없음)</div>')}
+        ${d.img?`<div class="pimgs"><img src="${d.img}" style="max-height:170px" alt="문항 ${esc(d.num||'')} 이미지"></div>`:''}
+        ${d.sol||d.ans?`<div class="pmeta">${d.ans?`<span class="tag">정답 ${esc(d.ans.slice(0,12))} ✓</span>`:''}${d.sol?`<span class="tag">해설 매칭 ✓</span>`:''}</div>`:''}</div>
       <button class="btn danger sm" onclick="state.bulkDrafts.splice(${i},1);rerenderBulk()">삭제</button></div>`).join('');
   $('#bulk-status').textContent = state.bulkDrafts.length+'개 문제';
   renderMath($('#bulk-preview'));
@@ -1112,13 +1207,16 @@ async function saveBulk(){
   const existing = new Set(state.problems.map(p=>normalize(p.question)));
   let n=0, dup=0;
   for(const d of state.bulkDrafts){
-    const question = d.text.replace(NUM_HEAD,'');
-    if(existing.has(normalize(question))){ dup++; continue; }   // 완전 동일 문항은 건너뜀
-    existing.add(normalize(question));
-    const sg = suggestTags(d.text);
+    const question = (d.text||'').replace(NUM_HEAD,'');
+    if(!question && !d.img){ continue; }
+    if(!d.img){                                     // 완전 동일 문항은 건너뜀 (이미지 문항 제외)
+      if(existing.has(normalize(question))){ dup++; continue; }
+      existing.add(normalize(question));
+    }
+    const sg = suggestTags(d.text||'');
     const useSg = sg.length && CURRICULUM[sg[0].unit[0]];
     const p = {
-      id: uid()+n, question, choices: [], answer:'', solution: d.sol||'', images: [],
+      id: uid()+n, question, choices: [], answer: d.ans||'', solution: d.sol||'', images: d.img?[d.img]:[],
       subject: useSg ? sg[0].unit[0] : subject,
       chapter: useSg ? sg[0].unit[1] : (Object.keys(CURRICULUM[subject]||{})[0]||''),
       section: useSg ? sg[0].unit[2] : '',
@@ -1131,6 +1229,7 @@ async function saveBulk(){
   state.bulkDrafts=[]; $('#bulk-text').value=''; $('#bulk-preview-card').style.display='none';
   $('#bulk-status').textContent='';
   refreshCounts();
+  logJob('DB 등록', srcName||'일괄 등록', n+'문항 저장'+(dup?` · 중복 ${dup}개 제외`:''));
   toast(n+'개 문제 저장 (미검수 상태)'+(dup?` · 완전 동일 문항 ${dup}개 제외`:''));
   go('db');
 }
@@ -1180,23 +1279,77 @@ async function parseHWPX(file){
 }
 async function parsePDF(file){
   if(!window.pdfjsLib) throw new Error('PDF 구성요소가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.');
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  if(!pdfjsLib.GlobalWorkerOptions.workerSrc)
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   const pdf = await pdfjsLib.getDocument({data: await file.arrayBuffer()}).promise;
-  const out = [];
+  // 1차 분석: 페이지별 텍스트 아이템과 문항 번호 앵커
+  const pages = [];
+  let anchorTotal = 0, bodyTotal = 0;
   for(let i=1;i<=pdf.numPages;i++){
     const page = await pdf.getPage(i);
+    const vp = page.getViewport({scale:1});
     const tc = await page.getTextContent();
-    let line='', lastY=null; const lines=[];
-    for(const it of tc.items){
-      const y = it.transform[5];
-      if(lastY!==null && Math.abs(y-lastY)>2.5){ lines.push(line); line=''; }
-      line += it.str;
-      lastY = y;
+    const items = tc.items.map(it=>({str:it.str, x:it.transform[4], y:it.transform[5]}));
+    const pg = {page, w:vp.width, h:vp.height, items, anchors:[], bodyLen:0, text:''};
+    for(const it of items){
+      const s = it.str.trim();
+      pg.text += s;
+      if(it.y < pg.h*0.06) continue;                       // 꼬리말(페이지 번호) 제외
+      if(/^\d{1,2}$/.test(s)) pg.anchors.push({num:String(+s), x:it.x, y:it.y});
+      else pg.bodyLen += s.length;
     }
-    lines.push(line);
-    out.push(lines.join('\n'));
+    pg.isQuickAns = pg.text.includes('빠른정답') || pg.text.includes('빠른 정답');
+    pg.ansLabels = items.filter(it=>/^(정답|해설)$/.test(it.str.trim())).length;
+    anchorTotal += pg.anchors.length; bodyTotal += pg.bodyLen;
+    pages.push(pg);
   }
-  return out.join('\n');
+  // 본문 텍스트가 거의 없고 번호 앵커만 있으면 "이미지형 PDF"로 판단
+  const imageMode = anchorTotal >= 3 && (bodyTotal/pages.length) < 150;
+  if(!imageMode){
+    const out = [];
+    for(const pg of pages){
+      let line='', lastY=null; const lines=[];
+      for(const it of pg.items){
+        if(lastY!==null && Math.abs(it.y-lastY)>2.5){ lines.push(line); line=''; }
+        line += it.str; lastY = it.y;
+      }
+      lines.push(line);
+      out.push(lines.join('\n'));
+    }
+    return out.join('\n');
+  }
+  // 이미지형: 문제 페이지를 렌더링해 번호 앵커 기준으로 문항별 크롭
+  const drafts = []; let skipped = 0;
+  for(const pg of pages){
+    if(pg.isQuickAns || pg.ansLabels >= 4 || !pg.anchors.length){ skipped++; continue; }
+    const scale = 2;
+    const vp = pg.page.getViewport({scale});
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(vp.width); canvas.height = Math.ceil(vp.height);
+    await pg.page.render({canvasContext: canvas.getContext('2d'), viewport: vp}).promise;
+    const mid = pg.w/2;
+    const twoCol = pg.anchors.some(a=>a.x < mid*0.8) && pg.anchors.some(a=>a.x >= mid);
+    const cols = twoCol ? [pg.anchors.filter(a=>a.x<mid), pg.anchors.filter(a=>a.x>=mid)] : [pg.anchors.slice()];
+    for(let ci=0; ci<cols.length; ci++){
+      const colAnchors = cols[ci].sort((a,b)=>b.y-a.y);   // PDF 좌표는 아래가 0 → 위에서 아래로
+      for(let k=0;k<colAnchors.length;k++){
+        const a = colAnchors[k];
+        const topPdf = Math.min(pg.h, a.y + 14);
+        const botPdf = (k+1<colAnchors.length) ? colAnchors[k+1].y + 16 : pg.h*0.055;
+        const x0 = Math.max(0, a.x - 8);
+        const x1 = twoCol ? (ci===0 ? mid - 4 : pg.w*0.975) : pg.w*0.975;
+        const sw = (x1-x0)*scale, sh = (topPdf-botPdf)*scale;
+        if(sw < 40 || sh < 24) continue;
+        const c2 = document.createElement('canvas');
+        c2.width = Math.ceil(sw); c2.height = Math.ceil(sh);
+        c2.getContext('2d').drawImage(canvas, x0*scale, (pg.h-topPdf)*scale, sw, sh, 0, 0, sw, sh);
+        drafts.push({ text:'', num:a.num, sol:'', ans:'', img: c2.toDataURL('image/jpeg', 0.87) });
+      }
+    }
+  }
+  if(!drafts.length) throw new Error(file.name+' — 이미지형 PDF에서 문항 영역을 찾지 못했습니다.');
+  drafts.sort((a,b)=>(+a.num)-(+b.num));
+  return { kind:'imageDrafts', drafts, skipped };
 }
 async function extractTextFromFile(file){
   const nm = file.name.toLowerCase();
@@ -1204,6 +1357,22 @@ async function extractTextFromFile(file){
   if(nm.endsWith('.hwp')) throw new Error(file.name+' — 구형 .hwp는 한글에서 [다른 이름으로 저장 → .hwpx] 후 올려주세요.');
   if(nm.endsWith('.pdf')) return parsePDF(file);
   return file.text();
+}
+/* 작업 내역 (업로드·변환·등록·출력 이력) */
+function logJob(kind, name, detail){
+  let l=[]; try{ l=JSON.parse(localStorage.getItem('sp-lab-joblog')||'[]'); }catch(e){}
+  l.unshift({kind, name, detail, date:new Date().toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})});
+  localStorage.setItem('sp-lab-joblog', JSON.stringify(l.slice(0,30)));
+  renderJobLog();
+}
+function renderJobLog(){
+  let l=[]; try{ l=JSON.parse(localStorage.getItem('sp-lab-joblog')||'[]'); }catch(e){}
+  const el = $('#joblog'); if(!el) return;
+  el.innerHTML = l.length ? l.map(j=>
+    `<div class="spread" style="padding:.35rem 0;border-bottom:1px solid var(--line)">
+      <span><span class="tag">${esc(j.kind)}</span> <b style="color:var(--green)">${esc(j.name)}</b> <span class="hint">${esc(j.detail||'')}</span></span>
+      <span class="hint">${esc(j.date)}</span></div>`).join('')
+    : '아직 작업 내역이 없습니다.';
 }
 async function fileSHA256(file){
   if(!crypto.subtle) return null;
@@ -1226,14 +1395,27 @@ async function handleUploadFiles(files, targetSel){
           continue;
         }
       }
-      const text = (await extractTextFromFile(file)).trim();
+      const res = await extractTextFromFile(file);
+      if(hash){ seen[hash] = {name:file.name, date:new Date().toISOString().slice(0,10)}; }
+      if(targetSel==='#bulk-text' && !$('#b-srcname').value.trim())
+        $('#b-srcname').value = file.name.replace(/\.(hwpx|hwp|pdf|txt)$/i,'');
+      if(res && res.kind==='imageDrafts'){
+        // 이미지형 PDF: 문항별 크롭 이미지를 바로 분할 결과로
+        state.bulkDrafts = res.drafts;
+        $('#bulk-preview-card').style.display='block';
+        rerenderBulk();
+        $('#bulk-status').textContent = `이미지 문항 ${res.drafts.length}개`;
+        status.innerHTML = `✅ <b>${esc(file.name)}: 이미지형 PDF 감지</b> — 문항 ${res.drafts.length}개를 이미지로 잘라냈습니다`
+          +(res.skipped?` (정답·해설 페이지 등 ${res.skipped}장 건너뜀)`:'')
+          +`.<br>글자 인식(OCR)은 없어서 문제 텍스트는 비어 있습니다 — 아래 미리보기 확인 후 [전체 저장]하고, 검색용 키워드는 상세·수정에서 붙여 주세요.`;
+        logJob('이미지형 PDF', file.name, `문항 ${res.drafts.length}개 분할`);
+        ok++; continue;
+      }
+      const text = String(res).trim();
       if(!text){ status.textContent = `⚠ ${file.name} — 추출된 텍스트가 없습니다 (스캔본 PDF는 글자 인식이 필요합니다).`; continue; }
       const ta = $(targetSel);
       ta.value = (ta.value.trim() ? ta.value.replace(/\s+$/,'')+'\n\n' : '') + text;
-      if(hash){ seen[hash] = {name:file.name, date:new Date().toISOString().slice(0,10)}; }
-      // 출처 이름이 비어 있으면 파일명으로 자동 채움 (원본 추적)
-      if(targetSel==='#bulk-text' && !$('#b-srcname').value.trim())
-        $('#b-srcname').value = file.name.replace(/\.(hwpx|hwp|pdf|txt)$/i,'');
+      logJob('텍스트 추출', file.name, text.length.toLocaleString('ko-KR')+'자');
       ok++;
     }catch(err){
       status.textContent = '⚠ '+(err.message||'파일 처리 실패');
@@ -1242,8 +1424,10 @@ async function handleUploadFiles(files, targetSel){
   }
   if(ok){
     localStorage.setItem('sp-lab-filehashes', JSON.stringify(seen));
-    status.textContent = `✅ 파일 ${ok}개에서 텍스트를 추출했습니다. 분할 결과를 확인하세요.`;
-    if(targetSel==='#bulk-text') splitBulk();
+    if(targetSel==='#bulk-text' && $('#bulk-text').value.trim()){
+      status.textContent = `✅ 파일 ${ok}개에서 텍스트를 추출했습니다. 분할 결과를 확인하세요.`;
+      splitBulk();
+    }
   }
 }
 const dz = $('#dropzone');
@@ -1276,9 +1460,14 @@ function problemsFiltered(){
     if(fr!=='' && (p.reviewed?'1':'0')!==fr) return false;
     if(fd && String(p.difficulty)!==fd) return false;
     if(fsrc && p.srcName!==fsrc) return false;
+    if(state.filterTag && !(p.tags||[]).includes(state.filterTag)) return false;
     if(q && !state.lastResults){
-      const hay = [p.question,p.answer,p.solution,p.srcName,p.subject,p.chapter,p.section,(p.tags||[]).join(' ')].join(' ').toLowerCase();
-      if(!hay.includes(q)) return false;
+      const noM = q.match(/^#\s*(\d+)$/);                     // "#12" → 문제 번호로 검색
+      if(noM){ if(!state.numOf || state.numOf.get(p.id)!==+noM[1]) return false; }
+      else {
+        const hay = [p.question,p.answer,p.solution,p.srcName,p.subject,p.chapter,p.section,(p.tags||[]).join(' ')].join(' ').toLowerCase();
+        if(!hay.includes(q)) return false;
+      }
     }
     return true;
   });
@@ -1294,36 +1483,50 @@ function problemsFiltered(){
   }
   return list;
 }
-function problemCardHTML(p){
+function problemCardHTML(p, idx){
   const inCart = state.cart.includes(p.id);
   const sim = state.lastResults && state.lastResults.has(p.id)
-    ? `<span class="simscore">유사도 ${(state.lastResults.get(p.id)*100).toFixed(0)}%</span>` : '';
+    ? `<span class="simscore">${(state.lastResults.get(p.id)*100).toFixed(0)}%</span>` : '';
   const unit = [p.subject,p.chapter,p.section].filter(Boolean).join(' › ');
   const no = state.numOf ? state.numOf.get(p.id) : null;
-  return `<div class="pitem ${inCart?'selected':''}" data-id="${p.id}">
-    <div class="chk"><input type="checkbox" style="width:auto;transform:scale(1.25)" ${inCart?'checked':''} onchange="toggleCart('${p.id}')"></div>
-    <div class="body">
-      ${no?`<div style="font-weight:800;color:var(--muted);font-size:.78rem;margin-bottom:.2rem"># ${no}</div>`:''}
-      <div class="ptext" onclick="this.classList.toggle('open')">${esc(p.question)}</div>
-      ${p.images&&p.images.length?`<div class="pimgs">${p.images.map(d=>`<img src="${d}" alt="문제 그림">`).join('')}</div>`:''}
-      <div class="pmeta">
-        ${sim}
-        ${p.reviewed?'<span class="tag" style="background:#e4f2e8;color:var(--ok)">검수완료</span>':'<span class="tag" style="background:#faf0dc;color:#7a5c1e">미검수</span>'}
-        <span class="tag">${esc(unit||'미분류')}</span>
-        ${p.grade?`<span class="tag diff">${esc(p.grade)}</span>`:''}
-        <span class="tag diff">난이도 ${'●'.repeat(p.difficulty||3)}</span>
-        ${p.srcName?`<span class="tag src">${esc(p.srcType||'출처')} · ${esc(p.srcName)}${p.srcYear?' ('+esc(p.srcYear)+')':''}${p.origNo?' · 원본 '+esc(p.origNo)+'번':''}</span>`:''}
-        ${(p.tags||[]).map(t=>`<span class="tag user">#${esc(t)}</span>`).join('')}
-      </div>
-      <div class="pacts">
-        <button class="btn ghost sm" onclick="openDetail('${p.id}')">상세·수정</button>
-        <button class="btn ghost sm" onclick="toggleReviewed('${p.id}')">${p.reviewed?'검수 해제':'검수 승인'}</button>
-        <button class="btn ghost sm" onclick="findSimilar('${p.id}')">이 문제와 비슷한 문제</button>
-        <button class="btn ${inCart?'gold':''} sm" onclick="toggleCart('${p.id}')">${inCart?'담김 ✓':'학습지에 담기'}</button>
-        <button class="btn danger sm" onclick="removeProblem('${p.id}')">삭제</button>
-      </div>
+  return `<div class="pcard ${inCart?'selected':''}" data-id="${p.id}">
+    <div class="pc-top">
+      <input type="checkbox" ${inCart?'checked':''} onclick="cardCheck(event,'${p.id}',${idx})">
+      <b class="pc-no"># ${no??''}</b>
+      ${sim}
+      ${(p.solution||p.answer)?'<span class="tag" style="background:#e4f2e8;color:var(--ok)">해설</span>':''}
+      ${p.reviewed?'':'<span class="tag" style="background:#faf0dc;color:#7a5c1e">미검수</span>'}
+      <span style="flex:1"></span>
+      <button class="btn ${inCart?'gold':'ghost'} sm" onclick="toggleCart('${p.id}')">${inCart?'담김 ✓':'담기'}</button>
     </div>
+    ${p.question?`<div class="pc-text" onclick="openDetail('${p.id}')">${esc(p.question)}</div>`:''}
+    ${p.images&&p.images.length?`<div class="pimgs" onclick="openDetail('${p.id}')"><img src="${p.images[0]}" alt="문항 이미지"></div>`:''}
+    ${!p.question&&!(p.images&&p.images.length)?`<div class="hint" onclick="openDetail('${p.id}')">(내용 없음)</div>`:''}
+    <div class="pc-tags">
+      <div class="trow"><span class="tl">단원</span><span><span class="tag">${esc(unit||'미분류')}</span></span></div>
+      ${p.srcName?`<div class="trow"><span class="tl">출처</span><span><span class="tag src">${esc(p.srcType||'출처')} › ${esc(p.srcName)}${p.srcYear?' › '+esc(p.srcYear):''}${p.origNo?' › '+esc(p.origNo)+'번':''}</span></span></div>`:''}
+      <div class="trow"><span class="tl">정보</span><span>${p.grade?`<span class="tag diff">${esc(p.grade)}</span>`:''}<span class="tag diff">${'●'.repeat(p.difficulty||3)}</span></span></div>
+      ${(p.tags||[]).length?`<div class="trow"><span class="tl">나만의</span><span>${(p.tags||[]).map(t=>`<span class="tag user">#${esc(t)}</span>`).join('')}</span></div>`:''}
+    </div>
+    <div class="pc-date">${new Date(p.updatedAt||p.createdAt).toLocaleDateString('ko-KR')}</div>
   </div>`;
+}
+function cardCheck(ev, id, idx){
+  if(ev.shiftKey && state.lastChecked!=null && state.viewList){
+    const want = ev.target.checked;
+    const [a,b] = [Math.min(state.lastChecked, idx), Math.max(state.lastChecked, idx)];
+    for(let i=a;i<=b;i++){
+      const pid = state.viewList[i]; if(!pid) continue;
+      const has = state.cart.includes(pid);
+      if(want && !has) state.cart.push(pid);
+      if(!want && has) state.cart.splice(state.cart.indexOf(pid),1);
+    }
+    state.lastChecked = idx;
+    persistCart(); renderDB();
+  } else {
+    state.lastChecked = idx;
+    toggleCart(id);
+  }
 }
 function renderDB(){
   const srcs = [...new Set(state.problems.map(p=>p.srcName).filter(Boolean))];
@@ -1335,26 +1538,191 @@ function renderDB(){
   fchap.innerHTML = '<option value="">대단원 전체</option>'+chaps.map(c=>`<option>${esc(c)}</option>`).join('');
   fchap.value = curC;
 
-  const list = problemsFiltered();
   state.numOf = new Map(state.problems.slice().sort((a,b)=>a.createdAt-b.createdAt).map((p,i)=>[p.id,i+1]));
+  const list = problemsFiltered();
   state.viewList = list.map(p=>p.id);
+  renderTree();
+  renderPresets();
+  const PAGE = 30;
+  const pages = Math.max(1, Math.ceil(list.length/PAGE));
+  state.page = Math.min(Math.max(1, state.page), pages);
+  const pageList = list.slice((state.page-1)*PAGE, state.page*PAGE);
   const wrap = $('#plist');
   $('#db-count').textContent = state.lastResults
-    ? `유사 검색 결과 ${list.length}건 — 다시 전체를 보려면 [필터 초기화]`
-    : `${list.length}건 / 전체 ${state.problems.length}건`;
-  wrap.innerHTML = list.length
-    ? list.map(problemCardHTML).join('')
-    : `<div class="empty">조건에 맞는 문제가 없습니다.<div style="margin-top:.6rem"><button class="btn sm" onclick="go('add')">문제 등록하러 가기</button></div></div>`;
+    ? `유사 검색 결과 ${list.length}건 — 전체로 돌아가려면 [필터 초기화]`
+    : `${list.length}건 / 전체 ${state.problems.length}건` + (pages>1?` · ${state.page}/${pages} 페이지`:'');
+  wrap.innerHTML = pageList.length
+    ? pageList.map((p,i)=>problemCardHTML(p, (state.page-1)*PAGE+i)).join('')
+    : `<div class="empty" style="grid-column:1/-1">조건에 맞는 문제가 없습니다.<div style="margin-top:.6rem"><button class="btn sm" onclick="go('add')">문제 등록하러 가기</button></div></div>`;
   renderMath(wrap);
+  renderPagination(pages);
+}
+function renderPagination(pages){
+  const el = $('#pager');
+  if(pages<=1){ el.innerHTML=''; return; }
+  let h = `<button class="btn ghost sm" ${state.page<=1?'disabled':''} onclick="state.page--;renderDB()">← 이전</button>`;
+  let gap = false;
+  for(let i=1;i<=pages;i++){
+    if(pages>9 && i!==1 && i!==pages && Math.abs(i-state.page)>3){
+      if(!gap){ h += '<span class="hint">…</span>'; gap = true; }
+      continue;
+    }
+    gap = false;
+    h += `<button class="btn ${i===state.page?'':'ghost'} sm" onclick="state.page=${i};renderDB()">${i}</button>`;
+  }
+  h += `<button class="btn ghost sm" ${state.page>=pages?'disabled':''} onclick="state.page++;renderDB()">다음 →</button>`;
+  el.innerHTML = h;
+}
+/* ── 좌측 태그 트리 (단원 / 출처 / 나만의) ── */
+function renderTree(){
+  $$('#tree-tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===state.treeTab));
+  const body = $('#tree-body');
+  let h = '';
+  if(state.treeTab==='unit'){
+    const bySub = countBy(p=>p.subject);
+    const fs = $('#filter-subject').value, fc = $('#filter-chapter').value;
+    for(const s of Object.keys(CURRICULUM)){
+      const sel = fs===s;
+      h += `<div class="titem ${sel?'sel':''}" data-t="subject" data-v="${esc(s)}"><span>${sel?'▾':'▸'} ${esc(s)}</span><span class="n">${bySub.get(s)||0}</span></div>`;
+      if(sel){
+        const byChap = countBy(p=>p.subject===s?p.chapter:null);
+        for(const c of Object.keys(CURRICULUM[s]))
+          h += `<div class="titem sub ${fc===c?'sel':''}" data-t="chapter" data-v="${esc(c)}"><span>${esc(c)}</span><span class="n">${byChap.get(c)||0}</span></div>`;
+      }
+    }
+  } else if(state.treeTab==='src'){
+    const bySrc = countBy(p=>p.srcName);
+    const fsrc = $('#filter-src').value;
+    h = bySrc.size ? [...bySrc.entries()].sort((a,b)=>b[1]-a[1]).map(([s,n])=>
+      `<div class="titem ${fsrc===s?'sel':''}" data-t="src" data-v="${esc(s)}"><span>${esc(s)}</span><span class="n">${n}</span></div>`).join('')
+      : '<div class="hint" style="padding:.5rem">출처가 등록된 문제가 없습니다.</div>';
+  } else {
+    const byTag = new Map();
+    for(const p of state.problems) for(const t of (p.tags||[])) byTag.set(t,(byTag.get(t)||0)+1);
+    h = byTag.size ? [...byTag.entries()].sort((a,b)=>b[1]-a[1]).map(([t,n])=>
+      `<div class="titem ${state.filterTag===t?'sel':''}" data-t="mine" data-v="${esc(t)}"><span>#${esc(t)}</span><span class="n">${n}</span></div>`).join('')
+      : '<div class="hint" style="padding:.5rem">나만의 태그가 없습니다.</div>';
+  }
+  body.innerHTML = h;
+}
+$('#tree-tabs').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  state.treeTab = b.dataset.tab; renderTree();
+});
+$('#tree-body').addEventListener('click', e=>{
+  const it = e.target.closest('[data-t]'); if(!it) return;
+  const t = it.dataset.t, v = it.dataset.v;
+  if(t==='subject'){
+    const cur = $('#filter-subject').value;
+    $('#filter-subject').value = cur===v ? '' : v;
+    $('#filter-chapter').value = '';
+  }
+  if(t==='chapter'){
+    // 옵션이 아직 없으면 추가 후 선택
+    const sel = $('#filter-chapter');
+    if(![...sel.options].some(o=>o.value===v)) sel.add(new Option(v, v));
+    sel.value = sel.value===v ? '' : v;
+  }
+  if(t==='src'){ $('#filter-src').value = $('#filter-src').value===v ? '' : v; }
+  if(t==='mine'){ state.filterTag = state.filterTag===v ? null : v; }
+  state.page = 1; state.lastResults = null;
+  renderDB();
+});
+/* ── 검색 모드 (키워드 / 상황 설명 / 이미지) ── */
+function setSearchMode(m){
+  state.searchMode = m;
+  ['kw','sem','img'].forEach(x=>$('#sm-'+x).classList.toggle('active', x===m));
+  $('#q').placeholder = m==='kw' ? '정확한 단어 또는 #번호로 검색 (예: 이차방정식, #12)'
+    : m==='sem' ? '문장으로 설명하세요 (예: 원과 직선의 위치 관계를 판별식으로 판단하는 문제)'
+    : '이미지 검색: [검색]을 누르고 문제 사진·캡처 파일을 선택하세요';
+}
+function doSearch(){
+  if(state.searchMode==='img'){ $('#q-img').click(); return; }
+  if(state.searchMode==='sem'){ state.page=1; semanticSearch(); return; }
+  state.lastResults = null; state.page = 1; renderDB();
+}
+/* 이미지 유사 검색: 8×8 평균 해시(aHash) 비교 */
+function loadImgEl(src){ return new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=rej; im.src=src; }); }
+async function imgHash(src){
+  const im = await loadImgEl(src);
+  const c = document.createElement('canvas'); c.width=8; c.height=8;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(im, 0, 0, 8, 8);
+  const d = ctx.getImageData(0,0,8,8).data;
+  const g = []; let sum=0;
+  for(let i=0;i<64;i++){ const v = 0.299*d[i*4]+0.587*d[i*4+1]+0.114*d[i*4+2]; g.push(v); sum+=v; }
+  const avg = sum/64;
+  return g.map(v=>v>avg?1:0);
+}
+$('#q-img').addEventListener('change', async e=>{
+  const f = e.target.files[0]; e.target.value='';
+  if(!f) return;
+  try{
+    toast('이미지 유사도를 계산하는 중…');
+    const url = await new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(f); });
+    const qh = await imgHash(url);
+    const scores = new Map();
+    for(const p of state.problems){
+      if(!p.images || !p.images.length) continue;
+      let h = state.imgHashCache.get(p.id);
+      if(!h){ h = await imgHash(p.images[0]); state.imgHashCache.set(p.id, h); }
+      let dist=0; for(let i=0;i<64;i++) if(h[i]!==qh[i]) dist++;
+      const s = 1 - dist/64;
+      if(s > 0.72) scores.set(p.id, s);
+    }
+    if(!scores.size){ toast('비슷한 이미지 문항을 찾지 못했습니다.'); return; }
+    state.lastResults = scores; state.page = 1; renderDB();
+    toast('이미지가 비슷한 문항 '+scores.size+'건을 찾았습니다.');
+  }catch(err){ toast('이미지 검색 실패: '+(err.message||'이미지를 읽지 못했습니다.')); }
+});
+/* ── 검색 필터 프리셋 ── */
+function getPresets(){ try{ return JSON.parse(localStorage.getItem('sp-lab-presets')||'[]'); }catch(e){ return []; } }
+function savePreset(){
+  const name = (prompt('이 검색 필터 조합의 이름을 입력하세요. (예: 공통수학2 미검수)')||'').trim();
+  if(!name) return;
+  const ps = getPresets();
+  ps.push({name, f:{q:$('#q').value, subject:$('#filter-subject').value, chapter:$('#filter-chapter').value,
+    grade:$('#filter-grade').value, reviewed:$('#filter-reviewed').value, diff:$('#filter-diff').value,
+    src:$('#filter-src').value, tag:state.filterTag||''}});
+  localStorage.setItem('sp-lab-presets', JSON.stringify(ps.slice(0,20)));
+  renderPresets();
+  toast('검색 필터를 저장했습니다.');
+}
+function renderPresets(){
+  const ps = getPresets();
+  $('#preset-list').innerHTML = ps.map((p,i)=>
+    `<span class="preset-chip" onclick="applyPreset(${i})">${esc(p.name)}<span class="x" onclick="event.stopPropagation();delPreset(${i})">✕</span></span>`).join('')
+    || '<span class="hint">없음</span>';
+}
+function applyPreset(i){
+  const p = getPresets()[i]; if(!p) return;
+  $('#q').value = p.f.q||'';
+  $('#filter-subject').value = p.f.subject||'';
+  renderDB();  // 과목에 맞는 대단원 옵션 생성
+  const sel = $('#filter-chapter');
+  if(p.f.chapter && ![...sel.options].some(o=>o.value===p.f.chapter)) sel.add(new Option(p.f.chapter,p.f.chapter));
+  sel.value = p.f.chapter||'';
+  $('#filter-grade').value = p.f.grade||'';
+  $('#filter-reviewed').value = p.f.reviewed||'';
+  $('#filter-diff').value = p.f.diff||'';
+  $('#filter-src').value = p.f.src||'';
+  state.filterTag = p.f.tag||null;
+  state.lastResults = null; state.page = 1;
+  renderDB();
+}
+function delPreset(i){
+  const ps = getPresets(); ps.splice(i,1);
+  localStorage.setItem('sp-lab-presets', JSON.stringify(ps));
+  renderPresets();
 }
 function resetFilters(){
   $('#q').value=''; $('#filter-subject').value=''; $('#filter-chapter').value='';
   $('#filter-diff').value=''; $('#filter-src').value=''; $('#filter-grade').value=''; $('#filter-reviewed').value='';
-  state.lastResults = null;
+  state.lastResults = null; state.filterTag = null; state.page = 1;
   renderDB();
 }
 ['filter-subject','filter-chapter','filter-grade','filter-reviewed','filter-diff','filter-src','sort'].forEach(id=>
-  $('#'+id).addEventListener('change', renderDB));
+  $('#'+id).addEventListener('change', ()=>{ state.page=1; renderDB(); }));
 async function toggleReviewed(id){
   const p = state.problems.find(x=>x.id===id); if(!p) return;
   p.reviewed = !p.reviewed; p.updatedAt = Date.now();
@@ -1372,7 +1740,7 @@ function quickPick(n){
   persistCart(); renderDB();
   toast(added? added+'개 문제를 담았습니다.' : '더 담을 문제가 없습니다.');
 }
-$('#q').addEventListener('keydown', e=>{ if(e.key==='Enter'){ state.lastResults=null; renderDB(); }});
+$('#q').addEventListener('keydown', e=>{ if(e.key==='Enter') doSearch(); });
 
 /* ═══ 유사(의미) 검색: 문자 bigram 코사인 유사도 ═══ */
 function bigrams(text){
@@ -1475,6 +1843,9 @@ function openDetail(id){
         <span class="hint">${pos>=0?(pos+1)+' / '+nav.length:''}</span>
         <button class="btn ghost sm" ${pos<0||pos>=nav.length-1?'disabled':''} onclick="openDetail('${pos>=0&&pos<nav.length-1?nav[pos+1]:''}')">다음 →</button>
         <button class="btn ${inCart?'gold':''} sm" onclick="toggleCart('${id}');openDetail('${id}')">${inCart?'담김 ✓':'🧺 학습지에 담기'}</button>
+        <button class="btn ghost sm" onclick="closeModal();findSimilar('${id}')">비슷한 문제</button>
+        <button class="btn ghost sm" onclick="toggleReviewed('${id}');openDetail('${id}')">${p.reviewed?'검수 해제':'검수 승인'}</button>
+        <button class="btn danger sm" onclick="closeModal();removeProblem('${id}')">삭제</button>
       </div>
     </div>
     <div class="field"><label>문제 본문</label><textarea id="e-question">${esc(p.question)}</textarea></div>
@@ -1690,6 +2061,8 @@ function printSheet(){
   else body = `<div class="${twoCol?'pr-cols-2':''}">${qHTML}</div>` + (doctype==='teacher'?solHTML:'');
   $('#print-area').innerHTML = head + body;
   renderMath($('#print-area'));
+  const DOC_LABEL = {teacher:'강사용', student:'학생용', anskey:'정답표', solution:'해설지'};
+  logJob('학습지 출력', title, `${list.length}문항 · ${DOC_LABEL[doctype]||doctype} · 인쇄/PDF`);
   setTimeout(()=>window.print(), 150);
 }
 
@@ -1707,14 +2080,17 @@ const HWPX_CONTAINER_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes
 <ocf:container xmlns:ocf="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:hpf="http://www.hancom.co.kr/schema/2011/hpf">
 <ocf:rootfiles><ocf:rootfile full-path="Contents/content.hpf" media-type="application/hwpml-package+xml"/></ocf:rootfiles>
 </ocf:container>`;
-const HWPX_MANIFEST_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+function hwpxManifestXML(){
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <odf:manifest xmlns:odf="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">
 <odf:file-entry odf:full-path="/" odf:media-type="application/hwp+zip"/>
 <odf:file-entry odf:full-path="version.xml" odf:media-type="text/xml"/>
 <odf:file-entry odf:full-path="Contents/header.xml" odf:media-type="application/xml"/>
 <odf:file-entry odf:full-path="Contents/section0.xml" odf:media-type="application/xml"/>
 <odf:file-entry odf:full-path="settings.xml" odf:media-type="application/xml"/>
+${HWPX_BINS.map(b=>`<odf:file-entry odf:full-path="BinData/${b.id}.${b.ext}" odf:media-type="${b.mime}"/>`).join('\n')}
 </odf:manifest>`;
+}
 const HWPX_SETTINGS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <ha:HWPApplicationSetting xmlns:ha="http://www.hancom.co.kr/hwpml/2011/app" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0">
 <ha:CaretPosition listIDRef="0" paraIDRef="0" pos="0"/>
@@ -1727,9 +2103,58 @@ function hwpxContentHPF(title){
 <opf:item id="header" href="Contents/header.xml" media-type="application/xml"/>
 <opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"/>
 <opf:item id="settings" href="settings.xml" media-type="application/xml"/>
+${HWPX_BINS.map(b=>`<opf:item id="${b.id}" href="BinData/${b.id}.${b.ext}" media-type="${b.mime}" isEmbeded="1"/>`).join('\n')}
 </opf:manifest>
 <opf:spine><opf:itemref idref="header" linear="yes"/><opf:itemref idref="section0" linear="yes"/></opf:spine>
 </opf:package>`;
+}
+/* 이미지 바이너리(BinData) 등록 */
+let HWPX_BINS = [];
+let HWPX_PIC_ID = 1900000000;
+function resetHwpxBuild(){ resetEqDiag(); HWPX_BINS = []; HWPX_PIC_ID = 1900000000; }
+function registerHwpxBin(dataURL){
+  const m = String(dataURL).match(/^data:image\/(png|jpe?g|gif|bmp);base64,(.+)$/i);
+  if(!m) return null;
+  const ext = m[1].toLowerCase().replace('jpeg','jpg');
+  const id = 'image'+(HWPX_BINS.length+1);
+  HWPX_BINS.push({id, ext, mime:'image/'+(ext==='jpg'?'jpeg':ext), b64:m[2]});
+  return id;
+}
+function imgDims(dataURL){
+  return new Promise(res=>{
+    const im = new Image();
+    im.onload = ()=>res({w:im.naturalWidth||800, h:im.naturalHeight||600});
+    im.onerror = ()=>res({w:800, h:600});
+    im.src = dataURL;
+  });
+}
+function hwpxPic(binId, w, h){ // w,h: hwpunit
+  HWPX_PIC_ID++;
+  return `<hp:pic id="${HWPX_PIC_ID}" zOrder="${HWPX_PIC_ID-1900000000}" numberingType="PICTURE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" href="" groupLevel="0" instid="${HWPX_PIC_ID+88}" reverse="0">`
+  +`<hp:offset x="0" y="0"/><hp:orgSz width="${w}" height="${h}"/><hp:curSz width="${w}" height="${h}"/>`
+  +`<hp:flip horizontal="0" vertical="0"/><hp:rotationInfo angle="0" centerX="${Math.round(w/2)}" centerY="${Math.round(h/2)}" rotateimage="1"/>`
+  +`<hp:renderingInfo><hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/></hp:renderingInfo>`
+  +`<hc:img binaryItemIDRef="${binId}" bright="0" contrast="0" effect="REAL_PIC" alpha="0"/>`
+  +`<hp:imgRect><hc:pt0 x="0" y="0"/><hc:pt1 x="${w}" y="0"/><hc:pt2 x="${w}" y="${h}"/><hc:pt3 x="0" y="${h}"/></hp:imgRect>`
+  +`<hp:imgClip left="0" top="0" right="${w}" bottom="${h}"/>`
+  +`<hp:inMargin left="0" right="0" top="0" bottom="0"/>`
+  +`<hp:imgDim dimwidth="${w}" dimheight="${h}"/>`
+  +`<hp:sz width="${w}" height="${h}" widthRelTo="ABSOLUTE" heightRelTo="ABSOLUTE" protect="0"/>`
+  +`<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>`
+  +`<hp:outMargin left="0" right="0" top="0" bottom="0"/></hp:pic>`;
+}
+async function hwpxImageParas(images){
+  const out = [];
+  for(const d of (images||[])){
+    const bid = registerHwpxBin(d);
+    if(!bid) continue;
+    const dim = await imgDims(d);
+    let w = dim.w*50, h = dim.h*50;        // 2배 해상도 크롭 → 원래 크기
+    const maxW = 42000;                     // 본문 폭
+    if(w > maxW){ h = h*maxW/w; w = maxW; }
+    out.push(`<hp:p paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0">${hwpxPic(bid, Math.round(w), Math.round(h))}</hp:run></hp:p>`);
+  }
+  return out;
 }
 function hwpxFontfaces(){
   const langs = ['HANGUL','LATIN','HANJA','JAPANESE','OTHER','SYMBOL','USER'];
@@ -1867,12 +2292,83 @@ function latexToHwpEq(tex){
   });
   return s.replace(/\s+/g,' ').trim();
 }
+/* ── 수식 크기 추정(hwpunit, 10pt 기준): 작게 잡으면 뒤 글자와 겹치므로 구조를 재귀 측정 ── */
+const EQ_SYM_TOKENS = new Set(['leq','geq','neq','inf','rarrow','larrow','lrarrow','times','cdot','divide',
+  'in','notin','subset','supset','cap','cup','emptyset','therefore','because','pi','theta','alpha','beta',
+  'gamma','delta','lambda','mu','sigma','omega','phi','rho','epsilon','equiv','approx','sim','cdots','ldots',
+  'circ','angle','triangle','bar','vec','lbrace','rbrace']);
+const EQ_FUNC_TOKENS = new Set(['sin','cos','tan','sec','csc','cot','log','ln','max','min']);
+function splitTopLevel(s, sep){
+  const parts = []; let depth=0, last=0;
+  for(let i=0;i<s.length;i++){
+    if(s[i]==='{') depth++;
+    else if(s[i]==='}') depth--;
+    else if(depth===0 && s.startsWith(sep, i)){ parts.push(s.slice(last,i)); last=i+sep.length; i+=sep.length-1; }
+  }
+  parts.push(s.slice(last));
+  return parts;
+}
+function eqCharW(ch){
+  if(ch===' ') return 280;
+  if(/[0-9a-zA-Z.,'()\[\]|+\-=<>:;!?\/]/.test(ch)) return 520;
+  if(/[ㄱ-힝一-鿿]/.test(ch)) return 1050;
+  return 650;
+}
+function eqMeasure(s){
+  s = String(s).trim();
+  if(!s) return {w:300, h:1100};
+  const fracParts = splitTopLevel(s, ' over ');
+  if(fracParts.length>1){
+    const ms = fracParts.map(eqMeasure);
+    return { w: Math.max(...ms.map(m=>m.w)) + 500, h: ms.reduce((t,m)=>t+m.h,0) + 300 };
+  }
+  let w=0, h=1100, i=0;
+  while(i<s.length){
+    const ch = s[i];
+    if(ch==='{'){
+      const g = readBraceGroup(s,i);
+      if(!g){ i++; continue; }
+      const m = eqMeasure(g[0]);
+      w += m.w; h = Math.max(h, m.h); i = g[1];
+    } else if(ch==='^' || ch==='_'){
+      i++;
+      let m = {w:520, h:1100};
+      if(s[i]==='{'){ const g = readBraceGroup(s,i); if(g){ m = eqMeasure(g[0]); i = g[1]; } else i++; }
+      else if(i<s.length){ m = {w:eqCharW(s[i]), h:1100}; i++; }
+      w += Math.round(m.w*0.62);
+      h = Math.max(h, 1100 + Math.round(m.h*0.45));
+    } else if(/[A-Za-z]/.test(ch)){
+      const word = s.slice(i).match(/^[A-Za-z]+/)[0];
+      if(word==='cases'){
+        i += 5; while(s[i]===' ') i++;
+        if(s[i]==='{'){
+          const g = readBraceGroup(s,i);
+          if(g){
+            const rows = splitTopLevel(g[0], '#').map(eqMeasure);
+            w += Math.max(...rows.map(m=>m.w)) + 900;
+            h = Math.max(h, rows.reduce((t,m)=>t+m.h,0) + 250);
+            i = g[1];
+          }
+        }
+        continue;
+      }
+      if(word==='sqrt'){ w += 950; i += 4; continue; }
+      if(word==='lim'||word==='sum'||word==='int'||word==='prod'){ w += 1500; h = Math.max(h, 2200); i += word.length; continue; }
+      if(EQ_SYM_TOKENS.has(word)){ w += 950; i += word.length; continue; }
+      if(EQ_FUNC_TOKENS.has(word)){ w += word.length*480; i += word.length; continue; }
+      w += word.length*540; i += word.length;
+    } else {
+      w += eqCharW(ch); i++;
+    }
+  }
+  return {w: Math.max(w,500), h};
+}
 let HWPX_EQ_ID = 1816200000;
 function hwpxEquation(script){
   HWPX_EQ_ID++; EQ_DIAG.count++;
-  const plain = script.replace(/[{}^_]/g,'');
-  const w = Math.max(800, Math.min(30000, Math.round(plain.length*255)+200));
-  const h = /over|int|lim|sum|cases|sqrt/.test(script) ? 2050 : 1150;
+  const m = eqMeasure(script);
+  const w = Math.min(44000, m.w + 300);
+  const h = m.h + 100;
   return `<hp:equation id="${HWPX_EQ_ID}" zOrder="${HWPX_EQ_ID-1816200000}" numberingType="EQUATION" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" version="Equation Version 60" baseLine="65" textColor="#000000" baseUnit="1000" lineMode="CHAR" font="HYhwpEQ"><hp:sz width="${w}" height="${h}" widthRelTo="ABSOLUTE" heightRelTo="ABSOLUTE" protect="0"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:outMargin left="56" right="56" top="56" bottom="56"/><hp:script>${xesc(script)}</hp:script></hp:equation>`;
 }
 /* $...$ / $$...$$ 구간을 한글 수식 개체 run으로, 나머지는 텍스트 run으로 */
@@ -1907,7 +2403,7 @@ async function downloadHWPX(){
   const list = cartProblems();
   if(!list.length){ toast('담긴 문제가 없습니다.'); return; }
   if(!window.JSZip){ toast('구성요소(JSZip)가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
-  resetEqDiag();
+  resetHwpxBuild();
   const title = $('#s-title').value||'수학 연습 문제';
   const sub = $('#s-sub').value, author = $('#s-author').value, date = $('#s-date').value;
   const withMeta = $('#s-meta').checked;
@@ -1920,14 +2416,16 @@ async function downloadHWPX(){
   paras.push(hwpxP([date, author, '총 '+list.length+'문항'+(total?` · ${total}점`:''), '이름: ______________'].filter(Boolean).join('    '), 0, 1));
   paras.push(hwpxP('',0,0));
   if(doctype==='teacher' || doctype==='student'){
-    list.forEach((p,i)=>{
+    for(let i=0;i<list.length;i++){
+      const p = list[i];
       const headTxt = (i+1)+'.'+(pts(p)!=null?` [${pts(p)}점]`:'')+' ';
       const lines = (headTxt+p.question).split('\n');
       lines.forEach((l,li)=>paras.push(hwpxP(l, li===0?1:0, 0)));
+      paras.push(...await hwpxImageParas(p.images));
       if(p.choices && p.choices.length) paras.push(hwpxP(p.choices.join('    '), 0, 0));
       if(withMeta && p.srcName) paras.push(hwpxP(`[${p.srcType||'출처'} · ${p.srcName}${p.srcYear?' '+p.srcYear:''}]`, 0, 0));
       paras.push(hwpxP('',0,0));
-    });
+    }
   }
   if(doctype==='anskey'){
     paras.push(hwpxP('정답표', 2, 1));
@@ -1946,15 +2444,18 @@ async function downloadHWPX(){
   }
 
   await saveHwpxFile(title, paras);
-  toast('한글 파일(HWPX) 다운로드 완료'+eqDiagSummary());
+  const DOC_LABEL = {teacher:'강사용', student:'학생용', anskey:'정답표', solution:'해설지'};
+  logJob('학습지 출력', title, `${list.length}문항 · ${DOC_LABEL[doctype]||doctype} · HWPX`);
+  toast('한글 파일(HWPX) 다운로드 완료'+eqDiagSummary()+(HWPX_BINS.length?` · 그림 ${HWPX_BINS.length}장 포함`:''));
 }
 async function saveHwpxFile(title, paras){
   const zip = new JSZip();
   zip.file('mimetype', 'application/hwp+zip', {compression:'STORE'});
   zip.file('version.xml', HWPX_VERSION_XML);
   zip.file('settings.xml', HWPX_SETTINGS_XML);
-  zip.file('META-INF/manifest.xml', HWPX_MANIFEST_XML);
+  zip.file('META-INF/manifest.xml', hwpxManifestXML());
   zip.file('META-INF/container.xml', HWPX_CONTAINER_XML);
+  for(const b of HWPX_BINS) zip.file('BinData/'+b.id+'.'+b.ext, b.b64, {base64:true});
   zip.file('Contents/content.hpf', hwpxContentHPF(title));
   zip.file('Contents/header.xml', hwpxHeaderXML());
   zip.file('Contents/section0.xml', hwpxSectionXML(title, paras));
@@ -1969,11 +2470,12 @@ async function convertTextToHWPX(){
   const text = $('#bulk-text').value.trim();
   if(!text){ toast('먼저 파일을 올리거나 텍스트를 붙여넣으세요.'); return; }
   if(!window.JSZip){ toast('구성요소(JSZip)가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
-  resetEqDiag();
+  resetHwpxBuild();
   const title = $('#b-srcname').value.trim() || '변환 문서';
   const paras = [];
   text.split('\n').forEach(l=>paras.push(hwpxP(l, 0, 0)));
   await saveHwpxFile(title, paras);
+  logJob('HWPX 변환', title, 'PDF/텍스트 → 한글 파일');
   toast('추출 텍스트를 한글(HWPX) 파일로 변환했습니다'+eqDiagSummary());
 }
 
@@ -2132,6 +2634,7 @@ function renderDash(){
   state.cart = state.cart.filter(id=>state.problems.some(p=>p.id===id));
   persistCart();
   refreshCounts();
+  renderJobLog();
 })();
 </script>
 </body>
