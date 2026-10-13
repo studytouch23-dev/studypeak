@@ -1123,8 +1123,10 @@ function splitBulk(){
 }
 function rerenderBulk(){
   $('#bulk-preview').innerHTML = state.bulkDrafts.map((d,i)=>
-    `<div class="pitem"><div style="font-weight:900;color:var(--gold-2)">${i+1}</div>
-      <div class="body"><div class="ptext">${esc(d.text)}</div>
+    `<div class="pitem"><div style="font-weight:900;color:var(--gold-2)">${d.num||i+1}</div>
+      <div class="body">
+        ${d.text?`<div class="ptext">${esc(d.text)}</div>`:(d.img?'':'<div class="hint">(내용 없음)</div>')}
+        ${d.img?`<div class="pimgs"><img src="${d.img}" style="max-height:170px" alt="문항 ${esc(d.num||'')} 이미지"></div>`:''}
         ${d.sol||d.ans?`<div class="pmeta">${d.ans?`<span class="tag">정답 ${esc(d.ans.slice(0,12))} ✓</span>`:''}${d.sol?`<span class="tag">해설 매칭 ✓</span>`:''}</div>`:''}</div>
       <button class="btn danger sm" onclick="state.bulkDrafts.splice(${i},1);rerenderBulk()">삭제</button></div>`).join('');
   $('#bulk-status').textContent = state.bulkDrafts.length+'개 문제';
@@ -1138,13 +1140,16 @@ async function saveBulk(){
   const existing = new Set(state.problems.map(p=>normalize(p.question)));
   let n=0, dup=0;
   for(const d of state.bulkDrafts){
-    const question = d.text.replace(NUM_HEAD,'');
-    if(existing.has(normalize(question))){ dup++; continue; }   // 완전 동일 문항은 건너뜀
-    existing.add(normalize(question));
-    const sg = suggestTags(d.text);
+    const question = (d.text||'').replace(NUM_HEAD,'');
+    if(!question && !d.img){ continue; }
+    if(!d.img){                                     // 완전 동일 문항은 건너뜀 (이미지 문항 제외)
+      if(existing.has(normalize(question))){ dup++; continue; }
+      existing.add(normalize(question));
+    }
+    const sg = suggestTags(d.text||'');
     const useSg = sg.length && CURRICULUM[sg[0].unit[0]];
     const p = {
-      id: uid()+n, question, choices: [], answer: d.ans||'', solution: d.sol||'', images: [],
+      id: uid()+n, question, choices: [], answer: d.ans||'', solution: d.sol||'', images: d.img?[d.img]:[],
       subject: useSg ? sg[0].unit[0] : subject,
       chapter: useSg ? sg[0].unit[1] : (Object.keys(CURRICULUM[subject]||{})[0]||''),
       section: useSg ? sg[0].unit[2] : '',
@@ -1206,23 +1211,77 @@ async function parseHWPX(file){
 }
 async function parsePDF(file){
   if(!window.pdfjsLib) throw new Error('PDF 구성요소가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.');
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  if(!pdfjsLib.GlobalWorkerOptions.workerSrc)
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   const pdf = await pdfjsLib.getDocument({data: await file.arrayBuffer()}).promise;
-  const out = [];
+  // 1차 분석: 페이지별 텍스트 아이템과 문항 번호 앵커
+  const pages = [];
+  let anchorTotal = 0, bodyTotal = 0;
   for(let i=1;i<=pdf.numPages;i++){
     const page = await pdf.getPage(i);
+    const vp = page.getViewport({scale:1});
     const tc = await page.getTextContent();
-    let line='', lastY=null; const lines=[];
-    for(const it of tc.items){
-      const y = it.transform[5];
-      if(lastY!==null && Math.abs(y-lastY)>2.5){ lines.push(line); line=''; }
-      line += it.str;
-      lastY = y;
+    const items = tc.items.map(it=>({str:it.str, x:it.transform[4], y:it.transform[5]}));
+    const pg = {page, w:vp.width, h:vp.height, items, anchors:[], bodyLen:0, text:''};
+    for(const it of items){
+      const s = it.str.trim();
+      pg.text += s;
+      if(it.y < pg.h*0.06) continue;                       // 꼬리말(페이지 번호) 제외
+      if(/^\d{1,2}$/.test(s)) pg.anchors.push({num:String(+s), x:it.x, y:it.y});
+      else pg.bodyLen += s.length;
     }
-    lines.push(line);
-    out.push(lines.join('\n'));
+    pg.isQuickAns = pg.text.includes('빠른정답') || pg.text.includes('빠른 정답');
+    pg.ansLabels = items.filter(it=>/^(정답|해설)$/.test(it.str.trim())).length;
+    anchorTotal += pg.anchors.length; bodyTotal += pg.bodyLen;
+    pages.push(pg);
   }
-  return out.join('\n');
+  // 본문 텍스트가 거의 없고 번호 앵커만 있으면 "이미지형 PDF"로 판단
+  const imageMode = anchorTotal >= 3 && (bodyTotal/pages.length) < 150;
+  if(!imageMode){
+    const out = [];
+    for(const pg of pages){
+      let line='', lastY=null; const lines=[];
+      for(const it of pg.items){
+        if(lastY!==null && Math.abs(it.y-lastY)>2.5){ lines.push(line); line=''; }
+        line += it.str; lastY = it.y;
+      }
+      lines.push(line);
+      out.push(lines.join('\n'));
+    }
+    return out.join('\n');
+  }
+  // 이미지형: 문제 페이지를 렌더링해 번호 앵커 기준으로 문항별 크롭
+  const drafts = []; let skipped = 0;
+  for(const pg of pages){
+    if(pg.isQuickAns || pg.ansLabels >= 4 || !pg.anchors.length){ skipped++; continue; }
+    const scale = 2;
+    const vp = pg.page.getViewport({scale});
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(vp.width); canvas.height = Math.ceil(vp.height);
+    await pg.page.render({canvasContext: canvas.getContext('2d'), viewport: vp}).promise;
+    const mid = pg.w/2;
+    const twoCol = pg.anchors.some(a=>a.x < mid*0.8) && pg.anchors.some(a=>a.x >= mid);
+    const cols = twoCol ? [pg.anchors.filter(a=>a.x<mid), pg.anchors.filter(a=>a.x>=mid)] : [pg.anchors.slice()];
+    for(let ci=0; ci<cols.length; ci++){
+      const colAnchors = cols[ci].sort((a,b)=>b.y-a.y);   // PDF 좌표는 아래가 0 → 위에서 아래로
+      for(let k=0;k<colAnchors.length;k++){
+        const a = colAnchors[k];
+        const topPdf = Math.min(pg.h, a.y + 14);
+        const botPdf = (k+1<colAnchors.length) ? colAnchors[k+1].y + 16 : pg.h*0.055;
+        const x0 = Math.max(0, a.x - 8);
+        const x1 = twoCol ? (ci===0 ? mid - 4 : pg.w*0.975) : pg.w*0.975;
+        const sw = (x1-x0)*scale, sh = (topPdf-botPdf)*scale;
+        if(sw < 40 || sh < 24) continue;
+        const c2 = document.createElement('canvas');
+        c2.width = Math.ceil(sw); c2.height = Math.ceil(sh);
+        c2.getContext('2d').drawImage(canvas, x0*scale, (pg.h-topPdf)*scale, sw, sh, 0, 0, sw, sh);
+        drafts.push({ text:'', num:a.num, sol:'', ans:'', img: c2.toDataURL('image/jpeg', 0.87) });
+      }
+    }
+  }
+  if(!drafts.length) throw new Error(file.name+' — 이미지형 PDF에서 문항 영역을 찾지 못했습니다.');
+  drafts.sort((a,b)=>(+a.num)-(+b.num));
+  return { kind:'imageDrafts', drafts, skipped };
 }
 async function extractTextFromFile(file){
   const nm = file.name.toLowerCase();
@@ -1252,14 +1311,25 @@ async function handleUploadFiles(files, targetSel){
           continue;
         }
       }
-      const text = (await extractTextFromFile(file)).trim();
+      const res = await extractTextFromFile(file);
+      if(hash){ seen[hash] = {name:file.name, date:new Date().toISOString().slice(0,10)}; }
+      if(targetSel==='#bulk-text' && !$('#b-srcname').value.trim())
+        $('#b-srcname').value = file.name.replace(/\.(hwpx|hwp|pdf|txt)$/i,'');
+      if(res && res.kind==='imageDrafts'){
+        // 이미지형 PDF: 문항별 크롭 이미지를 바로 분할 결과로
+        state.bulkDrafts = res.drafts;
+        $('#bulk-preview-card').style.display='block';
+        rerenderBulk();
+        $('#bulk-status').textContent = `이미지 문항 ${res.drafts.length}개`;
+        status.innerHTML = `✅ <b>${esc(file.name)}: 이미지형 PDF 감지</b> — 문항 ${res.drafts.length}개를 이미지로 잘라냈습니다`
+          +(res.skipped?` (정답·해설 페이지 등 ${res.skipped}장 건너뜀)`:'')
+          +`.<br>글자 인식(OCR)은 없어서 문제 텍스트는 비어 있습니다 — 아래 미리보기 확인 후 [전체 저장]하고, 검색용 키워드는 상세·수정에서 붙여 주세요.`;
+        ok++; continue;
+      }
+      const text = String(res).trim();
       if(!text){ status.textContent = `⚠ ${file.name} — 추출된 텍스트가 없습니다 (스캔본 PDF는 글자 인식이 필요합니다).`; continue; }
       const ta = $(targetSel);
       ta.value = (ta.value.trim() ? ta.value.replace(/\s+$/,'')+'\n\n' : '') + text;
-      if(hash){ seen[hash] = {name:file.name, date:new Date().toISOString().slice(0,10)}; }
-      // 출처 이름이 비어 있으면 파일명으로 자동 채움 (원본 추적)
-      if(targetSel==='#bulk-text' && !$('#b-srcname').value.trim())
-        $('#b-srcname').value = file.name.replace(/\.(hwpx|hwp|pdf|txt)$/i,'');
       ok++;
     }catch(err){
       status.textContent = '⚠ '+(err.message||'파일 처리 실패');
@@ -1268,8 +1338,10 @@ async function handleUploadFiles(files, targetSel){
   }
   if(ok){
     localStorage.setItem('sp-lab-filehashes', JSON.stringify(seen));
-    status.textContent = `✅ 파일 ${ok}개에서 텍스트를 추출했습니다. 분할 결과를 확인하세요.`;
-    if(targetSel==='#bulk-text') splitBulk();
+    if(targetSel==='#bulk-text' && $('#bulk-text').value.trim()){
+      status.textContent = `✅ 파일 ${ok}개에서 텍스트를 추출했습니다. 분할 결과를 확인하세요.`;
+      splitBulk();
+    }
   }
 }
 const dz = $('#dropzone');
@@ -1733,14 +1805,17 @@ const HWPX_CONTAINER_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes
 <ocf:container xmlns:ocf="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:hpf="http://www.hancom.co.kr/schema/2011/hpf">
 <ocf:rootfiles><ocf:rootfile full-path="Contents/content.hpf" media-type="application/hwpml-package+xml"/></ocf:rootfiles>
 </ocf:container>`;
-const HWPX_MANIFEST_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+function hwpxManifestXML(){
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <odf:manifest xmlns:odf="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">
 <odf:file-entry odf:full-path="/" odf:media-type="application/hwp+zip"/>
 <odf:file-entry odf:full-path="version.xml" odf:media-type="text/xml"/>
 <odf:file-entry odf:full-path="Contents/header.xml" odf:media-type="application/xml"/>
 <odf:file-entry odf:full-path="Contents/section0.xml" odf:media-type="application/xml"/>
 <odf:file-entry odf:full-path="settings.xml" odf:media-type="application/xml"/>
+${HWPX_BINS.map(b=>`<odf:file-entry odf:full-path="BinData/${b.id}.${b.ext}" odf:media-type="${b.mime}"/>`).join('\n')}
 </odf:manifest>`;
+}
 const HWPX_SETTINGS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <ha:HWPApplicationSetting xmlns:ha="http://www.hancom.co.kr/hwpml/2011/app" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0">
 <ha:CaretPosition listIDRef="0" paraIDRef="0" pos="0"/>
@@ -1753,9 +1828,58 @@ function hwpxContentHPF(title){
 <opf:item id="header" href="Contents/header.xml" media-type="application/xml"/>
 <opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"/>
 <opf:item id="settings" href="settings.xml" media-type="application/xml"/>
+${HWPX_BINS.map(b=>`<opf:item id="${b.id}" href="BinData/${b.id}.${b.ext}" media-type="${b.mime}" isEmbeded="1"/>`).join('\n')}
 </opf:manifest>
 <opf:spine><opf:itemref idref="header" linear="yes"/><opf:itemref idref="section0" linear="yes"/></opf:spine>
 </opf:package>`;
+}
+/* 이미지 바이너리(BinData) 등록 */
+let HWPX_BINS = [];
+let HWPX_PIC_ID = 1900000000;
+function resetHwpxBuild(){ resetEqDiag(); HWPX_BINS = []; HWPX_PIC_ID = 1900000000; }
+function registerHwpxBin(dataURL){
+  const m = String(dataURL).match(/^data:image\/(png|jpe?g|gif|bmp);base64,(.+)$/i);
+  if(!m) return null;
+  const ext = m[1].toLowerCase().replace('jpeg','jpg');
+  const id = 'image'+(HWPX_BINS.length+1);
+  HWPX_BINS.push({id, ext, mime:'image/'+(ext==='jpg'?'jpeg':ext), b64:m[2]});
+  return id;
+}
+function imgDims(dataURL){
+  return new Promise(res=>{
+    const im = new Image();
+    im.onload = ()=>res({w:im.naturalWidth||800, h:im.naturalHeight||600});
+    im.onerror = ()=>res({w:800, h:600});
+    im.src = dataURL;
+  });
+}
+function hwpxPic(binId, w, h){ // w,h: hwpunit
+  HWPX_PIC_ID++;
+  return `<hp:pic id="${HWPX_PIC_ID}" zOrder="${HWPX_PIC_ID-1900000000}" numberingType="PICTURE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" href="" groupLevel="0" instid="${HWPX_PIC_ID+88}" reverse="0">`
+  +`<hp:offset x="0" y="0"/><hp:orgSz width="${w}" height="${h}"/><hp:curSz width="${w}" height="${h}"/>`
+  +`<hp:flip horizontal="0" vertical="0"/><hp:rotationInfo angle="0" centerX="${Math.round(w/2)}" centerY="${Math.round(h/2)}" rotateimage="1"/>`
+  +`<hp:renderingInfo><hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/></hp:renderingInfo>`
+  +`<hc:img binaryItemIDRef="${binId}" bright="0" contrast="0" effect="REAL_PIC" alpha="0"/>`
+  +`<hp:imgRect><hc:pt0 x="0" y="0"/><hc:pt1 x="${w}" y="0"/><hc:pt2 x="${w}" y="${h}"/><hc:pt3 x="0" y="${h}"/></hp:imgRect>`
+  +`<hp:imgClip left="0" top="0" right="${w}" bottom="${h}"/>`
+  +`<hp:inMargin left="0" right="0" top="0" bottom="0"/>`
+  +`<hp:imgDim dimwidth="${w}" dimheight="${h}"/>`
+  +`<hp:sz width="${w}" height="${h}" widthRelTo="ABSOLUTE" heightRelTo="ABSOLUTE" protect="0"/>`
+  +`<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>`
+  +`<hp:outMargin left="0" right="0" top="0" bottom="0"/></hp:pic>`;
+}
+async function hwpxImageParas(images){
+  const out = [];
+  for(const d of (images||[])){
+    const bid = registerHwpxBin(d);
+    if(!bid) continue;
+    const dim = await imgDims(d);
+    let w = dim.w*50, h = dim.h*50;        // 2배 해상도 크롭 → 원래 크기
+    const maxW = 42000;                     // 본문 폭
+    if(w > maxW){ h = h*maxW/w; w = maxW; }
+    out.push(`<hp:p paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0">${hwpxPic(bid, Math.round(w), Math.round(h))}</hp:run></hp:p>`);
+  }
+  return out;
 }
 function hwpxFontfaces(){
   const langs = ['HANGUL','LATIN','HANJA','JAPANESE','OTHER','SYMBOL','USER'];
@@ -1893,12 +2017,83 @@ function latexToHwpEq(tex){
   });
   return s.replace(/\s+/g,' ').trim();
 }
+/* ── 수식 크기 추정(hwpunit, 10pt 기준): 작게 잡으면 뒤 글자와 겹치므로 구조를 재귀 측정 ── */
+const EQ_SYM_TOKENS = new Set(['leq','geq','neq','inf','rarrow','larrow','lrarrow','times','cdot','divide',
+  'in','notin','subset','supset','cap','cup','emptyset','therefore','because','pi','theta','alpha','beta',
+  'gamma','delta','lambda','mu','sigma','omega','phi','rho','epsilon','equiv','approx','sim','cdots','ldots',
+  'circ','angle','triangle','bar','vec','lbrace','rbrace']);
+const EQ_FUNC_TOKENS = new Set(['sin','cos','tan','sec','csc','cot','log','ln','max','min']);
+function splitTopLevel(s, sep){
+  const parts = []; let depth=0, last=0;
+  for(let i=0;i<s.length;i++){
+    if(s[i]==='{') depth++;
+    else if(s[i]==='}') depth--;
+    else if(depth===0 && s.startsWith(sep, i)){ parts.push(s.slice(last,i)); last=i+sep.length; i+=sep.length-1; }
+  }
+  parts.push(s.slice(last));
+  return parts;
+}
+function eqCharW(ch){
+  if(ch===' ') return 280;
+  if(/[0-9a-zA-Z.,'()\[\]|+\-=<>:;!?\/]/.test(ch)) return 520;
+  if(/[ㄱ-힝一-鿿]/.test(ch)) return 1050;
+  return 650;
+}
+function eqMeasure(s){
+  s = String(s).trim();
+  if(!s) return {w:300, h:1100};
+  const fracParts = splitTopLevel(s, ' over ');
+  if(fracParts.length>1){
+    const ms = fracParts.map(eqMeasure);
+    return { w: Math.max(...ms.map(m=>m.w)) + 500, h: ms.reduce((t,m)=>t+m.h,0) + 300 };
+  }
+  let w=0, h=1100, i=0;
+  while(i<s.length){
+    const ch = s[i];
+    if(ch==='{'){
+      const g = readBraceGroup(s,i);
+      if(!g){ i++; continue; }
+      const m = eqMeasure(g[0]);
+      w += m.w; h = Math.max(h, m.h); i = g[1];
+    } else if(ch==='^' || ch==='_'){
+      i++;
+      let m = {w:520, h:1100};
+      if(s[i]==='{'){ const g = readBraceGroup(s,i); if(g){ m = eqMeasure(g[0]); i = g[1]; } else i++; }
+      else if(i<s.length){ m = {w:eqCharW(s[i]), h:1100}; i++; }
+      w += Math.round(m.w*0.62);
+      h = Math.max(h, 1100 + Math.round(m.h*0.45));
+    } else if(/[A-Za-z]/.test(ch)){
+      const word = s.slice(i).match(/^[A-Za-z]+/)[0];
+      if(word==='cases'){
+        i += 5; while(s[i]===' ') i++;
+        if(s[i]==='{'){
+          const g = readBraceGroup(s,i);
+          if(g){
+            const rows = splitTopLevel(g[0], '#').map(eqMeasure);
+            w += Math.max(...rows.map(m=>m.w)) + 900;
+            h = Math.max(h, rows.reduce((t,m)=>t+m.h,0) + 250);
+            i = g[1];
+          }
+        }
+        continue;
+      }
+      if(word==='sqrt'){ w += 950; i += 4; continue; }
+      if(word==='lim'||word==='sum'||word==='int'||word==='prod'){ w += 1500; h = Math.max(h, 2200); i += word.length; continue; }
+      if(EQ_SYM_TOKENS.has(word)){ w += 950; i += word.length; continue; }
+      if(EQ_FUNC_TOKENS.has(word)){ w += word.length*480; i += word.length; continue; }
+      w += word.length*540; i += word.length;
+    } else {
+      w += eqCharW(ch); i++;
+    }
+  }
+  return {w: Math.max(w,500), h};
+}
 let HWPX_EQ_ID = 1816200000;
 function hwpxEquation(script){
   HWPX_EQ_ID++; EQ_DIAG.count++;
-  const plain = script.replace(/[{}^_]/g,'');
-  const w = Math.max(800, Math.min(30000, Math.round(plain.length*255)+200));
-  const h = /over|int|lim|sum|cases|sqrt/.test(script) ? 2050 : 1150;
+  const m = eqMeasure(script);
+  const w = Math.min(44000, m.w + 300);
+  const h = m.h + 100;
   return `<hp:equation id="${HWPX_EQ_ID}" zOrder="${HWPX_EQ_ID-1816200000}" numberingType="EQUATION" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" version="Equation Version 60" baseLine="65" textColor="#000000" baseUnit="1000" lineMode="CHAR" font="HYhwpEQ"><hp:sz width="${w}" height="${h}" widthRelTo="ABSOLUTE" heightRelTo="ABSOLUTE" protect="0"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:outMargin left="56" right="56" top="56" bottom="56"/><hp:script>${xesc(script)}</hp:script></hp:equation>`;
 }
 /* $...$ / $$...$$ 구간을 한글 수식 개체 run으로, 나머지는 텍스트 run으로 */
@@ -1933,7 +2128,7 @@ async function downloadHWPX(){
   const list = cartProblems();
   if(!list.length){ toast('담긴 문제가 없습니다.'); return; }
   if(!window.JSZip){ toast('구성요소(JSZip)가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
-  resetEqDiag();
+  resetHwpxBuild();
   const title = $('#s-title').value||'수학 연습 문제';
   const sub = $('#s-sub').value, author = $('#s-author').value, date = $('#s-date').value;
   const withMeta = $('#s-meta').checked;
@@ -1946,14 +2141,16 @@ async function downloadHWPX(){
   paras.push(hwpxP([date, author, '총 '+list.length+'문항'+(total?` · ${total}점`:''), '이름: ______________'].filter(Boolean).join('    '), 0, 1));
   paras.push(hwpxP('',0,0));
   if(doctype==='teacher' || doctype==='student'){
-    list.forEach((p,i)=>{
+    for(let i=0;i<list.length;i++){
+      const p = list[i];
       const headTxt = (i+1)+'.'+(pts(p)!=null?` [${pts(p)}점]`:'')+' ';
       const lines = (headTxt+p.question).split('\n');
       lines.forEach((l,li)=>paras.push(hwpxP(l, li===0?1:0, 0)));
+      paras.push(...await hwpxImageParas(p.images));
       if(p.choices && p.choices.length) paras.push(hwpxP(p.choices.join('    '), 0, 0));
       if(withMeta && p.srcName) paras.push(hwpxP(`[${p.srcType||'출처'} · ${p.srcName}${p.srcYear?' '+p.srcYear:''}]`, 0, 0));
       paras.push(hwpxP('',0,0));
-    });
+    }
   }
   if(doctype==='anskey'){
     paras.push(hwpxP('정답표', 2, 1));
@@ -1972,15 +2169,16 @@ async function downloadHWPX(){
   }
 
   await saveHwpxFile(title, paras);
-  toast('한글 파일(HWPX) 다운로드 완료'+eqDiagSummary());
+  toast('한글 파일(HWPX) 다운로드 완료'+eqDiagSummary()+(HWPX_BINS.length?` · 그림 ${HWPX_BINS.length}장 포함`:''));
 }
 async function saveHwpxFile(title, paras){
   const zip = new JSZip();
   zip.file('mimetype', 'application/hwp+zip', {compression:'STORE'});
   zip.file('version.xml', HWPX_VERSION_XML);
   zip.file('settings.xml', HWPX_SETTINGS_XML);
-  zip.file('META-INF/manifest.xml', HWPX_MANIFEST_XML);
+  zip.file('META-INF/manifest.xml', hwpxManifestXML());
   zip.file('META-INF/container.xml', HWPX_CONTAINER_XML);
+  for(const b of HWPX_BINS) zip.file('BinData/'+b.id+'.'+b.ext, b.b64, {base64:true});
   zip.file('Contents/content.hpf', hwpxContentHPF(title));
   zip.file('Contents/header.xml', hwpxHeaderXML());
   zip.file('Contents/section0.xml', hwpxSectionXML(title, paras));
@@ -1995,7 +2193,7 @@ async function convertTextToHWPX(){
   const text = $('#bulk-text').value.trim();
   if(!text){ toast('먼저 파일을 올리거나 텍스트를 붙여넣으세요.'); return; }
   if(!window.JSZip){ toast('구성요소(JSZip)가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
-  resetEqDiag();
+  resetHwpxBuild();
   const title = $('#b-srcname').value.trim() || '변환 문서';
   const paras = [];
   text.split('\n').forEach(l=>paras.push(hwpxP(l, 0, 0)));
