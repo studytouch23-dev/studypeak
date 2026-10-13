@@ -718,7 +718,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
         <button class="btn danger sm" onclick="pdfedClearPage()">이 페이지 영역 지우기</button>
         <button class="btn gold" onclick="pdfedFinish()" id="pdfed-finish">완료 — 문항 추출</button>
       </div>
-      <p class="hint" style="margin-bottom:.4rem">파란 박스가 인식된 문항 영역입니다. <b>빈 곳을 드래그</b>하면 새 영역이 추가되고, 박스를 <b>클릭</b>하면 오른쪽에서 번호 수정·삭제할 수 있습니다.</p>
+      <p class="hint" style="margin-bottom:.4rem">파란 박스가 인식된 문항 영역입니다. <b>박스 안을 드래그 = 이동</b> · <b>가장자리를 드래그 = 크기 조절</b>(위쪽 포함) · <b>빈 곳 드래그 = 새 영역</b> · 번호 수정·삭제는 오른쪽 목록에서.</p>
       <div style="display:grid;grid-template-columns:minmax(0,1fr) 215px;gap:.8rem;align-items:start">
         <div id="pdfed-wrap" style="position:relative;border:1px solid var(--line);border-radius:8px;overflow:hidden;cursor:crosshair;user-select:none">
           <canvas id="pdfed-canvas" style="display:block;width:100%"></canvas>
@@ -1762,53 +1762,99 @@ function pdfedClearPage(){
   PDFED.selectedRegion=null;
   pdfedDrawOverlays(); pdfedRegList();
 }
-/* 드래그로 새 영역 추가 + 클릭 선택 */
+/* 영역 상호작용: 빈 곳 드래그=새 영역, 박스 안 드래그=이동, 가장자리 드래그=크기 조절 */
 (function(){
   const wrap = $('#pdfed-wrap');
-  let start = null, ghost = null;
+  const EDGE = 8;                               // 가장자리 판정 폭(px)
+  let mode = null, ghost = null;
+  const dispScale = ()=>{ const pg = pdfedCurPage(); return pg ? $('#pdfed-canvas').clientWidth/pg.w : 1; };
+  function pos(e){ const r = wrap.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; }
+  function edgeMask(reg, px, py, s){
+    const bx = px - reg.x*s, by = py - reg.y*s;
+    return { L: bx<EDGE, R: bx>reg.w*s-EDGE, T: by<EDGE, B: by>reg.h*s-EDGE };
+  }
+  function cursorFor(m){
+    if((m.L&&m.T)||(m.R&&m.B)) return 'nwse-resize';
+    if((m.R&&m.T)||(m.L&&m.B)) return 'nesw-resize';
+    if(m.L||m.R) return 'ew-resize';
+    if(m.T||m.B) return 'ns-resize';
+    return 'move';
+  }
   wrap.addEventListener('mousedown', e=>{
+    const p = pos(e);
     const regEl = e.target.closest('.reg-box');
     if(regEl){
-      PDFED.selectedRegion = +regEl.dataset.r;
+      const i = +regEl.dataset.r;
+      PDFED.selectedRegion = i;
       pdfedDrawOverlays(); pdfedRegList();
-      return;
+      const r = PDFED.regions[i];
+      const m = edgeMask(r, p.x, p.y, dispScale());
+      mode = (m.L||m.R||m.T||m.B)
+        ? { type:'resize', idx:i, mask:m, orig:{...r}, sx:p.x, sy:p.y }
+        : { type:'move',   idx:i, orig:{...r}, sx:p.x, sy:p.y };
+      e.preventDefault(); return;
     }
-    const rect = wrap.getBoundingClientRect();
-    start = {x: e.clientX-rect.left, y: e.clientY-rect.top};
+    mode = { type:'draw', sx:p.x, sy:p.y };
     ghost = document.createElement('div');
     ghost.className = 'reg-ghost';
     $('#pdfed-overlays').appendChild(ghost);
     e.preventDefault();
   });
-  wrap.addEventListener('mousemove', e=>{
-    if(!start || !ghost) return;
-    const rect = wrap.getBoundingClientRect();
-    const x = e.clientX-rect.left, y = e.clientY-rect.top;
-    ghost.style.left = Math.min(x,start.x)+'px';
-    ghost.style.top = Math.min(y,start.y)+'px';
-    ghost.style.width = Math.abs(x-start.x)+'px';
-    ghost.style.height = Math.abs(y-start.y)+'px';
+  window.addEventListener('mousemove', e=>{
+    // 드래그 중이 아닐 때: 커서 피드백
+    if(!mode){
+      const regEl = e.target.closest && e.target.closest('.reg-box');
+      if(regEl && wrap.contains(regEl)){
+        const p = pos(e);
+        const r = PDFED.regions[+regEl.dataset.r];
+        if(r) regEl.style.cursor = cursorFor(edgeMask(r, p.x, p.y, dispScale()));
+      }
+      return;
+    }
+    const p = pos(e);
+    const s = dispScale();
+    const pg = pdfedCurPage(); if(!pg) return;
+    if(mode.type==='draw' && ghost){
+      ghost.style.left = Math.min(p.x,mode.sx)+'px';
+      ghost.style.top = Math.min(p.y,mode.sy)+'px';
+      ghost.style.width = Math.abs(p.x-mode.sx)+'px';
+      ghost.style.height = Math.abs(p.y-mode.sy)+'px';
+      return;
+    }
+    const r = PDFED.regions[mode.idx]; if(!r) return;
+    const dx = (p.x-mode.sx)/s, dy = (p.y-mode.sy)/s;
+    const o = mode.orig, MIN = 14;
+    if(mode.type==='move'){
+      r.x = Math.min(Math.max(0, o.x+dx), pg.w-o.w);
+      r.y = Math.min(Math.max(0, o.y+dy), pg.h-o.h);
+    } else {
+      if(mode.mask.L){ const nx = Math.min(Math.max(0, o.x+dx), o.x+o.w-MIN); r.w = o.w-(nx-o.x); r.x = nx; }
+      if(mode.mask.R){ r.w = Math.min(Math.max(MIN, o.w+dx), pg.w-o.x); }
+      if(mode.mask.T){ const ny = Math.min(Math.max(0, o.y+dy), o.y+o.h-MIN); r.h = o.h-(ny-o.y); r.y = ny; }
+      if(mode.mask.B){ r.h = Math.min(Math.max(MIN, o.h+dy), pg.h-o.y); }
+    }
+    const el = $(`#pdfed-overlays .reg-box[data-r="${mode.idx}"]`);
+    if(el){
+      el.style.left = r.x*s+'px'; el.style.top = r.y*s+'px';
+      el.style.width = r.w*s+'px'; el.style.height = r.h*s+'px';
+    }
   });
   window.addEventListener('mouseup', e=>{
-    if(!start) return;
-    const rect = wrap.getBoundingClientRect();
-    const x = e.clientX-rect.left, y = e.clientY-rect.top;
-    const pg = pdfedCurPage();
-    if(ghost){ ghost.remove(); ghost=null; }
-    if(pg){
-      const dispScale = $('#pdfed-canvas').clientWidth / pg.w;
-      const rx = Math.min(x,start.x)/dispScale, ry = Math.min(y,start.y)/dispScale;
-      const rw = Math.abs(x-start.x)/dispScale, rh = Math.abs(y-start.y)/dispScale;
-      if(rw>18 && rh>12){
-        PDFED.regions.push({page:pg.idx, x:rx, y:ry, w:rw, h:rh, num:String(PDFED.nextNum++)});
-        pdfedDrawOverlays(); pdfedRegList();
+    if(!mode) return;
+    if(mode.type==='draw'){
+      const p = pos(e);
+      const pg = pdfedCurPage();
+      if(ghost){ ghost.remove(); ghost=null; }
+      if(pg){
+        const s = dispScale();
+        const rx = Math.min(p.x,mode.sx)/s, ry = Math.min(p.y,mode.sy)/s;
+        const rw = Math.abs(p.x-mode.sx)/s, rh = Math.abs(p.y-mode.sy)/s;
+        if(rw>18 && rh>12)
+          PDFED.regions.push({page:pg.idx, x:rx, y:ry, w:rw, h:rh, num:String(PDFED.nextNum++)});
       }
     }
-    start = null;
-  });
-  $('#pdfed-overlays').addEventListener('click', e=>{
-    const regEl = e.target.closest('.reg-box');
-    if(regEl){ PDFED.selectedRegion = +regEl.dataset.r; pdfedDrawOverlays(); pdfedRegList(); }
+    mode = null;
+    pdfedDrawOverlays(); pdfedRegList();
   });
 })();
 /* 완료: 영역별 크롭 → 일괄 등록 초안 */
@@ -1837,11 +1883,24 @@ async function pdfedFinish(){
     state.bulkDrafts = drafts;
     $('#bulk-preview-card').style.display='block';
     rerenderBulk();
-    $('#upload-status').innerHTML = `✅ <b>${esc(PDFED.fileName)}</b> — 영역 ${drafts.length}개를 이미지 문항으로 잘라냈습니다. 미리보기 확인 후 저장하세요.`;
     logJob('PDF 영역 인식', PDFED.fileName, drafts.length+'개 문항 추출');
+    const fname = PDFED.fileName;
     PDFED.regions = [];
     closePdfEditor();
-    toast(drafts.length+'개 문항을 추출했습니다.');
+    if(aiSettings().key){
+      // AI 키가 있으면 바로 텍스트·수식 변환 제안 (편집 가능한 HWPX로 가는 단계)
+      $('#upload-status').innerHTML = `✅ <b>${esc(fname)}</b> — 영역 ${drafts.length}개 추출.`;
+      if(confirm(`문항 ${drafts.length}개를 추출했습니다.\n\n지금 바로 AI로 텍스트·수식 변환할까요?\n변환하면 한글(HWPX)에서 편집 가능한 수식으로 출력됩니다.\n(본인 API 키 사용 — 문항당 소액 과금)`)){
+        await aiTranscribeDrafts();
+      } else {
+        $('#upload-status').innerHTML += ` 나중에 [🤖 AI 텍스트 변환] 버튼으로 변환할 수 있습니다.`;
+      }
+    } else {
+      $('#upload-status').innerHTML = `✅ <b>${esc(fname)}</b> — 영역 ${drafts.length}개를 이미지 문항으로 잘라냈습니다.<br>`
+        +`⚠ 지금은 <b>이미지</b> 상태라 한글(HWPX)로 내보내도 그림으로 들어갑니다. `
+        +`<b>편집 가능한 수식</b>으로 바꾸려면 [백업·데이터 → AI 변환 설정]에 API 키를 저장한 뒤 [🤖 AI 텍스트 변환]을 누르세요.`;
+      toast('이미지 문항으로 추출됨 — AI 변환을 거치면 한글 수식으로 바뀝니다.');
+    }
   } finally {
     $('#pdfed-finish').disabled = false;
   }
