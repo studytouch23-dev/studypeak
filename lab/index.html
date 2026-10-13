@@ -1140,9 +1140,80 @@ function headNum(text){ const m = text.match(NUM_HEAD); return m ? (m[1]||m[2]) 
 function splitProblemsText(raw){
   return raw.replace(/\r/g,'').split(NUM_SPLIT).map(s=>s.trim()).filter(s=>s.length>3);
 }
+/* 해설지 형식([답]→[풀이]→해설→문제→①~⑤) 한 블록을 문제·정답·해설로 분리 */
+function parseAnswerBlock(chunk){
+  const lines = chunk.replace(/\r/g,'').split('\n');
+  let ans = '';
+  const am = lines[0] && lines[0].match(/^\s*\[답\]\s*(.*)$/);
+  if(am){ ans = am[1].trim(); lines.shift(); }
+  // 끝의 선택지 ①~⑤ 수집
+  const choices = [];
+  while(lines.length){
+    const last = lines[lines.length-1].trim();
+    if(/^[①②③④⑤]/.test(last)){ choices.unshift(last); lines.pop(); }
+    else if(last===''){ lines.pop(); }
+    else break;
+  }
+  // 질문의 마지막 문장(큐) 찾기
+  const CUE = /(구하시오|구하여라|고르시오|값은\?|합은\?|것은\?|은\?|는\?|구하면\?)/;
+  let qEnd = -1;
+  for(let i=lines.length-1;i>=0;i--){ if(lines[i].trim() && CUE.test(lines[i])){ qEnd=i; break; } }
+  let qStart = qEnd;
+  if(qEnd>=0){
+    const SOLSIG = /^\s*(\[풀이\]|\[다른 풀이\]|\[참고\]|\[답\]|㉠|㉡|㉢|㉣|\(ⅰ\)|\(ⅱ\)|\(ⅲ\)|\(ⅳ\)|\(ⅴ\))/;
+    const isMathOnly = t=>/^\$[^가-힣]*\$$/.test(t.replace(/\s+/g,''));
+    for(let i=qEnd-1;i>=0;i--){
+      const t = lines[i].trim();
+      if(t===''){
+        let j=i-1; while(j>=0 && !lines[j].trim()) j--;
+        if(j<0){ qStart=i+1; break; }
+        const pt = lines[j].trim();
+        // 빈 줄 위가 해설의 끝(짧은 결론·순수 수식·해설 신호)이면 여기서 문제 시작
+        if(SOLSIG.test(pt) || isMathOnly(pt) || pt.length<22 || /이므로$|이다\.$/.test(pt)){ qStart=i+1; break; }
+        qStart=i; continue;
+      }
+      if(SOLSIG.test(t)){ qStart=i+1; break; }
+      qStart=i;
+    }
+  }
+  let question, sol;
+  if(qEnd>=0){
+    question = lines.slice(qStart, qEnd+1).join('\n').trim();
+    sol = lines.slice(0, qStart).join('\n').trim();
+  } else {
+    question = lines.join('\n').trim(); sol = '';
+  }
+  sol = sol.replace(/^\s*\[풀이\]\s*\n?/,'').trim();
+  return { question, choices, ans, sol };
+}
 function splitBulk(){
   const raw = $('#bulk-text').value;
   if(!raw.trim()){ toast('파일을 올리거나 텍스트를 먼저 붙여넣으세요.'); return; }
+  // ── 해설지 형식 감지: [답] 블록이 2개 이상이면 번호 분할 대신 블록 분할 ──
+  const ansLines = (raw.match(/^\s*\[답\]/gm)||[]).length;
+  if(ansLines>=2){
+    const blocks = raw.replace(/\r/g,'').split(/\n(?=\s*\[답\])/).filter(b=>/^\s*\[답\]/.test(b));
+    const seenQ = new Set();
+    const drafts = [];
+    let dupInFile = 0;
+    for(const b of blocks){
+      const r = parseAnswerBlock(b);
+      if(!r.question || r.question.length<6) continue;
+      const key = r.question.replace(/\s+/g,'');
+      if(seenQ.has(key)){ dupInFile++; continue; }     // 같은 파일 내(또는 중복 업로드) 반복 제거
+      seenQ.add(key);
+      drafts.push({ text:r.question, num:String(drafts.length+1), sol:r.sol, ans:r.ans, choices:r.choices });
+    }
+    if(drafts.length){
+      state.bulkDrafts = drafts;
+      $('#bulk-preview-card').style.display='block';
+      rerenderBulk();
+      $('#bulk-status').textContent = `해설지 형식 감지 — ${drafts.length}문항 (문제·정답·해설 자동 분리)`
+        +(dupInFile?` · 반복 ${dupInFile}개 제거`:'')
+        +` · 분리 경계가 어긋난 문항은 미리보기에서 확인 후 상세·수정에서 다듬어 주세요`;
+      return;
+    }
+  }
   const parts = splitProblemsText(raw);
   // 해설 textarea 매칭: 같은 번호(1. 2. 3))끼리 짝지음
   const solMap = {}, ansMap = {};
@@ -1193,6 +1264,7 @@ function rerenderBulk(){
     `<div class="pitem"><div style="font-weight:900;color:var(--gold-2)">${d.num||i+1}</div>
       <div class="body">
         ${d.text?`<div class="ptext">${esc(d.text)}</div>`:(d.img?'':'<div class="hint">(내용 없음)</div>')}
+        ${d.choices&&d.choices.length?`<div class="hint">${d.choices.map(c=>esc(c)).join(' &nbsp; ')}</div>`:''}
         ${d.img?`<div class="pimgs"><img src="${d.img}" style="max-height:170px" alt="문항 ${esc(d.num||'')} 이미지"></div>`:''}
         ${d.sol||d.ans?`<div class="pmeta">${d.ans?`<span class="tag">정답 ${esc(d.ans.slice(0,12))} ✓</span>`:''}${d.sol?`<span class="tag">해설 매칭 ✓</span>`:''}</div>`:''}</div>
       <button class="btn danger sm" onclick="state.bulkDrafts.splice(${i},1);rerenderBulk()">삭제</button></div>`).join('');
@@ -1216,7 +1288,7 @@ async function saveBulk(){
     const sg = suggestTags(d.text||'');
     const useSg = sg.length && CURRICULUM[sg[0].unit[0]];
     const p = {
-      id: uid()+n, question, choices: [], answer: d.ans||'', solution: d.sol||'', images: d.img?[d.img]:[],
+      id: uid()+n, question, choices: d.choices||[], answer: d.ans||'', solution: d.sol||'', images: d.img?[d.img]:[],
       subject: useSg ? sg[0].unit[0] : subject,
       chapter: useSg ? sg[0].unit[1] : (Object.keys(CURRICULUM[subject]||{})[0]||''),
       section: useSg ? sg[0].unit[2] : '',
@@ -1235,18 +1307,70 @@ async function saveBulk(){
 }
 
 /* ═══════════════ 파일 업로드 파서 (HWPX·PDF·TXT) ═══════════════ */
-/* 한글 수식 스크립트 → LaTeX 근사 역변환 (가져오기용) */
-function hwpEqToLatex(s){
-  s = String(s).replace(/\s+/g,' ').trim();
-  let prev;
-  do{ prev = s; s = s.replace(/\{([^{}]*)\}\s*over\s*\{([^{}]*)\}/g, '\\dfrac{$1}{$2}'); }while(s!==prev);
-  s = s.replace(/\bsqrt\s*\{/g, '\\sqrt{');
-  const R = {leq:'\\le',geq:'\\ge',neq:'\\ne',inf:'\\infty',rarrow:'\\to',larrow:'\\leftarrow',
-    times:'\\times',cdot:'\\cdot',divide:'\\div',pi:'\\pi',alpha:'\\alpha',beta:'\\beta',gamma:'\\gamma',
-    theta:'\\theta',lbrace:'\\{',rbrace:'\\}',cap:'\\cap',cup:'\\cup',lim:'\\lim',int:'\\int',sum:'\\sum',
-    sin:'\\sin',cos:'\\cos',tan:'\\tan',log:'\\log',ln:'\\ln'};
-  s = s.replace(/\b(leq|geq|neq|inf|rarrow|larrow|times|cdot|divide|pi|alpha|beta|gamma|theta|lbrace|rbrace|cap|cup|lim|int|sum|sin|cos|tan|log|ln)\b/g, m=>R[m]);
+/* 한글 수식 스크립트 → LaTeX 근사 역변환 (가져오기용)
+   한글 수식은 대소문자 무관 토큰(LEFT, TIMES, LEQ…)과 간격 문자(`)를 쓴다. */
+function convHwpOver(s){ // {A} over {B} / A over B → \dfrac{A}{B}, 중첩 중괄호 안전
+  for(let guard=0; guard<400; guard++){
+    const m = s.match(/\bover\b/i);
+    if(!m) break;
+    const at = m.index;
+    let j = at-1; while(j>=0 && s[j]===' ') j--;
+    let num, numStart;
+    if(s[j]==='}'){
+      let depth=0, k=j;
+      for(;k>=0;k--){ if(s[k]==='}') depth++; else if(s[k]==='{'){ depth--; if(depth===0) break; } }
+      if(k<0) break;
+      num = s.slice(k+1, j); numStart = k;
+    } else {
+      let k=j; while(k>=0 && /[^\s{}]/.test(s[k])) k--;
+      num = s.slice(k+1, j+1); numStart = k+1;
+      if(!num) break;
+    }
+    let i2 = at + m[0].length; while(s[i2]===' ') i2++;
+    let den, denEnd;
+    if(s[i2]==='{'){ const g = readBraceGroup(s, i2); if(!g) break; den = g[0]; denEnd = g[1]; }
+    else { let k=i2; while(k<s.length && /[^\s{}]/.test(s[k])) k++; den = s.slice(i2,k); denEnd = k; if(!den) break; }
+    s = s.slice(0, numStart)+'\\dfrac{'+num+'}{'+den+'}'+s.slice(denEnd);
+  }
   return s;
+}
+function hwpEqToLatex(s){
+  s = String(s).replace(/`/g,' ');                 // ` = 한글 수식의 간격 문자
+  s = s.replace(/~/g,' ').replace(/\s+/g,' ').trim();
+  s = s.replace(/\b(left|right)\b\s*/gi,'');       // LEFT ( … RIGHT ) → ( … )
+  s = s.replace(/\b(rm|it|bf)\b\s*/gi,'');         // 서체 전환 토큰
+  s = s.replace(/!=/g,' \\ne ');
+  s = s.replace(/\bprime\b/gi,"'");
+  // cases { a # b } → \begin{cases}a\\b\end{cases}
+  for(let guard=0; guard<50; guard++){
+    const m = s.match(/\bcases\b\s*\{/i);
+    if(!m) break;
+    const g = readBraceGroup(s, m.index + m[0].length - 1);
+    if(!g) break;
+    s = s.slice(0, m.index)+'\\begin{cases}'+g[0].replace(/#/g,' \\\\ ')+'\\end{cases}'+s.slice(g[1]);
+  }
+  s = convHwpOver(s);
+  s = s.replace(/\b(vec|bar|hat|dyad|acute|grave|check|arch|tilde)\b\s*\{/gi,(m,w)=>'\\'+({bar:'overline',dyad:'overline',arch:'overline'}[w.toLowerCase()]||w.toLowerCase())+'{');
+  s = s.replace(/\b(vec|bar|hat)\b\s+([A-Za-z0-9]+)/gi,(m,w,a)=>'\\'+({bar:'overline'}[w.toLowerCase()]||w.toLowerCase())+'{'+a+'}');
+  s = s.replace(/\bsqrt\b\s*\{/gi,'\\sqrt{');
+  const R = {leq:'\\le', le:'\\le', geq:'\\ge', ge:'\\ge', neq:'\\ne', ne:'\\ne',
+    inf:'\\infty', infinity:'\\infty', rarrow:'\\to', larrow:'\\leftarrow', lrarrow:'\\leftrightarrow',
+    times:'\\times', divide:'\\div', bullet:'\\cdot', cdot:'\\cdot', cdots:'\\cdots', ldots:'\\ldots',
+    dotsaxis:'\\cdots', therefore:'\\therefore', because:'\\because', sim:'\\sim', approx:'\\approx',
+    equiv:'\\equiv', pm:'\\pm', mp:'\\mp', deg:'^\\circ', circle:'\\circ',
+    pi:'\\pi', theta:'\\theta', alpha:'\\alpha', beta:'\\beta', gamma:'\\gamma', delta:'\\delta',
+    lambda:'\\lambda', mu:'\\mu', sigma:'\\sigma', omega:'\\omega', phi:'\\phi', rho:'\\rho', epsilon:'\\epsilon',
+    lbrace:'\\{', rbrace:'\\}', cap:'\\cap', cup:'\\cup', in:'\\in', notin:'\\notin',
+    subset:'\\subset', superset:'\\supset', emptyset:'\\varnothing',
+    lim:'\\lim', int:'\\int', sum:'\\sum', prod:'\\prod',
+    sin:'\\sin', cos:'\\cos', tan:'\\tan', sec:'\\sec', csc:'\\csc', cot:'\\cot',
+    log:'\\log', ln:'\\ln', max:'\\max', min:'\\min', exp:'\\exp',
+    smallsum:'\\sum', triangle:'\\triangle', angle:'\\angle', partial:'\\partial'};
+  s = s.replace(/(^|[^\\])\b([A-Za-z]+)\b/g, (m, pre, w)=>{
+    const k = w.toLowerCase();
+    return R[k] !== undefined ? pre + R[k] : m;
+  });
+  return s.replace(/\s+/g,' ').trim();
 }
 async function parseHWPX(file){
   if(!window.JSZip) throw new Error('구성요소(JSZip)가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.');
