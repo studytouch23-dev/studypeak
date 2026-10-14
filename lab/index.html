@@ -723,6 +723,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
   <button class="btn sm cb" onclick="batchAutoTag()">✨ 자동 태그 적용</button>
   <button class="btn sm cb" onclick="batchAiTranscribe()">🤖 AI 변환</button>
   <button class="btn sm cb" onclick="batchAiSolve()">📝 AI 해설 생성</button>
+  <button class="btn sm cb" onclick="batchQa()">🔎 AI 검수</button>
   <button class="btn sm cb" onclick="batchReviewed(true)">✓ 일괄 검수 승인</button>
   <button class="btn sm cb" onclick="downloadHWPX()">📥 한글 다운로드</button>
   <button class="btn sm cb" style="color:#ffb4a4" onclick="batchDelete()">🗑 삭제</button>
@@ -2706,6 +2707,13 @@ function clearAiSettings(){
   $('#ai-key').value=''; $('#ai-wsid').value='';
   $('#ai-status').textContent = '키를 삭제했습니다.';
 }
+/* AI가 역슬래시를 이중 이스케이프해 본문에 리터럴 \n(₩n으로 보임)이 남는 경우를 줄바꿈으로 정리.
+   수식($...$) 안은 건드리지 않는다(\neq, \nabla 같은 명령 보호). */
+function fixAiNewlines(s){
+  return String(s||'').split(/(\$\$[^$]+\$\$|\$[^$\n]+\$)/).map((part,i)=>
+    i%2 ? part : part.replace(/\\n/g,'\n').replace(/\\t/g,' ')
+  ).join('');
+}
 /* 본문이 그림·표·그래프를 언급하면 AI가 hasFigure=false라 해도 이미지를 지우지 않는다(표·그래프 유실 방지) */
 const AI_FIG_RE = /그림|그래프|도형|도표|다음 표|아래 표|주어진 표|(?<![가-힣])표[를는에와가]/;
 function curriculumBrief(){
@@ -2713,7 +2721,7 @@ function curriculumBrief(){
 }
 function aiPrompt(){
   return '이 이미지는 한국 중·고등학교 수학 문제 1개입니다. 아래 JSON 형식으로만 답하세요. 설명·코드블록 없이 JSON 하나만 출력합니다.\n'
-  +'{"question":"문제 본문 전체. 모든 수식은 $...$ 안에 LaTeX로 정확히 옮기세요(예: $\\\\dfrac{q}{p}$, $x^{2}$). 수식을 임의로 바꾸거나 생략하지 말고, 문자열 안의 줄바꿈은 \\\\n 으로 이스케이프",'
+  +'{"question":"문제 본문 전체. 모든 수식은 $...$ 안에 LaTeX로 정확히 옮기세요(예: $\\\\dfrac{q}{p}$, $x^{2}$). 수식을 임의로 바꾸거나 생략하지 말 것. 문자열 안의 줄바꿈은 JSON 표준 \\n 하나로만 쓰고, 절대 역슬래시를 두 번 쓰지 말 것",'
   +'"choices":["① $25$","② $30$"],  // 객관식 선택지. 없으면 []\n'
   +'"answer":"",  // 이미지에 정답 표기가 보일 때만\n'
   +'"hasFigure": false,  // 그림·그래프·도형·표가 하나라도 있으면 반드시 true. 글자와 수식뿐일 때만 false\n'
@@ -2826,6 +2834,118 @@ async function aiSolveProblem(p){
   content.push({ type:'text', text: aiSolvePrompt(p) });
   return aiJsonCall(content, 3500);
 }
+/* ═══ AI 검수 에이전트: 크롭·수식·그림·해설 매칭을 자동 점검, 이상 없으면 자동 검수 승인 ═══ */
+function ruleCheckProblem(p){ // 무료 규칙 검사 → 이슈 문자열 배열
+  const issues = [];
+  const q = stripBoxMarks(String(p.question||''));
+  if(q.trim().length < 10) issues.push('본문이 너무 짧음 — 크롭·변환 실패 의심');
+  const all = q + '\n' + (p.choices||[]).join('\n') + '\n' + String(p.solution||'');
+  if(((all.match(/\$/g)||[]).length) % 2) issues.push('수식 $ 짝이 안 맞음 — 한글 출력 시 수식 깨짐');
+  let depth = 0, braceBad = false;
+  for(const ch of all){ if(ch==='{') depth++; else if(ch==='}'){ depth--; if(depth<0){ braceBad=true; break; } } }
+  if(braceBad || depth!==0) issues.push('수식 중괄호 짝이 안 맞음');
+  resetEqDiag();
+  all.replace(/\$\$?([^$\n]+)\$\$?/g, (m,eq)=>{ latexToHwpEq(eq); return ''; });
+  if(EQ_DIAG.unknown.size) issues.push('한글 미지원 수식 명령 사용: '+[...EQ_DIAG.unknown].slice(0,3).join(' '));
+  if(fixAiNewlines(all) !== all) issues.push('깨진 줄바꿈 문자(₩n)가 남아 있음 — 저장 시 자동 정리됨');
+  if(/�/.test(all)) issues.push('깨진 문자(�) 포함 — 원본 대조 필요');
+  if(/\[판독불가\]/.test(all)) issues.push('AI가 읽지 못한 글자([판독불가]) 있음');
+  const tail = q.trim().replace(/\[\d+(\.\d+)?점\]\s*$/,'').trim();
+  if(tail && !/[?？.。]\s*$/.test(tail) && !/\$\s*$/.test(tail)) issues.push('질문이 중간에 끝남 — 크롭이 잘렸을 수 있음');
+  if(AI_FIG_RE.test(q) && !hasImg(p)) issues.push('본문이 그림·표를 언급하는데 이미지가 없음');
+  const cs = (p.choices||[]).map(s=>String(s).trim()).filter(Boolean);
+  if(cs.length && cs.length!==5) issues.push(`선택지가 ${cs.length}개 (5개가 아님)`);
+  if(cs.length===5){
+    const marks = ['①','②','③','④','⑤'];
+    if(!cs.every((c,i)=>c.startsWith(marks[i]))) issues.push('선택지 원문자(①~⑤) 순서가 이상함');
+  }
+  if(cs.length && (p.answer||'').trim() && !/[①②③④⑤]/.test(p.answer)) issues.push('객관식인데 정답이 ①~⑤ 형식이 아님');
+  if(!String(p.solution||'').trim()) issues.push('해설 없음');
+  return issues;
+}
+function aiQaPrompt(p, withImage){
+  return '너는 수학 문제 데이터 검수자다. '+(withImage?'첨부 이미지는 이 문항의 원본 캡처(또는 그림)다. ':'')
+    +'아래 데이터를 검사해서 JSON 하나만 출력하라. 설명·코드블록 금지.\n'
+    +'{"truncated":false,  // 문제가 중간에 잘렸거나 빠진 내용이 있어 보이면 true\n'
+    +'"figureNeeded":false,  // 풀이에 그림·그래프·표가 꼭 필요한데 데이터에 없으면 true\n'
+    +'"solutionMatches":null,  // 해설이 이 문제의 해설이 맞으면 true, 다른 문제 해설이면 false, 해설이 없으면 null\n'
+    +'"answerConsistent":null,  // 해설의 결론과 정답 표기가 일치하면 true, 다르면 false, 판단 불가·없으면 null\n'
+    +'"transcriptionOk":null,  // 이미지가 있을 때: 본문·수식이 이미지와 일치하면 true, 오타·누락이 있으면 false\n'
+    +'"issues":["발견한 문제점을 짧은 한국어로"]}  // 없으면 []\n'
+    +'\n[문제]\n'+String(p.question||'')
+    +'\n[선택지]\n'+((p.choices||[]).join('\n')||'(없음)')
+    +'\n[정답] '+((p.answer||'').trim()||'(없음)')
+    +'\n[해설]\n'+(String(p.solution||'').trim()||'(없음)').slice(0,2500)
+    +'\n이미지 유무: '+(hasImg(p)?'있음':'없음');
+}
+async function aiQaProblem(p){
+  const content = [];
+  let withImage = false;
+  if(hasImg(p)){
+    const imgs = await imagesOf(p);
+    const m = imgs.length && String(imgs[0]).match(/^data:(image\/\w+);base64,(.+)$/);
+    if(m){ content.push({ type:'image', source:{ type:'base64', media_type:m[1], data:m[2] } }); withImage = true; }
+  }
+  content.push({ type:'text', text: aiQaPrompt(p, withImage) });
+  return aiJsonCall(content, 1200);
+}
+function aiQaToIssues(r){
+  const out = [];
+  if(r.truncated===true) out.push('AI: 문제가 중간에 잘린 것으로 보임');
+  if(r.figureNeeded===true) out.push('AI: 풀이에 필요한 그림·표가 빠져 있음');
+  if(r.solutionMatches===false) out.push('AI: 해설이 이 문제의 해설이 아님 (매칭 오류)');
+  if(r.answerConsistent===false) out.push('AI: 정답과 해설의 결론이 다름');
+  if(r.transcriptionOk===false) out.push('AI: 본문·수식이 원본 이미지와 다름 (전사 오류)');
+  for(const s of (Array.isArray(r.issues)?r.issues:[])) if(String(s).trim()) out.push('AI: '+String(s).slice(0,80));
+  return out;
+}
+async function batchQa(){
+  const list = cartList();
+  if(!list.length){ toast('선택된 문제가 없습니다.'); return; }
+  const useAi = !!aiSettings().key && confirm(
+    `선택한 ${list.length}문항을 검수합니다.\n\n`+
+    `[확인] 규칙 검사 + AI 정밀 검사 — 원본 이미지 대조(전사·크롭), 문제-해설 매칭, 정답 일치까지. 본인 API 키로 문항당 소액 과금.\n`+
+    `[취소] 무료 규칙 검사만 — 수식 짝·잘림·선택지·그림/해설 유무.\n\n`+
+    `이상이 없는 문항은 자동으로 "검수 완료" 처리되고, 이상이 있으면 #검수주의 태그가 붙습니다.`);
+  const report = [];
+  let clean = 0, flagged = 0, aiFail = 0, lastErr = '';
+  for(let i=0;i<list.length;i++){
+    const p = list[i];
+    toast(`🔎 검수 중… ${i+1}/${list.length}`);
+    let issues = ruleCheckProblem(p);
+    if(useAi){
+      try{ issues = issues.concat(aiQaToIssues(await aiQaProblem(p))); }
+      catch(e){
+        aiFail++; lastErr = e.message||String(e);
+        if(aiFail===1 && /API 키|401|네트워크|API 오류 4|워크스페이스/.test(lastErr)){ toast('⚠ AI 검사 불가: '+lastErr+' — 규칙 검사만 계속합니다.'); }
+      }
+    }
+    issues = [...new Set(issues)];
+    p.tags = (p.tags||[]).filter(t=>t!=='검수주의');
+    if(issues.length){ flagged++; p.tags.push('검수주의'); }
+    else { clean++; p.reviewed = true; }
+    p.updatedAt = Date.now();
+    await saveProblem(p);
+    report.push({ id:p.id, no: state.numOf ? state.numOf.get(p.id) : null, issues, q: stripBoxMarks(p.question||'').slice(0,60) });
+  }
+  renderDB(); refreshCounts();
+  logJob('AI 검수', '선택 문항', `${list.length}개 중 이상 ${flagged}개`+(useAi?' · AI 정밀':' · 규칙만'));
+  // 보고서 모달
+  const m = $('#modal-body');
+  m.innerHTML = `
+    <button class="close" onclick="closeModal()">✕</button>
+    <h3>🔎 검수 결과 — ${list.length}문항 (${useAi?'규칙+AI 정밀':'규칙 검사만'})</h3>
+    <p class="hint">✅ 이상 없음 ${clean}개는 자동으로 <b>검수 완료</b> 처리했습니다. ⚠ ${flagged}개는 <b>#검수주의</b> 태그를 붙였으니 아래에서 확인하세요.${aiFail?` · AI 검사 실패 ${aiFail}건(${esc(lastErr.slice(0,60))})`:''}</p>
+    ${flagged===0 ? '<div class="empty">⚠ 이상이 발견된 문항이 없습니다. 모두 통과!</div>' : report.filter(r=>r.issues.length).map(r=>`
+      <div style="border:1px solid var(--line);border-radius:10px;padding:.55rem .7rem;margin-bottom:.5rem">
+        <div class="spread"><b>${r.no?'# '+r.no:''} ${esc(r.q)}…</b>
+          <button class="btn ghost sm" data-open="${r.id}">열어서 고치기</button></div>
+        ${r.issues.map(i=>`<div class="hint" style="color:#a04000">⚠ ${esc(i)}</div>`).join('')}
+      </div>`).join('')}
+    <p class="hint" style="margin-top:.6rem">표시된 문항만 다시 보려면: 검색창에 <b>검수주의</b> 를 입력하거나 왼쪽 "나만의" 태그 트리에서 <b>#검수주의</b>를 클릭하세요.</p>`;
+  m.querySelectorAll('[data-open]').forEach(b=>b.addEventListener('click', ()=>openDetail(b.dataset.open)));
+  $('#modal-bg').classList.add('show');
+}
 async function batchAiSolve(){
   const targets = cartList().filter(p=>(p.question||'').trim() && !(p.solution||'').trim());
   if(!targets.length){ toast('대상이 없습니다 — 본문이 있고 해설이 비어 있는 문항을 선택하세요.'); return; }
@@ -2839,7 +2959,7 @@ async function batchAiSolve(){
       try{
         const r = await aiSolveProblem(p);
         if(!(r.solution||'').trim()) throw new Error('AI가 해설을 내놓지 않았습니다');
-        p.solution = String(r.solution).trim();
+        p.solution = fixAiNewlines(r.solution).trim();
         if(r.answer && !(p.answer||'').trim()) p.answer = String(r.answer).trim();
         p.tags = p.tags||[]; if(!p.tags.includes('AI해설')) p.tags.push('AI해설');
         p.updatedAt = Date.now();
@@ -2924,7 +3044,7 @@ async function aiSolveDetail(id){ // 상세 모달에서 한 문항만
   try{
     const tmp = { ...p, question:q, choices: $('#e-choices').value.split('\n').map(s=>s.trim()).filter(Boolean) };
     const r = await aiSolveProblem(tmp);
-    if((r.solution||'').trim()) $('#e-solution').value = String(r.solution).trim();
+    if((r.solution||'').trim()) $('#e-solution').value = fixAiNewlines(r.solution).trim();
     if(r.answer && !$('#e-answer').value.trim()) $('#e-answer').value = String(r.answer).trim();
     toast('✅ 해설을 채웠습니다 — 내용을 확인한 뒤 [수정 저장]을 누르세요. (AI 풀이는 틀릴 수 있습니다)');
   }catch(e){ toast('⚠ AI 해설 실패: '+(e.message||e)); }
@@ -2943,8 +3063,8 @@ async function aiTranscribeDrafts(){
       $('#bulk-status').textContent = `🤖 AI 변환 중… ${i+1}/${targets.length} (문항 ${d.num||''})`;
       try{
         const r = await aiTranscribeImage(d.img);
-        d.text = (r.question||'').trim();
-        if(Array.isArray(r.choices) && r.choices.length) d.choices = r.choices.map(String);
+        d.text = fixAiNewlines(r.question||'').trim();
+        if(Array.isArray(r.choices) && r.choices.length) d.choices = r.choices.map(c=>fixAiNewlines(c));
         if(r.answer && !d.ans) d.ans = String(r.answer);
         if(r.subject && CURRICULUM[r.subject]){ d.aiSub=r.subject; if(r.chapter && CURRICULUM[r.subject][r.chapter]) d.aiChap=r.chapter; }
         const dd = Math.round(+r.difficulty); if(dd>=1 && dd<=5) d.aiDiff = dd;
@@ -2973,7 +3093,7 @@ async function aiTranscribeDrafts(){
       $('#bulk-status').textContent = `🤖 해설 변환 중… ${i+1}/${sols.length} (문항 ${d.num||''})`;
       try{
         const r = await aiTranscribeSolution(d.solImg);
-        if((r.solution||'').trim()) d.sol = String(r.solution).trim();
+        if((r.solution||'').trim()) d.sol = fixAiNewlines(r.solution).trim();
         if(r.answer && !d.ans) d.ans = String(r.answer).trim();
         d.solImg = null;                                   // 텍스트로 옮겼으면 이미지 조각은 버림
         sOk++;
@@ -3007,8 +3127,8 @@ async function batchAiTranscribe(){
         const pimgs = await imagesOf(p);
         if(!pimgs.length){ fail++; continue; }
         const r = await aiTranscribeImage(pimgs[0]);
-        p.question = (r.question||'').trim();
-        if(Array.isArray(r.choices) && r.choices.length) p.choices = r.choices.map(String);
+        p.question = fixAiNewlines(r.question||'').trim();
+        if(Array.isArray(r.choices) && r.choices.length) p.choices = r.choices.map(c=>fixAiNewlines(c));
         if(r.answer && !p.answer) p.answer = String(r.answer);
         if(r.subject && CURRICULUM[r.subject]){
           p.subject = r.subject;
@@ -4301,6 +4421,19 @@ function renderDash(){
   await DB.each('problems', p=>light.push(lightenProblem(p)));
   state.problems = light;
   state.worksheets = await DB.getAll('worksheets');
+  // 과거 AI 변환이 남긴 리터럴 \n(₩n으로 보임)을 1회 자동 복구
+  (async ()=>{
+    let n=0;
+    for(const p of state.problems){
+      const q2 = fixAiNewlines(p.question), s2 = fixAiNewlines(p.solution);
+      const ch = p.choices||[], ch2 = ch.map(c=>fixAiNewlines(c));
+      if(q2!==p.question || s2!==p.solution || ch2.some((c,i)=>c!==ch[i])){
+        p.question=q2; p.solution=s2; p.choices=ch2; p.updatedAt=Date.now();
+        await saveProblem(p); n++;
+      }
+    }
+    if(n){ renderDB(); toast(`문항 ${n}개의 깨진 줄바꿈 문자(₩n)를 자동 복구했습니다.`); }
+  })();
   fillSubjectSelect($('#f-subject'));
   linkUnitSelects($('#f-subject'), $('#f-chapter'), $('#f-section'));
   fillSubjectSelect($('#b-subject'));

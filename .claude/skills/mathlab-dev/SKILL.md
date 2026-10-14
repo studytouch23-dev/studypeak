@@ -22,7 +22,7 @@ JS는 `/* ═══ 섹션명 ═══ */` 주석으로 구획되어 있다. Gr
 | PDF 영역 에디터 | `PDFED` 상태, `openPdfEditor(res,{solDefault})`, 페이지 `mode: prob/sol/skip`(클릭 순환), `detectRegionsByAnchors`, `detectRegionsByPixels`, `pdfedFinish`(해설 영역→`d.solImg` 번호 매칭), 그림 크롭 `validFigBox`/`cropDataURL`/`openImgCrop` |
 | 검색·작업 | `problemsFiltered`, `renderDB`(30/페이지), `renderTree`, `semanticSearch`(bigram), `imgHash`(aHash 이미지검색), 프리셋 |
 | 일괄 작업 | `openBatchTag`, `batchAutoTag`, `batchReviewed`, `batchDelete` |
-| AI 변환 | `aiJsonCall`(공용 호출: `aiHeaders()`에 키·워크스페이스 ID, 재시도·오류 한국어 안내), `aiTranscribeImage`, `aiTranscribeDrafts`, `batchAiTranscribe`, `aiSolveProblem`/`batchAiSolve`/`aiSolveDetail`(해설 생성, #AI해설 태그) — 테스트는 page에서 window.fetch 스텁 |
+| AI 변환 | `aiJsonCall`(공용 호출: `aiHeaders()`에 키·워크스페이스 ID, 재시도·오류 한국어 안내), `aiTranscribeImage`, `aiTranscribeDrafts`, `batchAiTranscribe`, `aiSolveProblem`/`batchAiSolve`/`aiSolveDetail`(해설 생성, #AI해설 태그), `batchQa`/`ruleCheckProblem`/`aiQaProblem`(검수: 깨끗→reviewed, 이상→#검수주의) — 테스트는 page에서 window.fetch 스텁 |
 | 학습지 | `renderSheet`, `autoCompose`, `printSheet`(doctype 4종), `setPoint` |
 | HWPX 생성 | `latexToHwpEq`, `eqMeasure`(수식 크기), `hwpxEquation`, `hwpxPic`/`registerHwpxBin`, `saveHwpxFile`, `downloadHWPX` |
 
@@ -43,8 +43,11 @@ JS는 `/* ═══ 섹션명 ═══ */` 주석으로 구획되어 있다. Gr
 
 ## 테스트 하네스 (반드시 이 방식으로 검증)
 
-샌드박스에서 CDN(cdnjs)이 차단되므로 라이브러리를 로컬 주입한다.
-scratchpad에 `playwright-core`, `jszip`, `pdfjs-dist@3.11.174` npm 설치 후:
+**저장소 `tests/` 폴더에 상설 회귀 테스트가 있다** — 코드 수정 후 커밋 전에 반드시:
+`cd tests && npm install && node run-all.js` (전체 통과 확인). 새 기능엔 새 smokeN.js를 추가하고
+tests/README.md 표를 갱신할 것. 사용자 업로드 파일이 필요한 테스트만 scratchpad에 둔다.
+
+샌드박스에서 CDN(cdnjs)이 차단되므로 라이브러리를 로컬 주입한다(tests/node_modules 활용):
 
 ```js
 // http 서버로 repo 루트 서빙(+ /pwlib/ → pdfjs-dist/build 매핑), 404 처리 필수

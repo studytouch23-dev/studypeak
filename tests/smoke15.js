@@ -1,0 +1,68 @@
+// smoke15: mathrm/대문자 그리스/선행 첨자(조합 기호) 수식 변환 검증
+const { chromium } = require('playwright-core');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = require('path').join(__dirname, '..');
+const server = http.createServer((req, res) => {
+  let p = path.join(ROOT, decodeURIComponent(req.url.split('?')[0]));
+  if (fs.existsSync(p) && fs.statSync(p).isDirectory()) p = path.join(p, 'index.html');
+  if (!fs.existsSync(p)) { res.writeHead(404); res.end('nf'); return; }
+  res.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'});
+  res.end(fs.readFileSync(p));
+});
+
+let fails = 0;
+const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?('— '+x):''); if(!ok) fails++; };
+
+(async () => {
+  await new Promise(r => server.listen(8961, r));
+  const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto('http://127.0.0.1:8961/lab/', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(300);
+
+  const r = await page.evaluate(() => {
+    resetEqDiag();
+    const cases = {
+      // 사용자 파일(수학학습지16)의 실제 AI 변환 LaTeX들
+      mathrmP: latexToHwpEq('\\mathrm{P}(A^{C} \\cap B)=\\dfrac{1}{6}'),
+      prescript: latexToHwpEq('_{3}H_{n} = {}_{6}\\Pi_{2}'),
+      // 추가 보강 확인
+      operatorname: latexToHwpEq('\\operatorname{E}(X)=10'),
+      texttok: latexToHwpEq('\\text{AB}=2'),
+      sigma: latexToHwpEq('\\Sigma_{k=1}^{n} k'),
+      combi: latexToHwpEq('x = _{6}P_{3}'),
+      normalSup: latexToHwpEq('x^{2}+y^{2}=1'),
+      unknown: [...EQ_DIAG.unknown],
+      // import 왕복: PI는 \\Pi로 보존, rm은 제거
+      imp1: hwpEqToLatex('{}_{6} PI _{2}'),
+      imp2: hwpEqToLatex('rm {P}(A cap B)'),
+      imp3: hwpEqToLatex('2 pi r'),
+      // eqMeasure: rm 폭 0 취급
+      wRm: eqMeasure('rm {P}(A)').w, wNoRm: eqMeasure('{P}(A)').w
+    };
+    return cases;
+  });
+
+  check('mathrm → rm', r.mathrmP.includes('rm {P}') && !r.mathrmP.includes('mathrm'), r.mathrmP);
+  check('선행 _ → {} 붙임', r.prescript.startsWith('{}_{3}'), r.prescript);
+  check('\\Pi → PI', /\bPI\b/.test(r.prescript) && !/\bPi\b/.test(r.prescript), r.prescript);
+  check('operatorname → rm', r.operatorname.includes('rm {E}'), r.operatorname);
+  check('text → rm', r.texttok.includes('rm {AB}'), r.texttok);
+  check('\\Sigma → SIGMA', /\bSIGMA\b/.test(r.sigma), r.sigma);
+  check('= 뒤 선행 _ 보정', r.combi.includes('= {}_{6}'), r.combi);
+  check('일반 첨자 영향 없음', r.normalSup.replace(/\s/g,'')==='x^{2}+y^{2}=1', r.normalSup);
+  check('미지원 명령 보고 없음', r.unknown.length===0, r.unknown.join(','));
+  check('import: PI → \\Pi', r.imp1.includes('\\Pi'), r.imp1);
+  check('import: rm 제거', !r.imp2.includes('rm') && r.imp2.includes('P'), r.imp2);
+  check('import: 소문자 pi 유지', r.imp3.includes('\\pi'), r.imp3);
+  check('eqMeasure rm 폭 ≈0(공백만)', Math.abs(r.wRm-r.wNoRm)<=300, r.wRm+' vs '+r.wNoRm);
+  check('페이지 JS 에러 없음', errors.length===0, errors.join(' | '));
+  console.log(fails ? `\n${fails}개 실패` : '\n전체 통과');
+  await browser.close(); server.close();
+  process.exit(fails?1:0);
+})().catch(e => { console.error('TEST CRASH:', e); process.exit(2); });
