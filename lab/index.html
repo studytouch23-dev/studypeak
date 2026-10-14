@@ -2151,13 +2151,20 @@ async function handleUploadFiles(files, targetSel){
         $('#b-srcname').value = file.name.replace(/\.(hwpx|hwp|pdf|txt)$/i,'');
       if(res && res.kind==='pdfEditor'){
         // PDF는 종류와 관계없이 영역 인식 에디터로 열 수 있다.
-        // 해설 파일 업로드: 글자 PDF는 텍스트 추출(번호 매칭), 이미지형 PDF는 해설 모드 에디터로.
-        if(targetSel==='#bulk-sol' && res.imageMode){
-          status.innerHTML = `📄 <b>${esc(file.name)}: 이미지형 해설 PDF</b> — 페이지가 모두 "해설"로 표시된 에디터가 열립니다. 영역 번호가 문제 번호와 맞는지 확인 후 완료하세요.`;
-          await openPdfEditor(res, {solDefault:true});
-          ok++; continue;
+        // 해설 파일 업로드도 문제와 동일: 이미지형은 바로, 글자 PDF는 선택 후 해설 모드 에디터로.
+        if(targetSel==='#bulk-sol'){
+          const useSolEditor = res.imageMode || !String(res.text).trim() || confirm(
+            `‘${file.name}’ 해설 PDF를 어떻게 처리할까요?\n\n`+
+            `[확인] 영역 인식으로 열기 (권장)\n — 해설을 문항별 이미지로 잘라 AI 변환으로 수식 살린 해설 텍스트를 만들고, 번호로 문제와 자동 매칭합니다.\n\n`+
+            `[취소] 텍스트만 추출\n — 번호 기준 매칭. 빠르지만 수식·배치가 깨질 수 있습니다.`);
+          if(useSolEditor){
+            status.innerHTML = `📄 <b>${esc(file.name)}: 해설 PDF</b> — 페이지가 모두 "해설"로 표시된 에디터가 열립니다. 영역 번호가 문제 번호와 맞는지 확인 후 완료하세요.`;
+            await openPdfEditor(res, {solDefault:true});
+            ok++; continue;
+          }
+          res = res.text;                               // 텍스트 추출 선택 → 아래 공통 텍스트 처리로
         }
-        let useEditor = targetSel==='#bulk-text';
+        let useEditor = res && res.kind==='pdfEditor' && targetSel==='#bulk-text';
         if(useEditor && !res.imageMode && String(res.text).trim()){
           useEditor = confirm(
             `‘${file.name}’ 은(는) 글자가 포함된 PDF입니다. 어떻게 처리할까요?\n\n`+
@@ -2171,7 +2178,7 @@ async function handleUploadFiles(files, targetSel){
           await openPdfEditor(res);
           ok++; continue;
         }
-        res = res.text;                                   // 텍스트 추출 선택(또는 해설 파일)
+        if(res && res.kind==='pdfEditor') res = res.text; // 텍스트 추출 선택
       }
       const text = String(res).trim();
       if(!text){ status.textContent = `⚠ ${file.name} — 추출된 텍스트가 없습니다 (스캔본 PDF는 글자 인식이 필요합니다).`; continue; }
@@ -2838,6 +2845,34 @@ function aiPrompt(){
   +'분류표:\n'+curriculumBrief()+'\n읽을 수 없는 글자는 [판독불가]로 표시하세요.\n'
   +'테두리 상자 안의 조건((가), (나) 등)이나 <보기>(ㄱ, ㄴ, ㄷ)는 반드시 question 안에서 상자 내용 바로 앞줄에 [박스], 바로 뒷줄에 [/박스] 를 한 줄씩 넣어 표시하세요. 상자 밖 문장과 섞지 마세요. 원본의 그림·표·도형·상자 배치를 최대한 충실하게 옮기세요.';
 }
+/* AI의 JSON이 어긋나도 살려내는 관대한 파서:
+   문자열 안의 생 줄바꿈·탭을 이스케이프하고, 출력이 중간에 잘렸으면 문자열·배열·중괄호를 닫아서 다시 시도 */
+function tolerantJsonParse(s){
+  try{ return JSON.parse(s); }catch(e){}
+  let out = '', inStr = false, esc = false;
+  const stack = [];
+  for(const ch of s){
+    if(inStr){
+      if(esc){ out += ch; esc = false; continue; }
+      if(ch === '\\'){ out += ch; esc = true; continue; }
+      if(ch === '"'){ inStr = false; out += ch; continue; }
+      if(ch === '\n'){ out += '\\n'; continue; }
+      if(ch === '\r'){ continue; }
+      if(ch === '\t'){ out += '\\t'; continue; }
+      out += ch;
+    } else {
+      if(ch === '"') inStr = true;
+      else if(ch === '{') stack.push('}');
+      else if(ch === '[') stack.push(']');
+      else if(ch === '}' || ch === ']') stack.pop();
+      out += ch;
+    }
+  }
+  if(esc) out = out.slice(0,-1);                 // 역슬래시에서 잘림
+  if(inStr) out += '"';                          // 문자열 중간에서 잘림
+  while(stack.length) out += stack.pop();        // 열린 배열·객체 닫기
+  return JSON.parse(out);
+}
 async function aiJsonCall(content, maxTokens){ // 공용: content 배열 → JSON 응답 (재시도·오류 안내 포함)
   const {key, model} = aiSettings();
   if(!key) throw new Error('API 키가 없습니다 — [백업·데이터 → AI 변환 설정]에서 키를 저장하세요.');
@@ -2866,9 +2901,15 @@ async function aiJsonCall(content, maxTokens){ // 공용: content 배열 → JSO
   }
   const data = await r.json();
   const txt = (data.content||[]).map(c=>c.text||'').join('');
-  const a = txt.indexOf('{'), b = txt.lastIndexOf('}');
-  if(a<0 || b<=a) throw new Error('AI 응답을 해석하지 못했습니다.');
-  return JSON.parse(txt.slice(a, b+1));
+  const a = txt.indexOf('{');
+  if(a<0) throw new Error('AI 응답을 해석하지 못했습니다 (JSON 없음).');
+  const b = txt.lastIndexOf('}');
+  try{
+    return tolerantJsonParse(b>a ? txt.slice(a, b+1) : txt.slice(a));
+  }catch(e){
+    if(data.stop_reason==='max_tokens') throw new Error('AI 응답이 길이 제한에 잘렸습니다 — 문항이 매우 길면 나눠서 변환해 보세요.');
+    throw new Error('AI 응답 JSON 해석 실패: '+String(e.message||e).slice(0,80));
+  }
 }
 async function aiTranscribeImage(dataURL){
   const m = String(dataURL).match(/^data:(image\/\w+);base64,(.+)$/);
@@ -2876,7 +2917,7 @@ async function aiTranscribeImage(dataURL){
   return aiJsonCall([
     { type:'image', source:{ type:'base64', media_type:m[1], data:m[2] } },
     { type:'text', text: aiPrompt() }
-  ], 2000);
+  ], 3000);
 }
 /* ── 그림만 남기기: AI가 짚어준 그림 좌표(figureBox)로 문항 이미지에서 그림 부분만 잘라낸다 ── */
 function validFigBox(b){
