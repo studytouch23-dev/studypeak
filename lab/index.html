@@ -3028,9 +3028,21 @@ function fixAiNewlines(s, keepDisplay){
   // 저장본 점검·시작 시 복구 경로용 (AI 응답 정리 경로만 $$를 접는다)
   s = String(s||'');
   if(!keepDisplay) s = s.replace(/\$\$\s*([^$]+?)\s*\$\$/g, (m,eq)=>'$'+eq.replace(/\s+/g,' ').trim()+'$');
+  s = fixMathKorean(s);
   return s.split(/(\$\$[^$]+\$\$|\$[^$\n]+\$)/).map((part,i)=>
     i%2 ? part : part.replace(/\\n/g,'\n').replace(/\\t/g,' ')
   ).join('');
+}
+function fixMathKorean(s){ // AI가 조사·단어를 수식 안에 넣는 실수 교정: '$M+m의$' → '$M+m$의'
+  return String(s||'').replace(/\$([^$\n]+)\$/g, (m, eq)=>{
+    let pre='', post='';
+    const a = eq.match(/^\s*([가-힣]+)\s*/);
+    if(a && !eq.slice(a[0].length).match(/^[}\]]/)){ pre = a[1]; eq = eq.slice(a[0].length); }
+    const b = eq.match(/\s*([가-힣]+)\s*$/);
+    if(b){ post = b[1]; eq = eq.slice(0, eq.length - b[0].length); }
+    if(!eq.trim()) return (pre+' '+post).trim() || m;
+    return (pre ? pre+' ' : '') + '$' + eq.trim() + '$' + post;
+  });
 }
 /* 그림 위치 마커: AI가 그림이 있던 자리에 [그림] 을 넣는다. "(그림: 설명)" 같은 대체 문구도 자리로 취급 */
 const IMG_SLOT_RE = /^\s*(\[그림\s*\d*\]|\(그림\s*[:：][^)]*\)?)\s*$/;
@@ -4684,6 +4696,8 @@ function latexToHwpEq(tex){
     circ:'circ',degree:'circ',equiv:'equiv',approx:'approx',sim:'sim',
     cdots:'cdots',ldots:'ldots',dots:'cdots',sqrt:'sqrt',
     displaystyle:'',textstyle:'',scriptstyle:'',scriptscriptstyle:'',limits:'',nolimits:''};
+  // 수식 안에 남은 한글(단어·조사)은 rm{}으로 묶어 바로 세우고 폭이 겹치지 않게 조판
+  s = s.replace(/([가-힣]+)/g, ' rm {$1} ');
   // 중괄호 없는 첨자는 LaTeX 규칙(한 글자·한 명령)대로 {}로 묶는다.
   // 한글 수식은 공백 전까지 전부 첨자로 삼아 x^2=4^2 가 지수 속으로 빨려 들어가기 때문.
   s = s.replace(/([_^])\s*(\\[a-zA-Z]+|[^{\s\\_^])/g, '$1{$2}');
@@ -4713,7 +4727,9 @@ function splitTopLevel(s, sep){
 }
 function eqCharW(ch){
   if(ch===' ') return 280;
-  if(/[0-9a-zA-Z.,'()\[\]|+\-=<>:;!?\/]/.test(ch)) return 520;
+  if(/[A-Z]/.test(ch)) return 660;                          // 이탤릭 대문자(M, B 등)는 실측상 더 넓다
+  if(/[a-z]/.test(ch)) return 560;
+  if(/[0-9.,'()\[\]|+\-=<>:;!?\/]/.test(ch)) return 520;
   if(/[ㄱ-힝一-鿿]/.test(ch)) return 1050;
   return 650;
 }
@@ -4762,7 +4778,8 @@ function eqMeasure(s){
       if(word==='lim'||word==='sum'||word==='int'||word==='prod'){ w += 1500; h = Math.max(h, 2200); i += word.length; continue; }
       if(EQ_SYM_TOKENS.has(word.toLowerCase())){ w += 950; i += word.length; continue; }
       if(EQ_FUNC_TOKENS.has(word)){ w += word.length*480; i += word.length; continue; }
-      w += word.length*540; i += word.length;
+      for(const c of word) w += eqCharW(c);                  // 변수명: 이탤릭 대문자 폭 반영
+      i += word.length;
     } else {
       w += eqCharW(ch); i++;
     }

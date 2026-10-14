@@ -42,6 +42,10 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
       bareSup: latexToHwpEq('\\overline{BC}^2=4^2+5^2-2\\cdot4\\cdot5\\cdot\\frac{1}{8}'),
       bareCmd: latexToHwpEq('45^\\circ + x_1'),
       style: latexToHwpEq('\\displaystyle\\int_{0}^{1} x\\,dx'),
+      // 수식 속 한글: 조사는 수식 밖으로, 남은 한글은 rm{}으로
+      mkor: fixAiNewlines('최솟값을 $M+m의$ 값은?'),
+      kEq: latexToHwpEq('x = 3 끝'),
+      wMm: eqMeasure('M+m').w,
       // 분수가 식 중간에 있을 때 폭은 좌우 "합" — max로 잡으면 뒤 글자와 겹침
       wMid: eqMeasure('{12345} over {8} = 414141').w,
       wL: eqMeasure('{12345}').w, wR: eqMeasure('= 414141').w,
@@ -68,6 +72,9 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   check('붙여 쓴 지수 {} 강제(=가 지수로 안 빨림)', bs.includes('^{2}=4^{2}') && !/[_^][^{]/.test(bs), r.bareSup);
   check('명령 첨자 {} 강제(45°, x_1)', r.bareCmd.replace(/\s+/g,' ').includes('45^{ circ }') && r.bareCmd.replace(/\s/g,'').includes('x_{1}'), r.bareCmd);
   check('\\displaystyle 등 스타일 명령 제거', !r.style.includes('displaystyle') && r.style.includes('int'), r.style);
+  check('수식 끝 조사($M+m의$) 밖으로', r.mkor.includes('$M+m$의'), r.mkor);
+  check('수식 속 한글 rm{} 조판', r.kEq.includes('rm {끝}'), r.kEq);
+  check('M+m 폭 상향(겹침 방지)', r.wMm >= 1700, r.wMm);
   check('식 중간 분수 폭 = 좌우 합 이상', r.wMid >= r.wL + r.wR, r.wMid+' vs '+r.wL+'+'+r.wR);
   check('미지원 명령 보고 없음', r.unknown.length===0, r.unknown.join(','));
   check('import: PI → \\Pi', r.imp1.includes('\\Pi'), r.imp1);
