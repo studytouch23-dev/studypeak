@@ -3216,16 +3216,55 @@ function aiQaToIssues(r){
   for(const s of (Array.isArray(r.issues)?r.issues:[])) if(String(s).trim()) out.push('AI: '+String(s).slice(0,80));
   return out;
 }
+/* ── 검수 → AI 자동 수정 → 재검수: 발견된 문제점을 AI가 고치고, 고친 결과를 다시 검사해 통과해야만 승인 ── */
+function aiFixPrompt(p, issues, withImage){
+  return '너는 수학 문제 데이터 교정자다. '+(withImage?'첨부 이미지는 이 문항의 원본 캡처다. 원본을 기준으로 ':'')
+    +'아래 검수에서 발견된 문제점을 고친 완성본을 JSON 하나로만 출력하라. 설명·코드블록 금지.\n'
+    +'{"question":"...","choices":["① ...","② ...","③ ...","④ ...","⑤ ..."],"answer":"...","solution":"..."}\n'
+    +'- 수정이 없는 필드도 전체 내용을 그대로 채워서 출력할 것.\n'
+    +'- 수식은 한 줄짜리 $...$ LaTeX. $$ 금지. 문자열 안 줄바꿈은 JSON 표준 \\n 하나만.\n'
+    +'- [박스]...[/박스], [그림] 마커는 의미가 있으니 그대로 유지. 그림·표를 새로 지어내지 말 것.\n'
+    +'- 문제의 수학적 내용을 바꾸지 말 것 — 잘린 문장 복원, 수식·원문자 표기 교정, 깨진 문자 정리만.\n'
+    +'- 해설이 없거나 틀렸으면 정확한 풀이를 새로 작성해도 된다. 확신이 없으면 solution은 빈 문자열.\n'
+    +'- 객관식이 아니면 choices는 [].\n'
+    +'\n[검수에서 발견된 문제점]\n- '+issues.join('\n- ')
+    +'\n\n[문제]\n'+String(p.question||'')
+    +'\n[선택지]\n'+((p.choices||[]).join('\n')||'(없음)')
+    +'\n[정답] '+((p.answer||'').trim()||'(없음)')
+    +'\n[해설]\n'+(String(p.solution||'').trim()||'(없음)').slice(0,2500);
+}
+async function aiFixProblem(p, issues){ // p의 필드를 직접 교정. 적용했으면 true
+  const content = [];
+  let withImage = false;
+  if(hasImg(p)){
+    const imgs = await imagesOf(p);
+    const m = imgs.length && String(imgs[0]).match(/^data:(image\/\w+);base64,(.+)$/);
+    if(m){ content.push({ type:'image', source:{ type:'base64', media_type:m[1], data:m[2] } }); withImage = true; }
+  }
+  content.push({ type:'text', text: aiFixPrompt(p, issues, withImage) });
+  const r = await aiJsonCall(content, 3500);
+  const q = fixAiNewlines(String(r.question||'')).trim();
+  const origLen = String(p.question||'').trim().length;
+  if(!q || q.length < origLen*0.5) return false;             // 내용을 날려먹은 응답은 적용하지 않음
+  const hadSol = !!String(p.solution||'').trim();
+  p.question = q;
+  if(Array.isArray(r.choices)) p.choices = r.choices.map(c=>fixAiNewlines(String(c)).trim()).filter(Boolean);
+  if(typeof r.answer==='string' || typeof r.answer==='number') p.answer = String(r.answer).trim();
+  if(typeof r.solution==='string' && r.solution.trim()) p.solution = fixAiNewlines(r.solution).trim();
+  p.tags = [...new Set([...(p.tags||[]), 'AI수정',
+    ...(!hadSol && String(p.solution||'').trim() ? ['AI해설'] : [])])];
+  return true;
+}
 async function batchQa(){
   const list = cartList();
   if(!list.length){ toast('선택된 문제가 없습니다.'); return; }
   const useAi = !!aiSettings().key && confirm(
     `선택한 ${list.length}문항을 검수합니다.\n\n`+
-    `[확인] 규칙 검사 + AI 정밀 검사 — 원본 이미지 대조(전사·크롭), 문제-해설 매칭, 정답 일치까지. 본인 API 키로 문항당 소액 과금.\n`+
-    `[취소] 무료 규칙 검사만 — 수식 짝·잘림·선택지·그림/해설 유무.\n\n`+
-    `이상이 없는 문항은 자동으로 "검수 완료" 처리되고, 이상이 있으면 #검수주의 태그가 붙습니다.`);
+    `[확인] 규칙 검사 + AI 정밀 검사 + 자동 수정 — 원본 이미지 대조(전사·크롭), 문제-해설 매칭, 정답 일치까지 보고, 이상이 있으면 AI가 바로 고친 뒤 재검수합니다. 본인 API 키로 문항당 소액 과금.\n`+
+    `[취소] 무료 규칙 검사만 — 수식 짝·잘림·선택지·그림/해설 유무 (수정 없음).\n\n`+
+    `이상이 없는 문항은 자동으로 "검수 완료" 처리되고, 고쳐지지 않은 문항에는 #검수주의 태그가 붙습니다.`);
   const report = [];
-  let clean = 0, flagged = 0, aiFail = 0, lastErr = '';
+  let clean = 0, flagged = 0, fixedN = 0, aiFail = 0, lastErr = '';
   for(let i=0;i<list.length;i++){
     const p = list[i];
     toast(`🔎 검수 중… ${i+1}/${list.length}`);
@@ -3238,22 +3277,39 @@ async function batchQa(){
       }
     }
     issues = [...new Set(issues)];
+    let fixed = false;
+    if(issues.length && useAi){                              // 자동 수정 → 재검수
+      toast(`🔧 자동 수정 중… ${i+1}/${list.length}`);
+      try{
+        if(await aiFixProblem(p, issues)){
+          let issues2 = ruleCheckProblem(p);
+          try{ issues2 = issues2.concat(aiQaToIssues(await aiQaProblem(p))); }catch(e){}
+          issues2 = [...new Set(issues2)];
+          if(!issues2.length){ fixed = true; issues = []; }
+          else issues = issues2;                             // 일부만 고쳐짐 — 남은 문제점으로 갱신
+        }
+      }catch(e){ lastErr = e.message||String(e); }
+    }
     p.tags = (p.tags||[]).filter(t=>t!=='검수주의');
     if(issues.length){ flagged++; p.tags.push('검수주의'); }
-    else { clean++; p.reviewed = true; }
+    else { clean++; p.reviewed = true; if(fixed) fixedN++; }
     p.updatedAt = Date.now();
     await saveProblem(p);
-    report.push({ id:p.id, no: state.numOf ? state.numOf.get(p.id) : null, issues, q: stripBoxMarks(p.question||'').slice(0,60) });
+    report.push({ id:p.id, no: state.numOf ? state.numOf.get(p.id) : null, issues, fixed, q: stripBoxMarks(p.question||'').slice(0,60) });
   }
   renderDB(); refreshCounts();
-  logJob('AI 검수', '선택 문항', `${list.length}개 중 이상 ${flagged}개`+(useAi?' · AI 정밀':' · 규칙만'));
+  logJob('AI 검수', '선택 문항', `${list.length}개 중 이상 ${flagged}개`+(fixedN?` · 자동수정 ${fixedN}개`:'')+(useAi?' · AI 정밀':' · 규칙만'));
   // 보고서 모달
   const m = $('#modal-body');
   m.innerHTML = `
     <button class="close" onclick="closeModal()">✕</button>
-    <h3>🔎 검수 결과 — ${list.length}문항 (${useAi?'규칙+AI 정밀':'규칙 검사만'})</h3>
-    <p class="hint">✅ 이상 없음 ${clean}개는 자동으로 <b>검수 완료</b> 처리했습니다. ⚠ ${flagged}개는 <b>#검수주의</b> 태그를 붙였으니 아래에서 확인하세요.${aiFail?` · AI 검사 실패 ${aiFail}건(${esc(lastErr.slice(0,60))})`:''}</p>
-    ${flagged===0 ? '<div class="empty">⚠ 이상이 발견된 문항이 없습니다. 모두 통과!</div>' : report.filter(r=>r.issues.length).map(r=>`
+    <h3>🔎 검수 결과 — ${list.length}문항 (${useAi?'규칙+AI 정밀+자동 수정':'규칙 검사만'})</h3>
+    <p class="hint">✅ 이상 없음·수정 완료 ${clean}개는 자동으로 <b>검수 완료</b> 처리했습니다.${fixedN?` 그중 🔧 <b>AI가 고쳐서 재검수를 통과한 문항이 ${fixedN}개</b>입니다(#AI수정 태그 — 한 번 훑어보시길 권합니다).`:''} ${flagged?`⚠ ${flagged}개는 자동 수정으로도 해결되지 않아 <b>#검수주의</b> 태그를 붙였으니 아래에서 확인하세요.`:''}${aiFail?` · AI 검사 실패 ${aiFail}건(${esc(lastErr.slice(0,60))})`:''}</p>
+    ${fixedN ? `<details style="margin-bottom:.6rem"><summary style="cursor:pointer">🔧 자동 수정된 문항 ${fixedN}개 보기</summary>${report.filter(r=>r.fixed).map(r=>`
+      <div style="border:1px solid #cfe0cf;border-radius:10px;padding:.45rem .7rem;margin:.4rem 0;background:#f4f9f4">
+        <div class="spread"><b>${r.no?'# '+r.no:''} ${esc(r.q)}…</b>
+          <button class="btn ghost sm" data-open="${r.id}">열어서 확인</button></div></div>`).join('')}</details>` : ''}
+    ${flagged===0 ? '<div class="empty">⚠ 남은 이상 문항이 없습니다. 모두 통과!</div>' : report.filter(r=>r.issues.length).map(r=>`
       <div style="border:1px solid var(--line);border-radius:10px;padding:.55rem .7rem;margin-bottom:.5rem">
         <div class="spread"><b>${r.no?'# '+r.no:''} ${esc(r.q)}…</b>
           <button class="btn ghost sm" data-open="${r.id}">열어서 고치기</button></div>
@@ -4525,7 +4581,8 @@ function latexToHwpEq(tex){
     log:'log',ln:'ln',lim:'lim',int:'int',sum:'sum',prod:'prod',max:'max',min:'min',
     overline:'bar',bar:'bar',vec:'vec',triangle:'triangle',angle:'angle',
     circ:'circ',degree:'circ',equiv:'equiv',approx:'approx',sim:'sim',
-    cdots:'cdots',ldots:'ldots',dots:'cdots',sqrt:'sqrt'};
+    cdots:'cdots',ldots:'ldots',dots:'cdots',sqrt:'sqrt',
+    displaystyle:'',textstyle:'',scriptstyle:'',scriptscriptstyle:'',limits:'',nolimits:''};
   // 중괄호 없는 첨자는 LaTeX 규칙(한 글자·한 명령)대로 {}로 묶는다.
   // 한글 수식은 공백 전까지 전부 첨자로 삼아 x^2=4^2 가 지수 속으로 빨려 들어가기 때문.
   s = s.replace(/([_^])\s*(\\[a-zA-Z]+|[^{\s\\_^])/g, '$1{$2}');
@@ -4564,8 +4621,10 @@ function eqMeasure(s){
   if(!s) return {w:300, h:1100};
   const fracParts = splitTopLevel(s, ' over ');
   if(fracParts.length>1){
+    // over는 인접한 그룹끼리만 세로로 쌓이고 나머지는 옆으로 이어지므로 폭은 "합"이어야 한다.
+    // (max로 잡으면 "… cdot {1} over {8} = 36" 같은 식에서 절반 폭이 되어 뒤 글자와 겹침)
     const ms = fracParts.map(eqMeasure);
-    return { w: Math.max(...ms.map(m=>m.w)) + 500, h: ms.reduce((t,m)=>t+m.h,0) + 300 };
+    return { w: ms.reduce((t,m)=>t+m.w,0) + 500, h: ms.reduce((t,m)=>t+m.h,0) + 300 };
   }
   let w=0, h=1100, i=0;
   while(i<s.length){
