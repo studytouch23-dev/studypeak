@@ -19,7 +19,7 @@ JS는 `/* ═══ 섹션명 ═══ */` 주석으로 구획되어 있다. Gr
 | 단원태그 관리 | `renderTags`, `add/rename/deleteSubject·Chapter·Section`, `remapProblems` |
 | 등록(단건/일괄) | `saveSingle`, `splitBulk`, `parseAnswerBlock`(해설지 [답] 형식), `saveBulk` |
 | 파일 파서 | `parseHWPX`, `parsePDF`, `hwpEqToLatex`, `extractTextFromFile`, `handleUploadFiles` |
-| PDF 영역 에디터 | `PDFED` 상태, `openPdfEditor`, `detectRegionsByAnchors`, `detectRegionsByPixels`, `pdfedFinish` |
+| PDF 영역 에디터 | `PDFED` 상태, `openPdfEditor(res,{solDefault})`, 페이지 `mode: prob/sol/skip`(클릭 순환), `detectRegionsByAnchors`, `detectRegionsByPixels`, `pdfedFinish`(해설 영역→`d.solImg` 번호 매칭), 그림 크롭 `validFigBox`/`cropDataURL`/`openImgCrop` |
 | 검색·작업 | `problemsFiltered`, `renderDB`(30/페이지), `renderTree`, `semanticSearch`(bigram), `imgHash`(aHash 이미지검색), 프리셋 |
 | 일괄 작업 | `openBatchTag`, `batchAutoTag`, `batchReviewed`, `batchDelete` |
 | AI 변환 | `aiJsonCall`(공용 호출: `aiHeaders()`에 키·워크스페이스 ID, 재시도·오류 한국어 안내), `aiTranscribeImage`, `aiTranscribeDrafts`, `batchAiTranscribe`, `aiSolveProblem`/`batchAiSolve`/`aiSolveDetail`(해설 생성, #AI해설 태그) — 테스트는 page에서 window.fetch 스텁 |
