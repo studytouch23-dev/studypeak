@@ -75,6 +75,6 @@ GitHub Pages에서 동작하는 100% 클라이언트 사이드 단일 파일 앱
 
 ## 개발 메모
 
-- 테스트: `scratchpad/smoke.js` (Playwright headless) — 업로드→분할→태깅→검색→학습지→HWPX 생성→재업로드 왕복 검증.
+- 테스트: 저장소 `tests/` 폴더 (Playwright headless) — `cd tests && npm install && node run-all.js`. 모의고사·수식·UI·검수·드라이브까지 회귀 검증.
 - 외부 의존성: KaTeX, JSZip, pdf.js (cdnjs). CDN 미로딩 시에도 핵심 기능(수식 렌더 제외)은 동작.
 - 원본 파일은 앱이 수정·삭제하지 않는다(읽기만 함).

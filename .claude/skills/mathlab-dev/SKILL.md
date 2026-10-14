@@ -43,8 +43,11 @@ JS는 `/* ═══ 섹션명 ═══ */` 주석으로 구획되어 있다. Gr
 
 ## 테스트 하네스 (반드시 이 방식으로 검증)
 
-샌드박스에서 CDN(cdnjs)이 차단되므로 라이브러리를 로컬 주입한다.
-scratchpad에 `playwright-core`, `jszip`, `pdfjs-dist@3.11.174` npm 설치 후:
+**저장소 `tests/` 폴더에 상설 회귀 테스트가 있다** — 코드 수정 후 커밋 전에 반드시:
+`cd tests && npm install && node run-all.js` (전체 통과 확인). 새 기능엔 새 smokeN.js를 추가하고
+tests/README.md 표를 갱신할 것. 사용자 업로드 파일이 필요한 테스트만 scratchpad에 둔다.
+
+샌드박스에서 CDN(cdnjs)이 차단되므로 라이브러리를 로컬 주입한다(tests/node_modules 활용):
 
 ```js
 // http 서버로 repo 루트 서빙(+ /pwlib/ → pdfjs-dist/build 매핑), 404 처리 필수
