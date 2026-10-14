@@ -7,6 +7,7 @@ const path = require('path');
 const ROOT = require('path').join(__dirname, '..');
 const server = http.createServer((req, res) => {
   let p = path.join(ROOT, decodeURIComponent(req.url.split('?')[0]));
+  if (!path.resolve(p).startsWith(path.resolve(ROOT))) { res.writeHead(403); res.end('forbidden'); return; }
   if (fs.existsSync(p) && fs.statSync(p).isDirectory()) p = path.join(p, 'index.html');
   if (!fs.existsSync(p)) { res.writeHead(404); res.end('nf'); return; }
   res.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'});
@@ -17,7 +18,7 @@ let fails = 0;
 const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?('— '+x):''); if(!ok) fails++; };
 
 (async () => {
-  await new Promise(r => server.listen(8961, r));
+  await new Promise(r => server.listen(8961, '127.0.0.1', r));
   const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
   const page = await browser.newPage();
   const errors = [];
@@ -37,6 +38,9 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
       sigma: latexToHwpEq('\\Sigma_{k=1}^{n} k'),
       combi: latexToHwpEq('x = _{6}P_{3}'),
       normalSup: latexToHwpEq('x^{2}+y^{2}=1'),
+      // 중괄호 없는 첨자: 한글은 공백 전까지 전부 첨자로 삼으므로 반드시 {}로 묶여야 함
+      bareSup: latexToHwpEq('\\overline{BC}^2=4^2+5^2-2\\cdot4\\cdot5\\cdot\\frac{1}{8}'),
+      bareCmd: latexToHwpEq('45^\\circ + x_1'),
       unknown: [...EQ_DIAG.unknown],
       // import 왕복: PI는 \\Pi로 보존, rm은 제거
       imp1: hwpEqToLatex('{}_{6} PI _{2}'),
@@ -56,6 +60,9 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   check('\\Sigma → SIGMA', /\bSIGMA\b/.test(r.sigma), r.sigma);
   check('= 뒤 선행 _ 보정', r.combi.includes('= {}_{6}'), r.combi);
   check('일반 첨자 영향 없음', r.normalSup.replace(/\s/g,'')==='x^{2}+y^{2}=1', r.normalSup);
+  const bs = r.bareSup.replace(/\s/g,'');
+  check('붙여 쓴 지수 {} 강제(=가 지수로 안 빨림)', bs.includes('^{2}=4^{2}') && !/[_^][^{]/.test(bs), r.bareSup);
+  check('명령 첨자 {} 강제(45°, x_1)', r.bareCmd.replace(/\s+/g,' ').includes('45^{ circ }') && r.bareCmd.replace(/\s/g,'').includes('x_{1}'), r.bareCmd);
   check('미지원 명령 보고 없음', r.unknown.length===0, r.unknown.join(','));
   check('import: PI → \\Pi', r.imp1.includes('\\Pi'), r.imp1);
   check('import: rm 제거', !r.imp2.includes('rm') && r.imp2.includes('P'), r.imp2);
