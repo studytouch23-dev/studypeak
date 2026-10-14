@@ -1029,7 +1029,16 @@ const DB = {
    이미지가 필요한 곳(카드 썸네일·상세·인쇄·HWPX·이미지검색)은 imagesOf()로 조회. */
 function lightenProblem(p){
   const imgN = (p.images||[]).length;
-  return imgN ? {...p, images: [], imgN} : {...p, imgN: 0};
+  const l = imgN ? {...p, images: [], imgN} : {...p, imgN: 0};
+  if(l.solImg){ l.solImgN = 1; l.solImg = ''; }              // 해설 이미지도 본문은 DB에만
+  return l;
+}
+async function solImgOf(p){ // 해설 크롭 이미지(dataURL). 라이트 레코드면 DB에서 조회
+  if(!p) return '';
+  if(p.solImg) return p.solImg;
+  if(!p.solImgN) return '';
+  const full = await DB.get('problems', p.id).catch(()=>null);
+  return (full && full.solImg) || '';
 }
 const IMG_CACHE = new Map();
 async function imagesOf(p){
@@ -1046,21 +1055,29 @@ async function imagesOf(p){
 /* 라이트 레코드를 저장해도 DB의 이미지가 지워지지 않도록 모든 문제 저장은 이 함수로 */
 async function saveProblem(p){
   let toStore = p;
-  if((p.imgN||0) > 0 && (!p.images || !p.images.length)){
+  const needImgs = (p.imgN||0) > 0 && (!p.images || !p.images.length);
+  const needSol = (p.solImgN||0) > 0 && !p.solImg;
+  if(needImgs || needSol){
     const full = await DB.get('problems', p.id).catch(()=>null);
-    toStore = {...p, images: (full && full.images) || []};
+    toStore = {...p};
+    if(needImgs) toStore.images = (full && full.images) || [];
+    if(needSol) toStore.solImg = (full && full.solImg) || '';
   }
-  toStore = {...toStore, imgN: (toStore.images||[]).length};
+  toStore = {...toStore, imgN: (toStore.images||[]).length, solImgN: toStore.solImg?1:0};
   await DB.put('problems', toStore);
   IMG_CACHE.delete(p.id);
+  if(typeof state!=='undefined' && state.imgHashCache) state.imgHashCache.delete(p.id); // 이미지 검색 해시 무효화
   return toStore;
 }
 
 /* ═══════════════ 상태 ═══════════════ */
+function lsJson(key, dflt){ // localStorage JSON 안전 파싱 — 한 키가 깨져도 앱 전체가 죽지 않게
+  try{ const v = JSON.parse(localStorage.getItem(key)); return v==null ? dflt : v; }catch(e){ return dflt; }
+}
 const state = {
   problems: [], worksheets: [],
-  cart: JSON.parse(localStorage.getItem('sp-lab-cart')||'[]'),
-  points: JSON.parse(localStorage.getItem('sp-lab-points')||'{}'),
+  cart: lsJson('sp-lab-cart', []),
+  points: lsJson('sp-lab-points', {}),
   pendingImages: [], bulkDrafts: [],
   lastResults: null,
   tagSubject: null, tagChapter: null,  // 단원태그 편집기 선택 상태
@@ -1138,6 +1155,10 @@ function refreshUnitSelects(){
   $('#f-subject').dispatchEvent(new Event('change'));
   fillSubjectSelect($('#b-subject'));
   fillSubjectSelect($('#filter-subject'), true);
+  const g = $('#g-subject');
+  if(g){ fillSubjectSelect(g); g.dispatchEvent(new Event('change')); }
+  const ac = $('#ac-subject');
+  if(ac) ac.innerHTML = '<option value="">과목 전체</option>'+Object.keys(CURRICULUM).map(s=>`<option>${esc(s)}</option>`).join('');
 }
 
 /* ═══════════════ 단원태그 관리 화면 ═══════════════ */
@@ -1526,11 +1547,19 @@ function splitBulk(){
         const { text, choices } = splitChoicesFromBody(body);
         return { text, num, sol, ans: ansM? ansM[1].trim() : '', choices };
       }).filter(d=>d.text.length>=4);
-      if(drafts.length){
-        state.bulkDrafts = drafts;
+      // 해설 안의 "1. 2. …" 풀이 단계가 잘못 분할된 조각(답·보기·해설이 전부 없음)은 앞 문항의 해설로 복원
+      const mergedDrafts = [];
+      for(const d of drafts){
+        if(mergedDrafts.length && !d.ans && !(d.choices||[]).length && !d.sol){
+          const prev = mergedDrafts[mergedDrafts.length-1];
+          prev.sol = (prev.sol ? prev.sol+'\n' : '') + d.num + '. ' + d.text;
+        } else mergedDrafts.push(d);
+      }
+      if(mergedDrafts.length){
+        state.bulkDrafts = mergedDrafts;
         $('#bulk-preview-card').style.display='block';
         rerenderBulk();
-        $('#bulk-status').textContent = `AI 생성 형식 감지 — ${drafts.length}문항 (문제·선택지·정답·해설 자동 분리). 확인 후 [전체 저장]하세요.`;
+        $('#bulk-status').textContent = `AI 생성 형식 감지 — ${mergedDrafts.length}문항 (문제·선택지·정답·해설 자동 분리). 확인 후 [전체 저장]하세요.`;
         return;
       }
     }
@@ -1651,6 +1680,7 @@ async function saveBulk(){
       section: useAi ? '' : (useSg ? sg[0].unit[2] : ''),
       grade, srcType:'기출', srcName, srcYear:'', difficulty: d.aiDiff||diff, tags:[],
       origNo: d.num||'', reviewed: false,
+      solImg: (!d.sol && d.solImg) ? d.solImg : '',          // AI 변환 전 해설 크롭도 버리지 않고 보관
       createdAt: Date.now()+n, updatedAt: Date.now()+n
     };
     await saveProblem(p); state.problems.push(lightenProblem(p)); n++;
@@ -1904,8 +1934,10 @@ async function openPdfEditor(res, opts){
       <div class="pno">${pg.idx+1}</div><img alt="p${pg.idx+1}">
     </div>`).join('');
   pdfedSelCount();
+  const gen = PDFED.renderGen = (PDFED.renderGen||0)+1;      // 새 PDF를 열면 이전 렌더 루프 무효화
   for(let k=0;k<PDFED.pages.length;k++){
     const pg = PDFED.pages[k];
+    if(gen !== PDFED.renderGen) return;
     if(!$('#pdfed-bg').classList.contains('show')) return;   // 닫혔으면 중단
     $('#pdfed-selcount').textContent = `페이지 미리보기 생성 중… ${k+1}/${PDFED.pages.length}`;
     const vp = pg.page.getViewport({scale: 150/pg.w});
@@ -2218,7 +2250,7 @@ async function fileSHA256(file){
 }
 async function handleUploadFiles(files, targetSel){
   const status = $('#upload-status');
-  const seen = JSON.parse(localStorage.getItem('sp-lab-filehashes')||'{}');
+  const seen = lsJson('sp-lab-filehashes', {});
   let ok=0;
   for(const file of files){
     try{
@@ -2743,7 +2775,8 @@ function openDetail(id){
         <div class="field"><label>난이도</label><select id="e-diff">${[1,2,3,4,5].map(d=>`<option value="${d}" ${p.difficulty===d?'selected':''}>${'●'.repeat(d)} ${d}</option>`).join('')}</select></div>
       </div>
     </div>
-    <div class="field"><label>해설 <button class="btn ghost sm" style="margin-left:.5rem" onclick="aiSolveDetail('${p.id}')">🤖 AI 해설 생성</button></label><textarea id="e-solution" style="min-height:70px">${esc(p.solution)}</textarea></div>
+    <div class="field"><label>해설 <button class="btn ghost sm" style="margin-left:.5rem" onclick="aiSolveDetail('${p.id}')">🤖 AI 해설 생성</button></label><textarea id="e-solution" style="min-height:70px">${esc(p.solution)}</textarea>
+      <img id="e-solimg" alt="해설 원본 이미지" style="display:none;max-width:100%;margin-top:.4rem;border:1px solid var(--line);border-radius:6px"></div>
     <div class="grid3">
       <div class="field"><label>과목</label><select id="e-subject"></select></div>
       <div class="field"><label>대단원</label><select id="e-chapter"></select></div>
@@ -2777,6 +2810,7 @@ function openDetail(id){
     const el = $('#detail-imgs');
     if(el) el.innerHTML = imgs.map(d=>`<img src="${d}" style="max-height:200px" alt="문제 그림">`).join('') || '<span class="hint">그림 없음</span>';
   });
+  solImgOf(p).then(d=>{ const el = $('#e-solimg'); if(el && d){ el.src = d; el.style.display='block'; } });
 }
 async function saveDetail(id){
   const p = state.problems.find(x=>x.id===id); if(!p) return;
@@ -2822,14 +2856,16 @@ function toggleCart(id){
   if($('#view-sheet').classList.contains('active')) renderSheet();
 }
 function selectAllVisible(){
-  for(const p of problemsFiltered()) if(!state.cart.includes(p.id)) state.cart.push(p.id);
+  const inCart = new Set(state.cart);                       // 수만 문항에서 O(n²) 방지
+  for(const p of problemsFiltered()) if(!inCart.has(p.id)){ inCart.add(p.id); state.cart.push(p.id); }
   persistCart(); renderDB();
   toast('보이는 문제를 모두 담았습니다.');
 }
 function selectPageAll(){ // 현재 페이지(최대 30개)만 선택
   const PAGE = 30;
+  const inCart = new Set(state.cart);
   const ids = (state.viewList||[]).slice((state.page-1)*PAGE, state.page*PAGE);
-  for(const id of ids) if(!state.cart.includes(id)) state.cart.push(id);
+  for(const id of ids) if(!inCart.has(id)) state.cart.push(id);
   persistCart(); renderDB();
   toast(`이 페이지 ${ids.length}문항을 선택했습니다.`);
 }
@@ -2916,17 +2952,23 @@ function clearAiSettings(){
 }
 /* AI가 역슬래시를 이중 이스케이프해 본문에 리터럴 \n(₩n으로 보임)이 남는 경우를 줄바꿈으로 정리.
    수식($...$) 안은 건드리지 않는다(\neq, \nabla 같은 명령 보호). */
-function fixAiNewlines(s){
-  // $$…$$(여러 줄 포함)는 한 줄짜리 $…$ 로 정규화 — 한글 수식 run 분리가 줄 단위라서
-  s = String(s||'').replace(/\$\$\s*([^$]+?)\s*\$\$/g, (m,eq)=>'$'+eq.replace(/\s+/g,' ').trim()+'$');
+function fixAiNewlines(s, keepDisplay){
+  // $$…$$(여러 줄 포함)는 한 줄짜리 $…$ 로 정규화 — 한글 수식 run 분리가 줄 단위라서.
+  // keepDisplay=true면 이 정규화를 건너뛴다: 사용자가 직접 쓴 블록 수식($$)을 보존해야 하는
+  // 저장본 점검·시작 시 복구 경로용 (AI 응답 정리 경로만 $$를 접는다)
+  s = String(s||'');
+  if(!keepDisplay) s = s.replace(/\$\$\s*([^$]+?)\s*\$\$/g, (m,eq)=>'$'+eq.replace(/\s+/g,' ').trim()+'$');
   return s.split(/(\$\$[^$]+\$\$|\$[^$\n]+\$)/).map((part,i)=>
     i%2 ? part : part.replace(/\\n/g,'\n').replace(/\\t/g,' ')
   ).join('');
 }
 /* 그림 위치 마커: AI가 그림이 있던 자리에 [그림] 을 넣는다. "(그림: 설명)" 같은 대체 문구도 자리로 취급 */
-const IMG_SLOT_RE = /^\s*(\[그림\s*\d*\]|\(그림\s*[::][^)]*\)?)\s*$/;
+const IMG_SLOT_RE = /^\s*(\[그림\s*\d*\]|\(그림\s*[:：][^)]*\)?)\s*$/;
 /* 본문이 그림·표·그래프를 언급하면 AI가 hasFigure=false라 해도 이미지를 지우지 않는다(표·그래프 유실 방지) */
-const AI_FIG_RE = /그림|그래프|도형|도표|다음 표|아래 표|주어진 표|(?<![가-힣])표[를는에와가]/;
+/* lookbehind 미지원 구형 Safari에서 파싱 에러로 앱 전체가 죽지 않게 런타임 생성 */
+let AI_FIG_RE;
+try{ AI_FIG_RE = new RegExp('그림|그래프|도형|도표|다음 표|아래 표|주어진 표|(?<![가-힣])표[를는에와가]'); }
+catch(e){ AI_FIG_RE = /그림|그래프|도형|도표|표[를는에와가]/; }
 function curriculumBrief(){
   return Object.entries(CURRICULUM).map(([s,ch])=>s+': '+Object.keys(ch).join(', ')).join('\n');
 }
@@ -3122,7 +3164,7 @@ function ruleCheckProblem(p){ // 무료 규칙 검사 → 이슈 문자열 배�
   resetEqDiag();
   all.replace(/\$\$?([^$\n]+)\$\$?/g, (m,eq)=>{ latexToHwpEq(eq); return ''; });
   if(EQ_DIAG.unknown.size) issues.push('한글 미지원 수식 명령 사용: '+[...EQ_DIAG.unknown].slice(0,3).join(' '));
-  if(fixAiNewlines(all) !== all) issues.push('깨진 줄바꿈 문자(₩n)가 남아 있음 — 저장 시 자동 정리됨');
+  if(fixAiNewlines(all, true) !== all) issues.push('깨진 줄바꿈 문자(₩n)가 남아 있음 — 저장 시 자동 정리됨');
   if(/�/.test(all)) issues.push('깨진 문자(�) 포함 — 원본 대조 필요');
   if(/\[판독불가\]/.test(all)) issues.push('AI가 읽지 못한 글자([판독불가]) 있음');
   const tail = q.trim().replace(/\[\d+(\.\d+)?점\]\s*$/,'').trim();
@@ -3135,7 +3177,7 @@ function ruleCheckProblem(p){ // 무료 규칙 검사 → 이슈 문자열 배�
     if(!cs.every((c,i)=>c.startsWith(marks[i]))) issues.push('선택지 원문자(①~⑤) 순서가 이상함');
   }
   if(cs.length && (p.answer||'').trim() && !/[①②③④⑤]/.test(p.answer)) issues.push('객관식인데 정답이 ①~⑤ 형식이 아님');
-  if(!String(p.solution||'').trim()) issues.push('해설 없음');
+  if(!String(p.solution||'').trim() && !(p.solImgN||p.solImg)) issues.push('해설 없음');
   return issues;
 }
 function aiQaPrompt(p, withImage){
@@ -3639,9 +3681,11 @@ async function aiTranscribeDrafts(){
       $('#bulk-status').textContent = `🤖 해설 변환 중… ${i+1}/${sols.length} (문항 ${d.num||''})`;
       try{
         const r = await aiTranscribeSolution(d.solImg);
-        if((r.solution||'').trim()) d.sol = fixAiNewlines(r.solution).trim();
+        if((r.solution||'').trim()){
+          d.sol = fixAiNewlines(r.solution).trim();
+          d.solImg = null;                                 // 텍스트로 옮겨졌을 때만 이미지 조각을 버림
+        }
         if(r.answer && !d.ans) d.ans = String(r.answer).trim();
-        d.solImg = null;                                   // 텍스트로 옮겼으면 이미지 조각은 버림
         sOk++;
       }catch(e){ sFail++; lastErr = e.message||String(e); if(sOk===0 && /API 키|401|네트워크|API 오류 4/.test(lastErr)) throw e; }
       rerenderBulk();
@@ -3671,7 +3715,7 @@ async function batchAiTranscribe(){
       toast(`🤖 AI 변환 중… ${i+1}/${targets.length}`);
       try{
         const pimgs = await imagesOf(p);
-        if(!pimgs.length){ fail++; continue; }
+        if(!pimgs.length){ fail++; lastErr2 = '이미지 없음'; continue; }
         const r = await aiTranscribeImage(pimgs[0]);
         p.question = fixAiNewlines(r.question||'').trim();
         if(Array.isArray(r.choices) && r.choices.length) p.choices = r.choices.map(c=>fixAiNewlines(c));
@@ -3828,7 +3872,8 @@ async function batchDelete(){
 
 /* ═══════════════ 학습지 빌더 ═══════════════ */
 function cartProblems(){
-  return state.cart.map(id=>state.problems.find(p=>p.id===id)).filter(Boolean);
+  const byId = new Map(state.problems.map(p=>[p.id,p]));    // 수만 문항에서 O(n²) 방지
+  return state.cart.map(id=>byId.get(id)).filter(Boolean);
 }
 function setPoint(id, v){
   const n = parseFloat(v);
@@ -3951,8 +3996,8 @@ function shuffleSheet(){
 async function printSheet(){
   const list = cartProblems();
   if(!list.length){ toast('담긴 문제가 없습니다.'); return; }
-  const imgsMap = new Map();
-  for(const p of list) imgsMap.set(p.id, await imagesOf(p));
+  const imgsMap = new Map(), solMap = new Map();
+  for(const p of list){ imgsMap.set(p.id, await imagesOf(p)); solMap.set(p.id, await solImgOf(p)); }
   const title = $('#s-title').value||'수학 연습 문제';
   const sub = $('#s-sub').value, author = $('#s-author').value, date = $('#s-date').value;
   const twoCol = $('#s-2col').checked, withMeta = $('#s-meta').checked;
@@ -3974,7 +4019,8 @@ async function printSheet(){
     <div class="${doctype==='solution'?'':'pr-ans'}">
       <h2>정답 및 해설 — ${esc(title)}</h2>
       ${list.map((p,i)=>`<div class="arow"><b>${i+1}.</b> <b>${esc(p.answer||'—')}</b>
-        ${p.solution?`<div style="font-size:9.5pt;color:#333;margin-top:2px;white-space:pre-wrap">${esc(p.solution)}</div>`:''}</div>`).join('')}
+        ${p.solution?`<div style="font-size:9.5pt;color:#333;margin-top:2px;white-space:pre-wrap">${esc(p.solution)}</div>`:''}
+        ${solMap.get(p.id)?`<img src="${solMap.get(p.id)}" alt="해설 이미지" style="max-width:70%;display:block;margin:4px 0">`:''}</div>`).join('')}
     </div>`;
 
   const head = `
@@ -4033,15 +4079,16 @@ function htmlProblemBody(p, imgs, withMeta){ // 질문 본문: [박스]→테두
     h += `<div class="src">[${esc(p.srcType||'기출')} · ${esc(p.srcName)}${p.srcYear?' '+esc(p.srcYear):''}]</div>`;
   return h;
 }
-function htmlSolutionBody(p){
+function htmlSolutionBody(p, solImg){
   let h = `<div class="ansline">정답&nbsp; <b>${mathToHtml(p.answer||'—')}</b></div>`;
   if((p.solution||'').trim())
     h += `<div class="soltext">${String(p.solution).split(/\n/).map(l=>l.trim()?`<p>${mathToHtml(l)}</p>`:'').join('')}</div>`;
+  if(solImg) h += `<img class="fig" src="${solImg}" alt="해설 이미지">`;
   return h;
 }
 async function buildHtmlExport(mode, list){ // mode: 'sheet' 학습지 | 'book' 교재(표지+목차+뒤쪽 해설)
-  const imgsMap = new Map();
-  for(const p of list) imgsMap.set(p.id, await imagesOf(p));
+  const imgsMap = new Map(), solMap = new Map();
+  for(const p of list){ imgsMap.set(p.id, await imagesOf(p)); solMap.set(p.id, await solImgOf(p)); }
   const title = $('#s-title').value||'수학 연습 문제';
   const sub = $('#s-sub').value, author = $('#s-author').value, date = $('#s-date').value;
   const withMeta = $('#s-meta').checked, twoCol = $('#s-2col').checked;
@@ -4052,7 +4099,7 @@ async function buildHtmlExport(mode, list){ // mode: 'sheet' 학습지 | 'book' 
 <article class="prob" id="q${n}" data-id="${esc(p.id)}" data-subject="${esc(p.subject||'')}" data-chapter="${esc(p.chapter||'')}" data-section="${esc(p.section||'')}" data-grade="${esc(p.grade||'')}" data-difficulty="${p.difficulty||3}" data-answer="${esc(p.answer||'')}">
 <div class="phead"><span class="qnum">${n}.</span>${pts(p)!=null?`<span class="pt">[${pts(p)}점]</span>`:''}<span class="diff">${'●'.repeat(p.difficulty||3)}${'○'.repeat(Math.max(0,5-(p.difficulty||3)))}</span><button class="sbtn noprint" onclick="tgSol(${n})">정답·해설</button></div>
 <div class="pbody">${htmlProblemBody(p, imgsMap.get(p.id), withMeta)}</div>
-<div class="sol" id="sol${n}">${htmlSolutionBody(p)}</div>
+<div class="sol" id="sol${n}">${htmlSolutionBody(p, solMap.get(p.id))}</div>
 </article>`;
 
   let main='', toc='', solsBack='';
@@ -4077,7 +4124,7 @@ async function buildHtmlExport(mode, list){ // mode: 'sheet' 학습지 | 'book' 
     n=0;
     solsBack = `<section class="sols" id="sols"><h2>정답 및 해설</h2>${groups.map(g=>
       `<h3 class="chsub">${esc(g.key)}</h3>`+g.items.map(p=>{ n++;
-        return `<div class="solitem"><span class="qnum">${n}.</span>${htmlSolutionBody(p)}</div>`; }).join('')
+        return `<div class="solitem"><span class="qnum">${n}.</span>${htmlSolutionBody(p, solMap.get(p.id))}</div>`; }).join('')
     ).join('')}</section>`;
   } else {
     main = `<div class="qwrap${twoCol?' two':''}">${list.map((p,i)=>probArt(p,i+1)).join('')}</div>`;
@@ -4765,9 +4812,12 @@ async function mockItemParas(p, no, pts, label){ // 한 문항 → 슬롯 안 �
   if(label) out.push(mockLabelP(label));
   const blocks = splitBoxBlocks(String(p.question||'')).map(b=>({box:b.box, lines:b.lines.map(s=>s.trim()).filter(Boolean)})).filter(b=>b.lines.length);
   if(!blocks.length) blocks.push({box:false, lines:['']});
-  if(pts!=null){                                             // §5-3: 배점은 마지막 질문 문장 끝에
-    const lastText = [...blocks].reverse().find(b=>!b.box) || blocks[blocks.length-1];
-    lastText.lines[lastText.lines.length-1] += ` [${pts}점]`;
+  if(pts!=null){                                             // §5-3: 배점은 마지막 질문 "문장" 끝에 ([그림] 마커·조건 상자 제외)
+    const lastText = [...blocks].reverse().find(b=>!b.box && b.lines.some(l=>!IMG_SLOT_RE.test(l)));
+    if(lastText){
+      for(let li=lastText.lines.length-1; li>=0; li--)
+        if(!IMG_SLOT_RE.test(lastText.lines[li])){ lastText.lines[li] += ` [${pts}점]`; break; }
+    } else blocks.push({box:false, lines:[`[${pts}점]`]});
   }
   const imgParas = await hwpxImageParas(await imagesOf(p), {maxW:14470, maxH:17000, paraPr:1}); // 단 폭 45%·최대 60mm·가운데(§8)
   let imgUsed = 0;
@@ -4960,7 +5010,7 @@ async function buildBackupBlob(inclImg){
     +',"problems":['];
   let first = true, cnt = 0;
   await DB.each('problems', v=>{
-    const rec = inclImg ? v : {...v, images: []};
+    const rec = inclImg ? v : {...v, images: [], solImg: ''};
     parts.push((first?'':',') + JSON.stringify(rec));
     first = false; cnt++;
   });
@@ -4982,9 +5032,24 @@ async function importBackupData(data){ // 백업 JSON 객체를 현재 DB에 합
   if(!data || !Array.isArray(data.problems)) throw new Error('형식 오류');
   let n=0;
   for(const p of data.problems){
-    if(p&&p.id&&typeof p.question==='string'){ p.imgN=(p.images||[]).length; await DB.put('problems',p); n++; }
+    if(p&&p.id&&typeof p.question==='string'){
+      p.id = String(p.id).replace(/[^\w.-]/g,'') || (uid()+n);   // 조작된 id로 인한 HTML 주입 차단
+      // 이미지 제외 백업을 복원해도 DB에 이미 있는 이미지·해설 이미지는 지우지 않는다
+      if(!(p.images && p.images.length) || !p.solImg){
+        const full = await DB.get('problems', p.id).catch(()=>null);
+        if(full){
+          if(!(p.images && p.images.length) && full.images && full.images.length) p.images = full.images;
+          if(!p.solImg && full.solImg) p.solImg = full.solImg;
+        }
+      }
+      p.imgN = (p.images||[]).length;
+      p.solImgN = p.solImg ? 1 : 0;
+      await DB.put('problems', p); n++;
+    }
   }
-  for(const w of (data.worksheets||[])){ if(w&&w.id) await DB.put('worksheets',w); }
+  for(const w of (data.worksheets||[])){
+    if(w&&w.id){ w.id = String(w.id).replace(/[^\w.-]/g,'') || ('ws'+Date.now()+n); await DB.put('worksheets',w); }
+  }
   if(data.curriculum && typeof data.curriculum==='object'){
     for(const [s,chs] of Object.entries(data.curriculum)){
       if(!CURRICULUM[s]) CURRICULUM[s] = {};
@@ -5174,8 +5239,8 @@ function renderDash(){
   (async ()=>{
     let n=0;
     for(const p of state.problems){
-      const q2 = fixAiNewlines(p.question), s2 = fixAiNewlines(p.solution);
-      const ch = p.choices||[], ch2 = ch.map(c=>fixAiNewlines(c));
+      const q2 = fixAiNewlines(p.question, true), s2 = fixAiNewlines(p.solution, true);
+      const ch = p.choices||[], ch2 = ch.map(c=>fixAiNewlines(c, true));
       if(q2!==p.question || s2!==p.solution || ch2.some((c,i)=>c!==ch[i])){
         p.question=q2; p.solution=s2; p.choices=ch2; p.updatedAt=Date.now();
         await saveProblem(p); n++;

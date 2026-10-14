@@ -34,6 +34,10 @@ JS는 `/* ═══ 섹션명 ═══ */` 주석으로 구획되어 있다. Gr
   LRU 캐시), 문제 저장은 반드시 `saveProblem(p)`(라이트 레코드 저장 시 DB의 이미지 보존).
   `DB.put('problems', …)` 직접 호출 금지(이미지 유실됨). 로딩/백업은 `DB.each` 커서.
   이미지 의도적 삭제는 `p.images=[]; p.imgN=0` 둘 다 설정.
+  해설 크롭 이미지는 `p.solImg`(+`solImgN` 플래그, 라이트 레코드는 본문 제거) — 조회는 `solImgOf(p)`.
+- localStorage JSON 읽기는 반드시 `lsJson(key, 기본값)` (한 키가 깨져도 앱이 죽지 않게).
+- `fixAiNewlines(s, keepDisplay)`: AI 응답 정리 경로만 `$$`→`$` 접기. 저장본 점검·시작 복구 경로는
+  반드시 `keepDisplay=true`로 호출(사용자 블록 수식 보존).
 - `state`: problems(라이트), worksheets, cart(=선택), points, page, searchMode, filterTag, viewList, numOf.
 - localStorage 키: `sp-lab-cart`, `sp-lab-points`, `sp-lab-curriculum`, `sp-lab-filehashes`,
   `sp-lab-presets`, `sp-lab-joblog`.

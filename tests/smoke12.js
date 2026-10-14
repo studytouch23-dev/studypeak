@@ -10,6 +10,7 @@ const ROOT = require('path').join(__dirname, '..');
 
 const server = http.createServer((req, res) => {
   let p = path.join(ROOT, decodeURIComponent(req.url.split('?')[0]));
+  if (!path.resolve(p).startsWith(path.resolve(ROOT))) { res.writeHead(403); res.end('forbidden'); return; }
   if (fs.existsSync(p) && fs.statSync(p).isDirectory()) p = path.join(p, 'index.html');
   if (!fs.existsSync(p)) { res.writeHead(404); res.end('nf'); return; }
   res.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'});
@@ -20,7 +21,7 @@ let fails = 0;
 function check(name, ok, extra){ console.log((ok?'PASS':'FAIL'), name, extra!==undefined?('— '+extra):''); if(!ok) fails++; }
 
 (async () => {
-  await new Promise(r => server.listen(8931, r));
+  await new Promise(r => server.listen(8931, '127.0.0.1', r));
   const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
   const ctx = await browser.newContext({ acceptDownloads: true });
   const page = await ctx.newPage();
