@@ -41,6 +41,9 @@ label{font-size:.82rem;font-weight:700;color:var(--green);display:block;margin-b
 #sidebar nav button:hover{background:rgba(255,255,255,.1)}
 #sidebar nav button.active{background:var(--gold);color:var(--green);font-weight:800}
 #sidebar nav button .badge{margin-left:auto;background:rgba(255,255,255,.92);color:var(--green);border-radius:99px;font-size:.68rem;padding:0 .4rem;font-weight:800}
+#sidebar nav a.navlink{display:flex;align-items:center;gap:.5rem;width:calc(100% - 1rem);margin:.1rem .5rem;text-align:left;background:transparent;border:0;color:#dfe7df;padding:.5rem .55rem;border-radius:8px;font-size:.9rem;font-weight:600;text-decoration:none;box-sizing:border-box}
+#sidebar nav a.navlink:hover{background:rgba(255,255,255,.1)}
+#sidebar nav a.navlink .ext{margin-left:auto;opacity:.5;font-size:.78rem}
 #sidebar .sb-foot{margin-top:auto;padding:1rem .95rem;font-size:.7rem;color:#9eb3a4}
 #sidebar .sb-foot a{color:var(--gold)}
 #mainwrap{flex:1;margin-left:var(--sbw);display:flex;flex-direction:column;min-width:0}
@@ -263,10 +266,15 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
     <button data-view="tags">🏷 단원태그</button>
     <div class="group">문제 DB 관리</div>
     <button data-view="add">📝 문제 등록</button>
+    <button data-view="gen">🤖 AI 문제 생성</button>
     <button data-view="db">🔍 문제 검색·작업 <span class="badge" id="nav-count">0</span></button>
     <button data-view="sheet">📄 학습지 생성·관리 <span class="badge" id="nav-cart">0</span></button>
     <div class="group">데이터</div>
     <button data-view="data">💾 백업·데이터</button>
+    <div class="group">바로가기</div>
+    <a class="navlink" href="https://student.studypeak.io" target="_blank" rel="noopener">🎓 학생 페이지 <span class="ext">↗</span></a>
+    <a class="navlink" href="https://teacher.studypeak.io" target="_blank" rel="noopener">🧑‍🏫 선생님 페이지 <span class="ext">↗</span></a>
+    <a class="navlink" href="https://admin.studypeak.io" target="_blank" rel="noopener">⚙️ 관리자 페이지 <span class="ext">↗</span></a>
   </nav>
   <div class="sb-foot">공부는 데이터다<br><a href="/">studypeak.co.kr</a><br>데이터는 이 브라우저에만 저장됩니다.</div>
 </aside>
@@ -395,43 +403,6 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
   <div class="row" style="margin-bottom:1rem">
     <button class="btn" id="mode-single" onclick="setAddMode('single')">단건 등록</button>
     <button class="btn ghost" id="mode-bulk" onclick="setAddMode('bulk')">일괄 등록 (붙여넣기 분할)</button>
-  </div>
-
-  <div class="card" id="gen-card">
-    <h3>🤖 AI 문제 생성 — 클로드 프로젝트 연동 (Max 구독 사용)</h3>
-    <p class="hint" style="margin-bottom:.6rem">
-      API 과금 없이 <b>claude.ai의 Max 구독</b>으로 문제를 만듭니다: ① 아래에서 조건을 고르고 <b>[프롬프트 복사]</b>
-      ② claude.ai의 <b>[수학 전용] 스터디피크 문제 생성</b> 프로젝트에 붙여넣어 생성
-      ③ 결과 전체를 복사해 아래 <b>일괄 등록</b> 칸에 붙여넣으면 문제·정답·해설이 자동 분할됩니다.
-    </p>
-    <div class="grid3">
-      <div class="field"><label>과목</label><select id="g-subject"></select></div>
-      <div class="field"><label>대단원</label><select id="g-chapter"></select></div>
-      <div class="field"><label>중단원</label><select id="g-section"></select></div>
-    </div>
-    <div class="grid4">
-      <div class="field"><label>학년</label><select id="g-grade"></select></div>
-      <div class="field"><label>난이도</label><select id="g-diff">
-        <option value="혼합">혼합 (쉬움~어려움)</option>
-        <option value="1">● 1 (쉬움)</option><option value="2">●● 2</option>
-        <option value="3" selected>●●● 3</option><option value="4">●●●● 4</option>
-        <option value="5">●●●●● 5 (킬러)</option></select></div>
-      <div class="field"><label>문항 수</label><input id="g-count" type="number" min="1" max="30" value="5"></div>
-      <div class="field"><label>유형</label><select id="g-type">
-        <option>객관식(5지선다)</option><option>단답형</option><option selected>혼합</option></select></div>
-    </div>
-    <div class="field"><label>추가 요청 (선택)</label><input id="g-extra" placeholder="예: 세화여고 중간고사 스타일로, 조건 상자 (가)(나) 포함 문항 2개 이상"></div>
-    <details style="margin-bottom:.6rem">
-      <summary class="hint" style="cursor:pointer"><b>생성 지침(프로젝트 지침) — 최초 1회 붙여넣기 (선택)</b></summary>
-      <p class="hint" style="margin:.4rem 0">claude.ai 프로젝트에 이미 지침이 저장돼 있다면 비워 두세요(프로젝트가 알아서 적용).
-        프로젝트 없이 일반 대화에서 생성하려면 그 지침을 여기 붙여넣으면 프롬프트에 포함됩니다.</p>
-      <textarea id="g-inst" style="min-height:80px" placeholder="[수학 전용] 스터디피크 문제 생성 프로젝트의 지침 내용"></textarea>
-    </details>
-    <div class="row">
-      <button class="btn gold" onclick="copyGenPrompt()">📋 생성 프롬프트 복사</button>
-      <a class="btn ghost" href="https://claude.ai/projects" target="_blank" rel="noopener">claude.ai 프로젝트 열기 ↗</a>
-      <span class="hint" id="gen-status"></span>
-    </div>
   </div>
 
   <div id="add-single">
@@ -592,6 +563,55 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 
       <div class="pgrid" id="plist"></div>
       <div id="pager"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────── AI 문제 생성 (클로드 프로젝트 브리지) ───────────────── -->
+<section class="view" id="view-gen">
+  <h2 class="vt">AI 문제 생성 — 클로드 프로젝트 연동</h2>
+  <p class="vd">API 과금 없이 <b>claude.ai의 Max 구독</b>으로 새 문제를 만듭니다.
+    ① 조건 선택 → <b>[프롬프트 복사]</b> ② claude.ai의 <b>[수학 전용] 스터디피크 문제 생성</b> 프로젝트에 붙여넣어 생성
+    ③ 결과 전체를 아래 칸에 붙여넣고 <b>[분할 실행]</b> — 문제·선택지·정답·해설이 자동 분리되어 등록 대기 상태가 됩니다.</p>
+
+  <div class="card" id="gen-card">
+    <h3>① 생성 조건</h3>
+    <div class="grid3">
+      <div class="field"><label>과목</label><select id="g-subject"></select></div>
+      <div class="field"><label>대단원</label><select id="g-chapter"></select></div>
+      <div class="field"><label>중단원</label><select id="g-section"></select></div>
+    </div>
+    <div class="grid4">
+      <div class="field"><label>학년</label><select id="g-grade"></select></div>
+      <div class="field"><label>난이도</label><select id="g-diff">
+        <option value="혼합">혼합 (쉬움~어려움)</option>
+        <option value="1">● 1 (쉬움)</option><option value="2">●● 2</option>
+        <option value="3" selected>●●● 3</option><option value="4">●●●● 4</option>
+        <option value="5">●●●●● 5 (킬러)</option></select></div>
+      <div class="field"><label>문항 수</label><input id="g-count" type="number" min="1" max="30" value="5"></div>
+      <div class="field"><label>유형</label><select id="g-type">
+        <option>객관식(5지선다)</option><option>단답형</option><option selected>혼합</option></select></div>
+    </div>
+    <div class="field"><label>추가 요청 (선택)</label><input id="g-extra" placeholder="예: 세화여고 중간고사 스타일로, 조건 상자 (가)(나) 포함 문항 2개 이상"></div>
+    <details style="margin-bottom:.6rem">
+      <summary class="hint" style="cursor:pointer"><b>생성 지침(프로젝트 지침) — 최초 1회 붙여넣기 (선택)</b></summary>
+      <p class="hint" style="margin:.4rem 0">claude.ai 프로젝트에 이미 지침이 저장돼 있다면 비워 두세요(프로젝트가 알아서 적용).
+        프로젝트 없이 일반 대화에서 생성하려면 그 지침을 여기 붙여넣으면 프롬프트에 포함됩니다.</p>
+      <textarea id="g-inst" style="min-height:80px" placeholder="[수학 전용] 스터디피크 문제 생성 프로젝트의 지침 내용"></textarea>
+    </details>
+    <div class="row">
+      <button class="btn gold" onclick="copyGenPrompt()">📋 생성 프롬프트 복사</button>
+      <a class="btn ghost" href="https://claude.ai/projects" target="_blank" rel="noopener">claude.ai 프로젝트 열기 ↗</a>
+      <span class="hint" id="gen-status"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>② 생성 결과 붙여넣기</h3>
+    <textarea id="g-result" style="min-height:160px" placeholder="claude.ai가 만들어 준 문제 전체(번호 + [답] + [해설] 형식)를 그대로 붙여넣으세요."></textarea>
+    <div class="row" style="margin-top:.5rem">
+      <button class="btn gold" onclick="genResultToBulk()">✂ 분할 실행 — 문제 등록으로 보내기</button>
+      <span class="hint">분할 결과는 <b>문제 등록 → 일괄 등록</b> 미리보기에서 확인 후 [전체 저장]하면 DB에 들어갑니다.</span>
     </div>
   </div>
 </section>
@@ -982,7 +1002,7 @@ const state = {
   imgHashCache: new Map(), lastChecked: null
 };
 const VIEW_TITLES = {dashboard:'대시보드', tags:'태그 관리 · 단원태그', add:'문제 DB 관리 · 문제 등록',
-  db:'문제 DB 관리 · 문제 검색·작업', sheet:'학습지 생성·관리', data:'백업·데이터'};
+  gen:'문제 DB 관리 · AI 문제 생성', db:'문제 DB 관리 · 문제 검색·작업', sheet:'학습지 생성·관리', data:'백업·데이터'};
 const GRADES = ['미지정','초등','중1','중2','중3','고1','고2','고3','N수'];
 const $ = s=>document.querySelector(s);
 const $$ = s=>Array.from(document.querySelectorAll(s));
@@ -2785,9 +2805,16 @@ async function copyGenPrompt(){
     ta.value = txt; document.body.appendChild(ta); ta.select();
     document.execCommand('copy'); ta.remove();
   }
-  $('#gen-status').textContent = '✅ 복사됨 — claude.ai 프로젝트에 붙여넣고, 생성 결과를 아래 일괄 등록 칸에 붙여넣으세요.';
-  setAddMode('bulk');
+  $('#gen-status').textContent = '✅ 복사됨 — claude.ai 프로젝트에 붙여넣어 생성한 뒤, 결과를 아래 "② 생성 결과 붙여넣기" 칸에 넣고 [분할 실행]을 누르세요.';
   logJob('문제 생성 프롬프트', [$('#g-subject').value,$('#g-chapter').value].filter(Boolean).join(' > '), $('#g-count').value+'문항 요청');
+}
+function genResultToBulk(){ // 생성 결과 → 일괄 등록 분할로 전달
+  const t = $('#g-result').value.trim();
+  if(!t){ toast('생성 결과를 먼저 붙여넣으세요.'); return; }
+  $('#bulk-text').value = t;
+  if(!$('#b-srcname').value.trim()) $('#b-srcname').value = 'AI 생성';
+  $('#g-result').value = '';
+  go('add'); setAddMode('bulk'); splitBulk();
 }
 
 /* ═══ AI 변환 (이미지 문항 → 텍스트·수식, 사용자 API 키) ═══ */
