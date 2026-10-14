@@ -86,6 +86,34 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   check('페이지 자동 분류(문제/해설 섹션/해설 파일)',
     JSON.stringify(modes)===JSON.stringify(['prob','prob','sol','sol','sol']), modes.join(','));
 
+  // ── 5) 줄 맨 앞 숫자만 앵커: 수식 속 '=1,' '7'은 배제, 2단 오른단 번호는 유지 ──
+  const ca = await page.evaluate(() => {
+    const items = [
+      { str:'9',  x:90,  y:700, w:10 },                     // 진짜 번호 (줄 시작)
+      { str:'=',  x:300, y:600, w:8 }, { str:'1,', x:310, y:600, w:10 },  // 수식 속 숫자 (왼쪽에 바짝)
+      { str:'dx=',x:300, y:560, w:20 },{ str:'7',  x:322, y:560, w:8 },
+      { str:'본문 끝', x:200, y:500, w:60 },
+      { str:'3.', x:330, y:500, w:12 }                      // 2단 오른단 번호 (여백 70pt)
+    ];
+    return collectAnchors(items, 600, 800).map(a=>a.num);
+  });
+  check('수식 속 숫자 배제·줄 앞 번호만', JSON.stringify(ca)===JSON.stringify(['9','3']), ca.join(','));
+
+  // ── 6) 추출 잉크 보정: 영역 밖으로 삐져나온 박스를 따라 확장, 빈 여백 축소 ──
+  const rf = await page.evaluate(() => {
+    const c = document.createElement('canvas'); c.width=800; c.height=400;
+    const cx = c.getContext('2d');
+    cx.fillStyle='#fff'; cx.fillRect(0,0,800,400);
+    cx.strokeStyle='#000'; cx.lineWidth=3;
+    cx.strokeRect(100, 100, 500, 120);                      // 조건 박스: x 100~600
+    const img = cx.getImageData(0,0,800,400).data;
+    // 영역이 박스 오른쪽을 60px 잘라먹은 상태 + 아래로 빈 공간 과다 포함
+    const r = refineRectOnCanvas(img, 80, 80, 460, 300, 800, 400);
+    return { right: r.x+r.w, bottom: r.y+r.h };
+  });
+  check('잘린 박스 오른쪽 확장(600 이상)', rf.right >= 600, rf.right);
+  check('아래 빈 여백 축소(260 이하)', rf.bottom <= 260, rf.bottom);
+
   check('페이지 JS 에러 없음', errors.length===0, errors.join(' | ').slice(0,200));
   console.log(fails ? `\n${fails}개 실패` : '\n전체 통과');
   await browser.close(); server.close();
