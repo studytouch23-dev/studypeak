@@ -2756,7 +2756,8 @@ function openDetail(id){
       <input type="checkbox" id="e-reviewed" style="width:auto" ${p.reviewed?'checked':''}> 검수 완료 (교사 확인)</label></div>
     ${hasImg(p)?`<div class="pimgs" id="detail-imgs" style="margin-bottom:.4rem"><span class="hint">그림 불러오는 중…</span></div>
     <div class="row" style="margin-bottom:.8rem"><button class="btn ghost sm" onclick="openImgCrop('${p.id}')">✂ 그림만 잘라내기</button>
-      <span class="hint">문항 이미지에서 그림·그래프 부분만 남기고 싶을 때 (드래그로 지정)</span></div>`:''}
+      <button class="btn ghost sm" onclick="openImgEditor('${p.id}')">🖌 그림 편집</button>
+      <span class="hint">편집: 지우개(필기 제거)·선명하게·기울기 보정·끊어진 선 메우기·도형/글자</span></div>`:''}
     <div class="row">
       <button class="btn gold" onclick="saveDetail('${p.id}')">수정 저장</button>
       <button class="btn ghost" onclick="closeModal()">닫기</button>
@@ -3245,6 +3246,215 @@ async function batchAiSolve(){
   }
   renderDB(); refreshCounts();
   logJob('AI 해설 생성', '선택 문항', ok+'개 작성'+(fail?`, ${fail}개 실패`:''));
+}
+/* ═══ 그림 편집기 — 스캔 그림 정리 도구 (my1ta 그림 복원기 벤치마킹, 전부 클라이언트 처리) ═══
+   지우개(흰 붓)·펜·직선·사각형·원·텍스트·스탬프(끊어진 선 메우기)·크롭·선명하게(흑백 보정)·기울기 보정·undo/redo */
+const IMGED = { p:null, idx:0, cv:null, ctx:null, tool:'erase', size:14,
+  undoStack:[], redoStack:[], snap:null, start:null, stamp:null, rotStarted:false };
+function imgedPushUndo(){
+  IMGED.undoStack.push(IMGED.cv.toDataURL('image/png'));
+  if(IMGED.undoStack.length>25) IMGED.undoStack.shift();
+  IMGED.redoStack = [];
+}
+function imgedLoad(dataURL){
+  return new Promise(res=>{
+    const im = new Image();
+    im.onload = ()=>{
+      IMGED.cv.width = im.naturalWidth; IMGED.cv.height = im.naturalHeight;
+      IMGED.ctx.fillStyle='#fff'; IMGED.ctx.fillRect(0,0,IMGED.cv.width,IMGED.cv.height);
+      IMGED.ctx.drawImage(im,0,0);
+      res();
+    };
+    im.onerror = ()=>res();
+    im.src = dataURL;
+  });
+}
+function imgedSnap(){ // 드래그 미리보기용 현재 화면 사본
+  const c = document.createElement('canvas');
+  c.width = IMGED.cv.width; c.height = IMGED.cv.height;
+  c.getContext('2d').drawImage(IMGED.cv, 0, 0);
+  return c;
+}
+function imgedHint(){
+  const H = { erase:'문지르면 흰색으로 지워집니다 (필기·낙서 제거)', pen:'검은 펜으로 그립니다',
+    line:'드래그로 직선을 긋습니다', rect:'드래그로 사각형을 그립니다', ellipse:'드래그로 원·타원을 그립니다',
+    text:'글자를 넣을 위치를 클릭하세요', stamp: IMGED.stamp?'붙여 넣을 위치를 클릭하세요 (계속 클릭해 반복)':'복사할 영역을 드래그로 지정하세요 (끊어진 선 메우기)',
+    crop:'남길 영역을 드래그하면 잘라냅니다' };
+  const el = $('#imged-hint'); if(el) el.textContent = H[IMGED.tool]||'';
+}
+function imgedSetTool(t){
+  IMGED.tool = t; if(t!=='stamp') IMGED.stamp = null;
+  $$('#imged-bar [data-t]').forEach(b=>b.classList.toggle('ghost', b.dataset.t!==t));
+  imgedHint();
+}
+function imgedSharpen(){ // 흐린 스캔 → 선명한 흑백 (이진화)
+  imgedPushUndo();
+  const {cv, ctx} = IMGED;
+  const d = ctx.getImageData(0,0,cv.width,cv.height);
+  const a = d.data;
+  for(let i=0;i<a.length;i+=4){
+    const v = 0.299*a[i]+0.587*a[i+1]+0.114*a[i+2] < 185 ? 0 : 255;
+    a[i]=a[i+1]=a[i+2]=v; a[i+3]=255;
+  }
+  ctx.putImageData(d,0,0);
+  toast('흑백으로 선명하게 보정했습니다. 과하면 [↶ 취소]');
+}
+function imgedApplyRotate(deg){
+  if(!IMGED.rotStarted){ imgedPushUndo(); IMGED.rotBase = imgedSnap(); IMGED.rotStarted = true; }
+  const {cv, ctx} = IMGED, b = IMGED.rotBase;
+  ctx.save();
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.translate(cv.width/2, cv.height/2);
+  ctx.rotate(deg*Math.PI/180);
+  ctx.drawImage(b, -b.width/2, -b.height/2);
+  ctx.restore();
+}
+function imgedBakeRotate(){ IMGED.rotStarted = false; IMGED.rotBase = null; const r=$('#imged-rot'); if(r) r.value = 0; toast('기울기 보정을 적용했습니다.'); }
+async function imgedUndo(){
+  if(!IMGED.undoStack.length) return;
+  IMGED.redoStack.push(IMGED.cv.toDataURL('image/png'));
+  await imgedLoad(IMGED.undoStack.pop());
+  IMGED.rotStarted=false; IMGED.rotBase=null; const r=$('#imged-rot'); if(r) r.value=0;
+}
+async function imgedRedo(){
+  if(!IMGED.redoStack.length) return;
+  IMGED.undoStack.push(IMGED.cv.toDataURL('image/png'));
+  await imgedLoad(IMGED.redoStack.pop());
+}
+async function imgedReset(){ imgedPushUndo(); await imgedLoad(IMGED.orig); toast('원본으로 되돌렸습니다.'); }
+async function imgedSave(){
+  const p = IMGED.p;
+  const imgs = await imagesOf(p);
+  imgs[IMGED.idx] = IMGED.cv.toDataURL('image/jpeg', 0.92);
+  p.images = imgs; p.updatedAt = Date.now();
+  const stored = await saveProblem(p);
+  p.images = []; p.imgN = stored.imgN;
+  imgedClose();
+  openDetail(p.id);
+  if($('#view-db').classList.contains('active')) renderDB();
+  toast('편집한 그림을 저장했습니다.');
+}
+function imgedClose(){ const ov = $('#imged-ov'); if(ov) ov.remove(); IMGED.p=null; IMGED.undoStack=[]; IMGED.redoStack=[]; }
+async function openImgEditor(id, idx){
+  const p = state.problems.find(x=>x.id===id); if(!p) return;
+  const imgs = await imagesOf(p);
+  if(!imgs.length){ toast('이미지가 없습니다.'); return; }
+  idx = Math.min(idx||0, imgs.length-1);
+  const ov = document.createElement('div');
+  ov.id = 'imged-ov';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(18,22,18,.9);z-index:300;display:flex;flex-direction:column;padding:10px;gap:8px';
+  ov.innerHTML = `
+    <div class="row" style="justify-content:center;flex-wrap:wrap;gap:.3rem" id="imged-bar">
+      <button class="btn sm" data-t="erase" title="필기·낙서를 흰색으로 지움">🧽 지우개</button>
+      <button class="btn ghost sm" data-t="pen">✏️ 펜</button>
+      <button class="btn ghost sm" data-t="line">╱ 직선</button>
+      <button class="btn ghost sm" data-t="rect">▢ 사각형</button>
+      <button class="btn ghost sm" data-t="ellipse">◯ 원</button>
+      <button class="btn ghost sm" data-t="text">T 글자</button>
+      <button class="btn ghost sm" data-t="stamp" title="영역을 복사해 다른 곳에 붙임 — 끊어진 선 메우기">⧉ 스탬프</button>
+      <button class="btn ghost sm" data-t="crop">✂ 크롭</button>
+      <label style="color:#dfe7df;font-size:.78rem;display:flex;align-items:center;gap:.3rem">굵기<input id="imged-size" type="range" min="2" max="60" value="14" style="width:80px"></label>
+      <button class="btn ghost sm" onclick="imgedSharpen()" title="흐린 스캔을 깨끗한 흑백으로">✨ 선명하게</button>
+      <label style="color:#dfe7df;font-size:.78rem;display:flex;align-items:center;gap:.3rem">기울기<input id="imged-rot" type="range" min="-7" max="7" step="0.2" value="0" style="width:80px"></label>
+      <button class="btn ghost sm" onclick="imgedBakeRotate()">기울기 적용</button>
+      <button class="btn ghost sm" onclick="imgedUndo()">↶ 취소</button>
+      <button class="btn ghost sm" onclick="imgedRedo()">↷ 복귀</button>
+      <button class="btn ghost sm" onclick="imgedReset()">원본 되돌리기</button>
+    </div>
+    <div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:auto">
+      <canvas id="imged-cv" style="background:#fff;max-width:96vw;max-height:72vh;cursor:crosshair;border-radius:4px"></canvas>
+    </div>
+    <div class="row" style="justify-content:center;align-items:center">
+      <span class="hint" id="imged-hint" style="color:#cfe0cf;margin-right:.6rem"></span>
+      <button class="btn gold" onclick="imgedSave()">💾 저장</button>
+      <button class="btn" onclick="imgedClose()">닫기</button>
+    </div>`;
+  document.body.appendChild(ov);
+  IMGED.p = p; IMGED.idx = idx; IMGED.orig = imgs[idx];
+  IMGED.cv = $('#imged-cv'); IMGED.ctx = IMGED.cv.getContext('2d');
+  IMGED.undoStack = []; IMGED.redoStack = []; IMGED.stamp = null; IMGED.rotStarted = false;
+  await imgedLoad(imgs[idx]);
+  imgedSetTool('erase');
+  $('#imged-bar').addEventListener('click', e=>{ const b = e.target.closest('[data-t]'); if(b) imgedSetTool(b.dataset.t); });
+  $('#imged-size').addEventListener('input', e=>{ IMGED.size = +e.target.value; });
+  $('#imged-rot').addEventListener('input', e=>imgedApplyRotate(+e.target.value));
+  // 포인터 입력
+  const cv = IMGED.cv, ctx = IMGED.ctx;
+  const pos = e=>{ const r = cv.getBoundingClientRect(); return { x:(e.clientX-r.left)*cv.width/r.width, y:(e.clientY-r.top)*cv.height/r.height }; };
+  const shapePreview = (q)=>{
+    const s = IMGED.start;
+    ctx.drawImage(IMGED.snapC, 0, 0);
+    ctx.strokeStyle = IMGED.tool==='crop' || (IMGED.tool==='stamp' && !IMGED.stamp) ? '#ff5a3c' : '#000';
+    ctx.lineWidth = IMGED.tool==='crop' || IMGED.tool==='stamp' ? Math.max(2, cv.width/400) : Math.max(2, IMGED.size/5);
+    ctx.setLineDash(IMGED.tool==='crop' || IMGED.tool==='stamp' ? [8,6] : []);
+    ctx.beginPath();
+    if(IMGED.tool==='line'){ ctx.moveTo(s.x,s.y); ctx.lineTo(q.x,q.y); }
+    else if(IMGED.tool==='ellipse'){ ctx.ellipse((s.x+q.x)/2,(s.y+q.y)/2, Math.abs(q.x-s.x)/2||1, Math.abs(q.y-s.y)/2||1, 0, 0, Math.PI*2); }
+    else { ctx.rect(Math.min(s.x,q.x), Math.min(s.y,q.y), Math.abs(q.x-s.x), Math.abs(q.y-s.y)); }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  };
+  cv.onpointerdown = e=>{
+    const q = pos(e);
+    cv.setPointerCapture(e.pointerId);
+    if(IMGED.tool==='text'){
+      const t = prompt('넣을 글자를 입력하세요 (예: A, x, O)');
+      if(t){ imgedPushUndo(); ctx.fillStyle='#000'; ctx.font = `${Math.max(14, IMGED.size*2)}px "Times New Roman", serif`; ctx.fillText(t, q.x, q.y); }
+      return;
+    }
+    if(IMGED.tool==='stamp' && IMGED.stamp){            // 2단계: 붙여넣기
+      imgedPushUndo();
+      ctx.drawImage(IMGED.stamp, q.x-IMGED.stamp.width/2, q.y-IMGED.stamp.height/2);
+      return;
+    }
+    IMGED.start = q;
+    IMGED.snapC = imgedSnap();
+    if(IMGED.tool==='erase' || IMGED.tool==='pen'){
+      imgedPushUndo();
+      ctx.strokeStyle = IMGED.tool==='erase' ? '#fff' : '#000';
+      ctx.lineWidth = IMGED.size; ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(q.x+0.01, q.y+0.01); ctx.stroke();
+    }
+  };
+  cv.onpointermove = e=>{
+    if(!IMGED.start) return;
+    const q = pos(e);
+    if(IMGED.tool==='erase' || IMGED.tool==='pen'){ ctx.lineTo(q.x, q.y); ctx.stroke(); return; }
+    if(['line','rect','ellipse','crop','stamp'].includes(IMGED.tool)) shapePreview(q);
+  };
+  cv.onpointerup = e=>{
+    if(!IMGED.start) return;
+    const s = IMGED.start, q = pos(e);
+    IMGED.start = null;
+    if(IMGED.tool==='erase' || IMGED.tool==='pen') return;
+    const x = Math.min(s.x,q.x), y = Math.min(s.y,q.y), w = Math.abs(q.x-s.x), h = Math.abs(q.y-s.y);
+    if(IMGED.tool==='crop'){
+      ctx.drawImage(IMGED.snapC, 0, 0);                 // 점선 지우기
+      if(w>15 && h>15 && confirm('이 영역만 남기고 잘라낼까요?')){
+        imgedPushUndo();
+        const c2 = document.createElement('canvas'); c2.width=Math.round(w); c2.height=Math.round(h);
+        c2.getContext('2d').drawImage(IMGED.snapC, x, y, w, h, 0, 0, c2.width, c2.height);
+        cv.width = c2.width; cv.height = c2.height;
+        ctx.drawImage(c2, 0, 0);
+      }
+      return;
+    }
+    if(IMGED.tool==='stamp'){                           // 1단계: 복사 영역 확정
+      ctx.drawImage(IMGED.snapC, 0, 0);
+      if(w>6 && h>6){
+        const c2 = document.createElement('canvas'); c2.width=Math.round(w); c2.height=Math.round(h);
+        c2.getContext('2d').drawImage(IMGED.snapC, x, y, w, h, 0, 0, c2.width, c2.height);
+        IMGED.stamp = c2;
+        imgedHint();
+      }
+      return;
+    }
+    if(['line','rect','ellipse'].includes(IMGED.tool)){
+      ctx.drawImage(IMGED.snapC, 0, 0);
+      imgedPushUndo();
+      shapePreview(q);                                   // 확정 획 (snapC 위에 다시 그림)
+    }
+  };
 }
 /* 상세 모달: 문항 이미지에서 그림 부분만 드래그로 잘라 저장 */
 async function openImgCrop(id){
