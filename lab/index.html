@@ -461,7 +461,8 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
       <p class="hint" style="margin-bottom:.5rem">한글(HWPX)·PDF·TXT 파일을 올리면 텍스트를 추출해 <b>1. / 2. / 3)</b> 번호 기준으로 문제를 자동 분할합니다. 구형 <b>.hwp</b>는 한글에서 ‘다른 이름으로 저장 → .hwpx’ 후 올려주세요.</p>
       <div class="dropzone" id="dropzone">
         <b>📂 클릭 또는 드래그하여 파일 업로드</b><br>
-        <span class="hint">.hwpx · .pdf · .txt — 여러 파일 선택 가능</span>
+        <span class="hint">.hwpx · .pdf · .txt — 여러 파일 선택 가능<br>
+        💡 <b>문제 PDF와 해설 PDF를 함께 선택</b>(Ctrl 클릭)하면 한 화면에서 문제·해설을 한 번에 추출하고 번호로 자동 매칭합니다</span>
       </div>
       <input type="file" id="bulk-files" accept=".hwpx,.hwp,.pdf,.txt" multiple style="display:none">
       <div class="hint" id="upload-status" style="margin:.4rem 0"></div>
@@ -1814,8 +1815,8 @@ async function parsePDF(file){
     for(const it of items){
       const s = it.str.trim();
       pg.text += s;
-      if(it.y < pg.h*0.06) continue;                       // 꼬리말(페이지 번호) 제외
-      if(/^\d{1,2}\.?$/.test(s)) pg.anchors.push({num:String(parseInt(s,10)), x:it.x, y:it.y});
+      if(it.y < pg.h*0.06 || it.y > pg.h*0.94) continue;   // 꼬리말·머리말(쪽번호) 제외
+      if(/^\d{1,2}\.?$/.test(s)) pg.anchors.push({num:String(parseInt(s,10)), x:it.x, y:it.y, dot:s.endsWith('.')});
       else pg.bodyLen += s.length;
     }
     pg.isQuickAns = pg.text.includes('빠른정답') || pg.text.includes('빠른 정답');
@@ -1840,14 +1841,39 @@ async function parsePDF(file){
   return { kind:'pdfEditor', pdf, pages, fileName:file.name, text:out.join('\n'), imageMode };
 }
 /* ── 번호 앵커 기반 영역 자동 인식: top-left 좌표계 rect 목록 ── */
+function bestAnchorSeq(list){ // 읽기 순서에서 +1~+4씩 이어지는 최장 번호 수열만 신뢰 (쪽번호·배점·'5지선다형' 등 제거)
+  const n = list.length;
+  if(n<=1) return list;
+  const len = new Array(n).fill(1), prev = new Array(n).fill(-1);
+  for(let i=0;i<n;i++) for(let j=0;j<i;j++){
+    const a = +list[j].num, b = +list[i].num;
+    if(b>a && b-a<=4 && len[j]+1>len[i]){ len[i]=len[j]+1; prev[i]=j; }
+  }
+  let bi=0; for(let i=1;i<n;i++) if(len[i]>len[bi]) bi=i;
+  if(len[bi]<2) return list;                               // 수열이 안 만들어지면(1문항 페이지 등) 그대로
+  const out=[]; for(let i=bi;i>=0;i=prev[i]) out.push(list[i]);
+  return out.reverse();
+}
 function detectRegionsByAnchors(pg, pageIdx){
   const out = [];
-  if(!pg.anchors.length) return out;
+  let anchors = pg.anchors;
+  if(!anchors.length) return out;
+  // "1." 처럼 마침표가 붙은 번호가 2개 이상이면 맨숫자 앵커(쪽번호·표 숫자)는 노이즈로 간주
+  const dotted = anchors.filter(a=>a.dot);
+  if(dotted.length>=2) anchors = dotted;
   const mid = pg.w/2;
-  const twoCol = pg.anchors.some(a=>a.x < mid*0.8) && pg.anchors.some(a=>a.x >= mid);
-  const cols = twoCol ? [pg.anchors.filter(a=>a.x<mid), pg.anchors.filter(a=>a.x>=mid)] : [pg.anchors.slice()];
+  const twoCol = anchors.some(a=>a.x < mid*0.8) && anchors.some(a=>a.x >= mid);
+  let cols = twoCol ? [anchors.filter(a=>a.x<mid), anchors.filter(a=>a.x>=mid)] : [anchors.slice()];
+  cols = cols.map(c=>c.sort((a,b)=>b.y-a.y));             // PDF 좌표(아래 0) → 위에서 아래로
+  // 번호 수열 정합 + 같은 번호 중복 제거
+  const kept = new Set(bestAnchorSeq([].concat(...cols)));
+  const seenNum = new Set();
+  cols = cols.map(c=>c.filter(a=>{
+    if(!kept.has(a) || seenNum.has(a.num)) return false;
+    seenNum.add(a.num); return true;
+  }));
   for(let ci=0; ci<cols.length; ci++){
-    const colAnchors = cols[ci].sort((a,b)=>b.y-a.y);     // PDF 좌표(아래 0) → 위에서 아래로
+    const colAnchors = cols[ci];
     for(let k=0;k<colAnchors.length;k++){
       const a = colAnchors[k];
       const topPdf = Math.min(pg.h, a.y + 14);
@@ -1919,11 +1945,14 @@ const PDFED = { pdf:null, fileName:'', pages:[], regions:[], cur:0, nextNum:1,
 async function openPdfEditor(res, opts){
   opts = opts||{};
   PDFED.pdf = res.pdf; PDFED.fileName = res.fileName;
+  const solFrom = {};                               // 파일별: '정답 및 해설' 표제가 나온 뒤 페이지는 해설로
   PDFED.pages = res.pages.map((pg,i)=>{
+    const src = pg.srcName || '';
+    if(/정답\s*및\s*해설|정답과\s*해설|정답\s*·\s*해설/.test(pg.text||'')) solFrom[src] = true;
     // 페이지 모드: 문제(prob) / 해설(sol) / 제외(skip). 클릭으로 순환.
-    const mode = opts.solDefault ? 'sol'
-      : pg.isQuickAns ? 'skip'                      // 빠른정답 표는 영역 분할 불가 → 제외
-      : pg.ansLabels>=4 ? 'sol'                     // 해설로 보이는 페이지 → 해설 영역으로 활용
+    const solish = opts.solDefault || pg.fileSol || solFrom[src];
+    const mode = pg.isQuickAns ? 'skip'             // 빠른정답 표는 영역 분할 불가 → 제외
+      : (solish || pg.ansLabels>=4) ? 'sol'         // 해설 파일·해설 섹션 → 해설 영역으로
       : 'prob';
     return { ...pg, idx:i, isAns: pg.isQuickAns || pg.ansLabels>=4, mode, selected: mode!=='skip', thumb:null };
   });
@@ -1936,9 +1965,9 @@ async function openPdfEditor(res, opts){
   // 썸네일 렌더링
   const wrap = $('#pdfed-pages');
   wrap.innerHTML = PDFED.pages.map(pg=>
-    `<div class="pdfed-thumb m-${pg.mode} ${pg.selected?'sel':''}" data-i="${pg.idx}">
+    `<div class="pdfed-thumb m-${pg.mode} ${pg.selected?'sel':''}" data-i="${pg.idx}" ${pg.srcName?`title="${esc(pg.srcName)}"`:''}>
       <span class="pmode">${{prob:'문제',sol:'해설',skip:'제외'}[pg.mode]}</span>
-      <div class="pno">${pg.idx+1}</div><img alt="p${pg.idx+1}">
+      <div class="pno">${pg.idx+1}${pg.srcName?`<span style="font-size:.62rem;color:#8a857a"> ${esc(pg.srcName.replace(/\.pdf$/i,'').slice(0,8))}</span>`:''}</div><img alt="p${pg.idx+1}">
     </div>`).join('');
   pdfedSelCount();
   const gen = PDFED.renderGen = (PDFED.renderGen||0)+1;      // 새 PDF를 열면 이전 렌더 루프 무효화
@@ -2259,6 +2288,31 @@ async function handleUploadFiles(files, targetSel){
   const status = $('#upload-status');
   const seen = lsJson('sp-lab-filehashes', {});
   let ok=0;
+  files = [...files];
+  // PDF를 2개 이상 함께 올리면(예: 문제지 + 해설지) 한 에디터에서 통합 처리 — 번호로 자동 매칭
+  const pdfs = targetSel==='#bulk-text' ? files.filter(f=>f.name.toLowerCase().endsWith('.pdf')) : [];
+  if(pdfs.length >= 2){
+    try{
+      status.textContent = `⏳ PDF ${pdfs.length}개를 함께 분석 중…`;
+      const SOLNAME = /해설|정답|답지|답안|솔루션|sol/i;
+      const pages = [], names = [];
+      for(const f of pdfs){
+        const r = await parsePDF(f);
+        names.push(f.name);
+        const fileSol = SOLNAME.test(f.name);
+        for(const pg of r.pages){ pg.srcName = f.name; pg.fileSol = fileSol; pages.push(pg); }
+      }
+      if(!$('#b-srcname').value.trim()) $('#b-srcname').value = pdfs[0].name.replace(/\.pdf$/i,'');
+      await openPdfEditor({ kind:'pdfEditor', pdf:null, pages, fileName: names.join(' + '), text:'', imageMode:true });
+      status.innerHTML = `📄 <b>문제+해설 통합 분석</b> — 파일명에 '해설/정답'이 있거나 '정답 및 해설' 표제가 나온 페이지는 자동으로 <b>해설</b>로 표시됩니다. 표시가 맞는지 확인하고 [완료]를 누르면 번호로 자동 매칭됩니다.`;
+      ok++;
+      files = files.filter(f=>!pdfs.includes(f));     // 나머지(비PDF) 파일만 기존 방식으로
+    }catch(err){
+      status.textContent = '⚠ 통합 분석 실패: '+(err.message||err);
+      toast(err.message||'PDF 통합 분석에 실패했습니다.');
+      return;
+    }
+  }
   for(const file of files){
     try{
       status.textContent = `⏳ ${file.name} 처리 중…`;
