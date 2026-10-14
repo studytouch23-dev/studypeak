@@ -680,10 +680,13 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
   <div class="row">
     <button class="btn gold" id="btn-hwpx" onclick="downloadHWPX()">📥 한글 파일(HWPX) 다운로드</button>
     <button class="btn gold" id="btn-mock" onclick="downloadMockExam()">📘 모의고사 양식 (수능 A3)</button>
+    <button class="btn gold" id="btn-html" onclick="downloadHtmlExport('sheet')">🌐 HTML 학습지</button>
+    <button class="btn gold" id="btn-book" onclick="downloadHtmlExport('book')">📚 HTML 교재(책)</button>
     <button class="btn" id="btn-print" onclick="printSheet()">🖨 인쇄 / PDF 저장</button>
     <button class="btn ghost" onclick="saveWorksheet()">학습지 구성 저장</button>
   </div>
-  <p class="hint" style="margin-top:.4rem">HWPX는 한글(한컴오피스)에서 바로 열어 이어서 편집할 수 있습니다. <code>$...$</code> 수식은 <b>한글 수식 개체</b>로 변환되어 더블클릭하면 수식 편집기로 열립니다. 변환하지 못한 수식 명령이 있으면 다운로드 시 알려드립니다.<br>
+  <p class="hint" style="margin-top:.4rem"><b>HTML 학습지/교재</b>는 파일 하나에 그림·수식·해설이 모두 들어 있어, 아무 프로그램 없이 더블클릭으로 열어 보고(해설은 버튼으로 열고 닫기) 그대로 인쇄/PDF 저장이 됩니다. <b>교재(책)</b>는 표지·목차·단원별 구성에 해설이 책 뒤에 모여 있는 형태입니다.<br>
+  HWPX는 한글(한컴오피스)에서 바로 열어 이어서 편집할 수 있습니다. <code>$...$</code> 수식은 <b>한글 수식 개체</b>로 변환되어 더블클릭하면 수식 편집기로 열립니다. 변환하지 못한 수식 명령이 있으면 다운로드 시 알려드립니다.<br>
   <b>모의고사 양식</b>은 수능 문제지 조판 규칙(A3 2단, 쪽당 4문항 고정 슬롯, 번호 13.2pt·본문 11.2pt·수식 11pt)으로 출력합니다. 부제목 칸에 선택과목명(예: 확률과 통계)을 쓰면 "수학 영역" 옆에 붙습니다. 문항이 슬롯 높이를 넘치면 자동으로 줄이지 않고 먼저 알려드립니다.</p>
 
   <div class="card" style="margin-top:1rem">
@@ -2756,7 +2759,8 @@ function openDetail(id){
       <input type="checkbox" id="e-reviewed" style="width:auto" ${p.reviewed?'checked':''}> 검수 완료 (교사 확인)</label></div>
     ${hasImg(p)?`<div class="pimgs" id="detail-imgs" style="margin-bottom:.4rem"><span class="hint">그림 불러오는 중…</span></div>
     <div class="row" style="margin-bottom:.8rem"><button class="btn ghost sm" onclick="openImgCrop('${p.id}')">✂ 그림만 잘라내기</button>
-      <span class="hint">문항 이미지에서 그림·그래프 부분만 남기고 싶을 때 (드래그로 지정)</span></div>`:''}
+      <button class="btn ghost sm" onclick="openImgEditor('${p.id}')">🖌 그림 편집</button>
+      <span class="hint">편집: 지우개(필기 제거)·선명하게·기울기 보정·끊어진 선 메우기·도형/글자</span></div>`:''}
     <div class="row">
       <button class="btn gold" onclick="saveDetail('${p.id}')">수정 저장</button>
       <button class="btn ghost" onclick="closeModal()">닫기</button>
@@ -3246,6 +3250,272 @@ async function batchAiSolve(){
   renderDB(); refreshCounts();
   logJob('AI 해설 생성', '선택 문항', ok+'개 작성'+(fail?`, ${fail}개 실패`:''));
 }
+/* ═══ 그림 편집기 — 스캔 그림 정리 도구 (my1ta 그림 복원기 벤치마킹, 전부 클라이언트 처리) ═══
+   지우개(흰 붓)·펜·직선·사각형·원·텍스트·스탬프(끊어진 선 메우기)·크롭·선명하게(흑백 보정)·기울기 보정·undo/redo */
+const IMGED = { p:null, idx:0, cv:null, ctx:null, tool:'erase', size:14,
+  undoStack:[], redoStack:[], snap:null, start:null, stamp:null, rotStarted:false };
+function imgedPushUndo(){
+  IMGED.undoStack.push(IMGED.cv.toDataURL('image/png'));
+  if(IMGED.undoStack.length>25) IMGED.undoStack.shift();
+  IMGED.redoStack = [];
+}
+function imgedLoad(dataURL){
+  return new Promise(res=>{
+    const im = new Image();
+    im.onload = ()=>{
+      IMGED.cv.width = im.naturalWidth; IMGED.cv.height = im.naturalHeight;
+      IMGED.ctx.fillStyle='#fff'; IMGED.ctx.fillRect(0,0,IMGED.cv.width,IMGED.cv.height);
+      IMGED.ctx.drawImage(im,0,0);
+      res();
+    };
+    im.onerror = ()=>res();
+    im.src = dataURL;
+  });
+}
+function imgedSnap(){ // 드래그 미리보기용 현재 화면 사본
+  const c = document.createElement('canvas');
+  c.width = IMGED.cv.width; c.height = IMGED.cv.height;
+  c.getContext('2d').drawImage(IMGED.cv, 0, 0);
+  return c;
+}
+function imgedHint(){
+  const H = { erase:'문지르면 흰색으로 지워집니다 (필기·낙서 제거)', pen:'검은 펜으로 그립니다',
+    line:'드래그로 직선을 긋습니다', rect:'드래그로 사각형을 그립니다', ellipse:'드래그로 원·타원을 그립니다',
+    text:'글자를 넣을 위치를 클릭하세요', stamp: IMGED.stamp?'붙여 넣을 위치를 클릭하세요 (계속 클릭해 반복)':'복사할 영역을 드래그로 지정하세요 (끊어진 선 메우기)',
+    crop:'남길 영역을 드래그하면 잘라냅니다' };
+  const el = $('#imged-hint'); if(el) el.textContent = H[IMGED.tool]||'';
+}
+function imgedSetTool(t){
+  IMGED.tool = t; if(t!=='stamp') IMGED.stamp = null;
+  $$('#imged-bar [data-t]').forEach(b=>b.classList.toggle('ghost', b.dataset.t!==t));
+  imgedHint();
+}
+function imgedSharpen(){ // 흐린 스캔 → 선명한 흑백 (이진화)
+  imgedPushUndo();
+  const {cv, ctx} = IMGED;
+  const d = ctx.getImageData(0,0,cv.width,cv.height);
+  const a = d.data;
+  for(let i=0;i<a.length;i+=4){
+    const v = 0.299*a[i]+0.587*a[i+1]+0.114*a[i+2] < 185 ? 0 : 255;
+    a[i]=a[i+1]=a[i+2]=v; a[i+3]=255;
+  }
+  ctx.putImageData(d,0,0);
+  toast('흑백으로 선명하게 보정했습니다. 과하면 [↶ 취소]');
+}
+function imgedApplyRotate(deg){
+  if(!IMGED.rotStarted){ imgedPushUndo(); IMGED.rotBase = imgedSnap(); IMGED.rotStarted = true; }
+  const {cv, ctx} = IMGED, b = IMGED.rotBase;
+  ctx.save();
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.translate(cv.width/2, cv.height/2);
+  ctx.rotate(deg*Math.PI/180);
+  ctx.drawImage(b, -b.width/2, -b.height/2);
+  ctx.restore();
+}
+function imgedBakeRotate(){ IMGED.rotStarted = false; IMGED.rotBase = null; const r=$('#imged-rot'); if(r) r.value = 0; toast('기울기 보정을 적용했습니다.'); }
+/* ── AI 벡터 복원: Claude가 그림을 보고 SVG로 깨끗하게 다시 그림 (서버 불필요, 사용자 API 키) ── */
+function sanitizeSvg(svg){
+  return String(svg)
+    .replace(/<script[\s\S]*?<\/script>/gi,'')
+    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*')/gi,'')
+    .replace(/(xlink:)?href\s*=\s*("(?!#)[^"]*"|'(?!#)[^']*')/gi,'')
+    .replace(/<(image|foreignObject|iframe)[\s\S]*?(\/>|<\/\1>)/gi,'');
+}
+function aiRedrawPrompt(){
+  return '이 이미지는 수학 문제의 그림(도형·그래프·표)입니다. 흐림·잡티 없이 벡터로 깨끗하게 다시 그리세요. 아래 JSON 하나만 출력합니다. 설명·코드블록 금지.\n'
+    +'{"svg":"<svg viewBox=\'0 0 W H\' xmlns=\'http://www.w3.org/2000/svg\'>...</svg>"}\n'
+    +'- SVG 속성값은 반드시 작은따옴표(\')로 감싸고, 문자열 안에 줄바꿈을 넣지 마세요.\n'
+    +'- viewBox 비율은 원본 그대로. 배경 흰색, 선은 검정 #000 (stroke-width 2~3), 축 화살표 포함.\n'
+    +'- 원본의 모든 선·곡선·점·화살표·숫자·라벨을 빠짐없이, 위치 비율을 최대한 똑같이.\n'
+    +'- 글자는 <text>로: 점 이름(A,B,O)과 숫자는 serif, 변수(x,y)는 italic serif. 한글 라벨도 그대로.\n'
+    +'- script, 외부 링크, image 태그는 절대 사용 금지.';
+}
+async function imgedAiRedraw(){
+  if(!aiSettings().key){ toast('API 키가 없습니다 — [백업·데이터 → AI 변환 설정]에서 먼저 저장하세요.'); return; }
+  if(!confirm('AI가 이 그림을 벡터로 새로 그립니다 (본인 API 키, 소액 과금).\n결과가 원본과 다르면 [↶ 취소]로 되돌리고 다시 시도하거나 다른 도구로 수정할 수 있습니다.\n계속할까요?')) return;
+  const hint = $('#imged-hint');
+  try{
+    hint.textContent = '🪄 AI가 그림을 다시 그리는 중… (수십 초 걸릴 수 있어요)';
+    const m = IMGED.cv.toDataURL('image/png').match(/^data:(image\/\w+);base64,(.+)$/);
+    const r = await aiJsonCall([
+      { type:'image', source:{ type:'base64', media_type:m[1], data:m[2] } },
+      { type:'text', text: aiRedrawPrompt() }
+    ], 4000);
+    let svg = sanitizeSvg(r.svg||'');
+    if(!/^\s*<svg[\s>]/i.test(svg)) throw new Error('AI가 SVG를 만들지 못했습니다 — 다시 시도해 보세요');
+    if(!/xmlns\s*=/.test(svg)) svg = svg.replace(/<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+    // 크기: viewBox 우선 (width/height 없는 SVG는 크롬이 300×150으로 보고·drawImage가 빈 그림이 됨)
+    const vb = svg.match(/viewBox\s*=\s*['"]\s*[\d.-]+\s+[\d.-]+\s+([\d.]+)\s+([\d.]+)/);
+    let vw = vb ? +vb[1] : 0, vh = vb ? +vb[2] : 0;
+    if(!vw || !vh){ vw = IMGED.cv.width; vh = IMGED.cv.height; }
+    if(!/<svg[^>]*\swidth\s*=/i.test(svg))
+      svg = svg.replace(/<svg/i, `<svg width="${vw}" height="${vh}"`);
+    const img = new Image();
+    await new Promise((res,rej)=>{
+      img.onload = res;
+      img.onerror = ()=>rej(new Error('SVG 렌더링 실패 — [↶ 취소] 후 다시 시도하세요'));
+      img.src = 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+    });
+    imgedPushUndo();
+    const W = Math.round(Math.max(700, Math.min(1600, vw*2))), H = Math.round(W*vh/vw);
+    IMGED.cv.width = W; IMGED.cv.height = H;
+    IMGED.ctx.fillStyle = '#fff'; IMGED.ctx.fillRect(0,0,W,H);
+    IMGED.ctx.drawImage(img, 0, 0, W, H);
+    hint.textContent = '';
+    toast('🪄 AI가 벡터로 다시 그렸습니다 — 원본과 비교해 확인하고, 다르면 [↶ 취소] 후 재시도·수정하세요.');
+    logJob('AI 그림 복원', IMGED.p ? (stripBoxMarks(IMGED.p.question||'').slice(0,20)||IMGED.p.id) : '', '벡터 재생성');
+  }catch(e){
+    hint.textContent = '';
+    toast('⚠ AI 그림 복원 실패: '+(e.message||e));
+  }
+}
+async function imgedUndo(){
+  if(!IMGED.undoStack.length) return;
+  IMGED.redoStack.push(IMGED.cv.toDataURL('image/png'));
+  await imgedLoad(IMGED.undoStack.pop());
+  IMGED.rotStarted=false; IMGED.rotBase=null; const r=$('#imged-rot'); if(r) r.value=0;
+}
+async function imgedRedo(){
+  if(!IMGED.redoStack.length) return;
+  IMGED.undoStack.push(IMGED.cv.toDataURL('image/png'));
+  await imgedLoad(IMGED.redoStack.pop());
+}
+async function imgedReset(){ imgedPushUndo(); await imgedLoad(IMGED.orig); toast('원본으로 되돌렸습니다.'); }
+async function imgedSave(){
+  const p = IMGED.p;
+  const imgs = await imagesOf(p);
+  imgs[IMGED.idx] = IMGED.cv.toDataURL('image/jpeg', 0.92);
+  p.images = imgs; p.updatedAt = Date.now();
+  const stored = await saveProblem(p);
+  p.images = []; p.imgN = stored.imgN;
+  imgedClose();
+  openDetail(p.id);
+  if($('#view-db').classList.contains('active')) renderDB();
+  toast('편집한 그림을 저장했습니다.');
+}
+function imgedClose(){ const ov = $('#imged-ov'); if(ov) ov.remove(); IMGED.p=null; IMGED.undoStack=[]; IMGED.redoStack=[]; }
+async function openImgEditor(id, idx){
+  const p = state.problems.find(x=>x.id===id); if(!p) return;
+  const imgs = await imagesOf(p);
+  if(!imgs.length){ toast('이미지가 없습니다.'); return; }
+  idx = Math.min(idx||0, imgs.length-1);
+  const ov = document.createElement('div');
+  ov.id = 'imged-ov';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(18,22,18,.9);z-index:300;display:flex;flex-direction:column;padding:10px;gap:8px';
+  ov.innerHTML = `
+    <div class="row" style="justify-content:center;flex-wrap:wrap;gap:.3rem" id="imged-bar">
+      <button class="btn sm" data-t="erase" title="필기·낙서를 흰색으로 지움">🧽 지우개</button>
+      <button class="btn ghost sm" data-t="pen">✏️ 펜</button>
+      <button class="btn ghost sm" data-t="line">╱ 직선</button>
+      <button class="btn ghost sm" data-t="rect">▢ 사각형</button>
+      <button class="btn ghost sm" data-t="ellipse">◯ 원</button>
+      <button class="btn ghost sm" data-t="text">T 글자</button>
+      <button class="btn ghost sm" data-t="stamp" title="영역을 복사해 다른 곳에 붙임 — 끊어진 선 메우기">⧉ 스탬프</button>
+      <button class="btn ghost sm" data-t="crop">✂ 크롭</button>
+      <label style="color:#dfe7df;font-size:.78rem;display:flex;align-items:center;gap:.3rem">굵기<input id="imged-size" type="range" min="2" max="60" value="14" style="width:80px"></label>
+      <button class="btn ghost sm" onclick="imgedSharpen()" title="흐린 스캔을 깨끗한 흑백으로">✨ 선명하게</button>
+      <button class="btn ghost sm" onclick="imgedAiRedraw()" title="AI가 그림을 벡터(SVG)로 깨끗하게 다시 그립니다 (API 키 필요)">🪄 AI로 새로 그리기</button>
+      <label style="color:#dfe7df;font-size:.78rem;display:flex;align-items:center;gap:.3rem">기울기<input id="imged-rot" type="range" min="-7" max="7" step="0.2" value="0" style="width:80px"></label>
+      <button class="btn ghost sm" onclick="imgedBakeRotate()">기울기 적용</button>
+      <button class="btn ghost sm" onclick="imgedUndo()">↶ 취소</button>
+      <button class="btn ghost sm" onclick="imgedRedo()">↷ 복귀</button>
+      <button class="btn ghost sm" onclick="imgedReset()">원본 되돌리기</button>
+    </div>
+    <div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:auto">
+      <canvas id="imged-cv" style="background:#fff;max-width:96vw;max-height:72vh;cursor:crosshair;border-radius:4px"></canvas>
+    </div>
+    <div class="row" style="justify-content:center;align-items:center">
+      <span class="hint" id="imged-hint" style="color:#cfe0cf;margin-right:.6rem"></span>
+      <button class="btn gold" onclick="imgedSave()">💾 저장</button>
+      <button class="btn" onclick="imgedClose()">닫기</button>
+    </div>`;
+  document.body.appendChild(ov);
+  IMGED.p = p; IMGED.idx = idx; IMGED.orig = imgs[idx];
+  IMGED.cv = $('#imged-cv'); IMGED.ctx = IMGED.cv.getContext('2d');
+  IMGED.undoStack = []; IMGED.redoStack = []; IMGED.stamp = null; IMGED.rotStarted = false;
+  await imgedLoad(imgs[idx]);
+  imgedSetTool('erase');
+  $('#imged-bar').addEventListener('click', e=>{ const b = e.target.closest('[data-t]'); if(b) imgedSetTool(b.dataset.t); });
+  $('#imged-size').addEventListener('input', e=>{ IMGED.size = +e.target.value; });
+  $('#imged-rot').addEventListener('input', e=>imgedApplyRotate(+e.target.value));
+  // 포인터 입력
+  const cv = IMGED.cv, ctx = IMGED.ctx;
+  const pos = e=>{ const r = cv.getBoundingClientRect(); return { x:(e.clientX-r.left)*cv.width/r.width, y:(e.clientY-r.top)*cv.height/r.height }; };
+  const shapePreview = (q)=>{
+    const s = IMGED.start;
+    ctx.drawImage(IMGED.snapC, 0, 0);
+    ctx.strokeStyle = IMGED.tool==='crop' || (IMGED.tool==='stamp' && !IMGED.stamp) ? '#ff5a3c' : '#000';
+    ctx.lineWidth = IMGED.tool==='crop' || IMGED.tool==='stamp' ? Math.max(2, cv.width/400) : Math.max(2, IMGED.size/5);
+    ctx.setLineDash(IMGED.tool==='crop' || IMGED.tool==='stamp' ? [8,6] : []);
+    ctx.beginPath();
+    if(IMGED.tool==='line'){ ctx.moveTo(s.x,s.y); ctx.lineTo(q.x,q.y); }
+    else if(IMGED.tool==='ellipse'){ ctx.ellipse((s.x+q.x)/2,(s.y+q.y)/2, Math.abs(q.x-s.x)/2||1, Math.abs(q.y-s.y)/2||1, 0, 0, Math.PI*2); }
+    else { ctx.rect(Math.min(s.x,q.x), Math.min(s.y,q.y), Math.abs(q.x-s.x), Math.abs(q.y-s.y)); }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  };
+  cv.onpointerdown = e=>{
+    const q = pos(e);
+    cv.setPointerCapture(e.pointerId);
+    if(IMGED.tool==='text'){
+      const t = prompt('넣을 글자를 입력하세요 (예: A, x, O)');
+      if(t){ imgedPushUndo(); ctx.fillStyle='#000'; ctx.font = `${Math.max(14, IMGED.size*2)}px "Times New Roman", serif`; ctx.fillText(t, q.x, q.y); }
+      return;
+    }
+    if(IMGED.tool==='stamp' && IMGED.stamp){            // 2단계: 붙여넣기
+      imgedPushUndo();
+      ctx.drawImage(IMGED.stamp, q.x-IMGED.stamp.width/2, q.y-IMGED.stamp.height/2);
+      return;
+    }
+    IMGED.start = q;
+    IMGED.snapC = imgedSnap();
+    if(IMGED.tool==='erase' || IMGED.tool==='pen'){
+      imgedPushUndo();
+      ctx.strokeStyle = IMGED.tool==='erase' ? '#fff' : '#000';
+      ctx.lineWidth = IMGED.size; ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(q.x+0.01, q.y+0.01); ctx.stroke();
+    }
+  };
+  cv.onpointermove = e=>{
+    if(!IMGED.start) return;
+    const q = pos(e);
+    if(IMGED.tool==='erase' || IMGED.tool==='pen'){ ctx.lineTo(q.x, q.y); ctx.stroke(); return; }
+    if(['line','rect','ellipse','crop','stamp'].includes(IMGED.tool)) shapePreview(q);
+  };
+  cv.onpointerup = e=>{
+    if(!IMGED.start) return;
+    const s = IMGED.start, q = pos(e);
+    IMGED.start = null;
+    if(IMGED.tool==='erase' || IMGED.tool==='pen') return;
+    const x = Math.min(s.x,q.x), y = Math.min(s.y,q.y), w = Math.abs(q.x-s.x), h = Math.abs(q.y-s.y);
+    if(IMGED.tool==='crop'){
+      ctx.drawImage(IMGED.snapC, 0, 0);                 // 점선 지우기
+      if(w>15 && h>15 && confirm('이 영역만 남기고 잘라낼까요?')){
+        imgedPushUndo();
+        const c2 = document.createElement('canvas'); c2.width=Math.round(w); c2.height=Math.round(h);
+        c2.getContext('2d').drawImage(IMGED.snapC, x, y, w, h, 0, 0, c2.width, c2.height);
+        cv.width = c2.width; cv.height = c2.height;
+        ctx.drawImage(c2, 0, 0);
+      }
+      return;
+    }
+    if(IMGED.tool==='stamp'){                           // 1단계: 복사 영역 확정
+      ctx.drawImage(IMGED.snapC, 0, 0);
+      if(w>6 && h>6){
+        const c2 = document.createElement('canvas'); c2.width=Math.round(w); c2.height=Math.round(h);
+        c2.getContext('2d').drawImage(IMGED.snapC, x, y, w, h, 0, 0, c2.width, c2.height);
+        IMGED.stamp = c2;
+        imgedHint();
+      }
+      return;
+    }
+    if(['line','rect','ellipse'].includes(IMGED.tool)){
+      ctx.drawImage(IMGED.snapC, 0, 0);
+      imgedPushUndo();
+      shapePreview(q);                                   // 확정 획 (snapC 위에 다시 그림)
+    }
+  };
+}
 /* 상세 모달: 문항 이미지에서 그림 부분만 드래그로 잘라 저장 */
 async function openImgCrop(id){
   const p = state.problems.find(x=>x.id===id); if(!p) return;
@@ -3726,6 +3996,177 @@ async function printSheet(){
   const DOC_LABEL = {teacher:'강사용', student:'학생용', anskey:'정답표', solution:'해설지'};
   logJob('학습지 출력', title, `${list.length}문항 · ${DOC_LABEL[doctype]||doctype} · 인쇄/PDF`);
   setTimeout(()=>window.print(), 150);
+}
+
+/* ═══════════════ HTML 내보내기 — 파일 하나로 보고·인쇄하는 학습지/교재 ═══════════════ */
+const KATEX_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11';
+function mathToHtml(s){ // $...$ / $$...$$ 를 KaTeX HTML로 사전 렌더 (katex 미로딩 시 원문 유지)
+  s = String(s||'');
+  if(!window.katex) return esc(s);
+  let out='', i=0, m;
+  const re = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
+  while((m = re.exec(s))){
+    out += esc(s.slice(i, m.index));
+    try{ out += katex.renderToString(m[1]||m[2], {throwOnError:false, displayMode:!!m[1]}); }
+    catch(e){ out += esc(m[0]); }
+    i = m.index + m[0].length;
+  }
+  return out + esc(s.slice(i));
+}
+function htmlProblemBody(p, imgs, withMeta){ // 질문 본문: [박스]→테두리, [그림]→원위치 이미지, 선택지
+  const im = (imgs||[]).slice();
+  const img = ()=>{ const d=im.shift(); return d?`<img class="fig" src="${d}" alt="그림">`:''; };
+  let h = splitBoxBlocks(p.question).map(b=> b.box
+    ? `<div class="condbox">${b.lines.map(l=>IMG_SLOT_RE.test(l)?img():mathToHtml(l)).join('<br>')}</div>`
+    : b.lines.map(l=>IMG_SLOT_RE.test(l)?img():`<span>${mathToHtml(l)} </span>`).join('')).join('');
+  h += im.map(d=>`<img class="fig" src="${d}" alt="그림">`).join('');
+  if(p.choices && p.choices.length)
+    h += `<div class="choices">${p.choices.map(c=>`<span>${mathToHtml(c)}</span>`).join('')}</div>`;
+  if(withMeta && p.srcName)
+    h += `<div class="src">[${esc(p.srcType||'기출')} · ${esc(p.srcName)}${p.srcYear?' '+esc(p.srcYear):''}]</div>`;
+  return h;
+}
+function htmlSolutionBody(p){
+  let h = `<div class="ansline">정답&nbsp; <b>${mathToHtml(p.answer||'—')}</b></div>`;
+  if((p.solution||'').trim())
+    h += `<div class="soltext">${String(p.solution).split(/\n/).map(l=>l.trim()?`<p>${mathToHtml(l)}</p>`:'').join('')}</div>`;
+  return h;
+}
+async function buildHtmlExport(mode){ // mode: 'sheet' 학습지 | 'book' 교재(표지+목차+뒤쪽 해설)
+  const list = cartProblems();
+  const imgsMap = new Map();
+  for(const p of list) imgsMap.set(p.id, await imagesOf(p));
+  const title = $('#s-title').value||'수학 연습 문제';
+  const sub = $('#s-sub').value, author = $('#s-author').value, date = $('#s-date').value;
+  const withMeta = $('#s-meta').checked, twoCol = $('#s-2col').checked;
+  const pts = p=> state.points[p.id]!=null ? state.points[p.id] : null;
+  const total = list.reduce((s,p)=>s+(pts(p)||0),0);
+
+  const probArt = (p,n)=>`
+<article class="prob" id="q${n}" data-id="${esc(p.id)}" data-subject="${esc(p.subject||'')}" data-chapter="${esc(p.chapter||'')}" data-section="${esc(p.section||'')}" data-grade="${esc(p.grade||'')}" data-difficulty="${p.difficulty||3}" data-answer="${esc(p.answer||'')}">
+<div class="phead"><span class="qnum">${n}.</span>${pts(p)!=null?`<span class="pt">[${pts(p)}점]</span>`:''}<span class="diff">${'●'.repeat(p.difficulty||3)}${'○'.repeat(Math.max(0,5-(p.difficulty||3)))}</span><button class="sbtn noprint" onclick="tgSol(${n})">정답·해설</button></div>
+<div class="pbody">${htmlProblemBody(p, imgsMap.get(p.id), withMeta)}</div>
+<div class="sol" id="sol${n}">${htmlSolutionBody(p)}</div>
+</article>`;
+
+  let main='', toc='', solsBack='';
+  if(mode==='book'){
+    // 과목 › 대단원으로 묶기 (담은 순서 유지)
+    const groups = []; const idx = new Map();
+    list.forEach(p=>{
+      const key = (p.subject||'미분류')+(p.chapter?' › '+p.chapter:'');
+      if(!idx.has(key)){ idx.set(key, groups.length); groups.push({key, items:[]}); }
+      groups[idx.get(key)].items.push(p);
+    });
+    let n=0;
+    toc = `<nav class="toc"><h2>목차</h2><ol>${groups.map((g,gi)=>{
+      const from=n+1; n+=g.items.length;
+      return `<li><a href="#ch${gi+1}">${esc(g.key)}</a> <span class="tcnt">${from}~${n}번 · ${g.items.length}문항</span></li>`;
+    }).join('')}<li><a href="#sols">정답 및 해설</a></li></ol></nav>`;
+    n=0;
+    main = groups.map((g,gi)=>{
+      const arts = g.items.map(p=>probArt(p,++n)).join('');
+      return `<section class="chapter" id="ch${gi+1}"><h2 class="chtitle">${esc(g.key)}</h2>${arts}</section>`;
+    }).join('');
+    n=0;
+    solsBack = `<section class="sols" id="sols"><h2>정답 및 해설</h2>${groups.map(g=>
+      `<h3 class="chsub">${esc(g.key)}</h3>`+g.items.map(p=>{ n++;
+        return `<div class="solitem"><span class="qnum">${n}.</span>${htmlSolutionBody(p)}</div>`; }).join('')
+    ).join('')}</section>`;
+  } else {
+    main = `<div class="qwrap${twoCol?' two':''}">${list.map((p,i)=>probArt(p,i+1)).join('')}</div>`;
+  }
+
+  const head = mode==='book'
+    ? `<header class="cover">${sub?`<div class="c-sub">${esc(sub)}</div>`:''}<h1>${esc(title)}</h1>
+       <div class="c-meta">${[author,date].filter(Boolean).map(esc).join(' · ')}</div>
+       <div class="c-cnt">전체 ${list.length}문항</div></header>`
+    : `<header class="shead"><h1>${esc(title)}</h1>${sub?`<div class="c-sub">${esc(sub)}</div>`:''}
+       <div class="sinfo"><span>${[date,author].filter(Boolean).map(esc).join(' · ')}</span>
+       <span>총 ${list.length}문항${total?` · ${total}점`:''}</span><span>이름: ______________</span></div></header>`;
+
+  const bar = `<div class="bar noprint"><b>${esc(title)}</b>
+    <button onclick="allSol(true)">해설 전체 열기</button><button onclick="allSol(false)">전체 닫기</button>
+    ${mode==='book'?'':'<label><input type="checkbox" onchange="document.body.classList.toggle(\'print-sol\',this.checked)"> 인쇄에 해설 포함</label>'}
+    <button class="pr" onclick="window.print()">🖨 인쇄 / PDF 저장</button></div>`;
+
+  const katexTags = `<link rel="stylesheet" href="${KATEX_CDN}/katex.min.css">`
+    + (window.katex ? '' : `<script defer src="${KATEX_CDN}/katex.min.js"><\/script><script defer src="${KATEX_CDN}/contrib/auto-render.min.js" onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false})"><\/script>`);
+
+  const html = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(title)}</title>${katexTags}
+<style>
+:root{--line:#d8d2c6;--ink:#1c1b18}
+*{box-sizing:border-box} .katex-mathml{display:none}
+body{margin:0;background:#f3f1ec;color:var(--ink);font:15px/1.65 'Noto Sans KR','Malgun Gothic',sans-serif}
+.page{max-width:840px;margin:0 auto;padding:20px 16px 60px;background:#fff;min-height:100vh;box-shadow:0 0 14px rgba(0,0,0,.07)}
+.bar{position:sticky;top:0;z-index:5;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;background:#23321f;color:#fff;padding:.55rem .9rem;border-radius:0 0 10px 10px;margin:0 0 1rem}
+.bar b{margin-right:auto} .bar button{border:1px solid #ffffff55;background:transparent;color:#fff;border-radius:7px;padding:.3rem .7rem;cursor:pointer}
+.bar button.pr{background:#c9a227;border-color:#c9a227;color:#22201a;font-weight:700}
+.bar label{display:flex;gap:.3rem;align-items:center;font-size:.85rem}
+.shead h1{margin:.2rem 0;font-size:1.5rem;text-align:center} .c-sub{text-align:center;color:#6b675e}
+.sinfo{display:flex;justify-content:space-between;gap:1rem;border-top:2px solid var(--ink);border-bottom:1px solid var(--line);padding:.4rem .2rem;margin:.8rem 0 1.2rem;font-size:.9rem;flex-wrap:wrap}
+.cover{min-height:70vh;display:flex;flex-direction:column;justify-content:center;text-align:center;gap:.6rem}
+.cover h1{font-size:2.2rem;margin:0} .c-meta{color:#6b675e} .c-cnt{color:#9a9488;font-size:.9rem}
+.toc{border:1px solid var(--line);border-radius:10px;padding:1rem 1.4rem;margin:1.4rem 0}
+.toc h2{margin:.1rem 0 .6rem;font-size:1.1rem} .toc ol{margin:0;padding-left:1.3rem} .toc li{margin:.25rem 0}
+.toc a{color:inherit;text-decoration:none} .tcnt{color:#9a9488;font-size:.85rem}
+.chapter{margin-top:1.6rem} .chtitle{border-left:5px solid #c9a227;padding-left:.6rem;font-size:1.15rem}
+.prob{border-bottom:1px solid var(--line);padding:1rem .2rem .9rem;break-inside:avoid}
+.phead{display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem}
+.qnum{font-weight:800;font-size:1.05rem} .pt{font-size:.82rem;color:#6b675e}
+.diff{color:#c9a227;font-size:.7rem;letter-spacing:1px}
+.sbtn{margin-left:auto;border:1px solid var(--line);background:#faf8f4;border-radius:7px;padding:.2rem .6rem;cursor:pointer;font-size:.8rem}
+.pbody{font-size:.98rem} .fig{display:block;max-width:min(420px,88%);margin:.6rem auto;border:0}
+.condbox{border:1.3px solid #4a463d;border-radius:4px;padding:.55rem .8rem;margin:.6rem 0;background:#fcfbf8}
+.choices{display:flex;flex-wrap:wrap;gap:.4rem 1.6rem;margin-top:.7rem}
+.src{font-size:.78rem;color:#9a9488;margin-top:.4rem}
+.sol{display:none;margin-top:.7rem;border:1px solid #cfe0cf;border-radius:8px;background:#f4f9f4;padding:.7rem .9rem;font-size:.93rem}
+.sol.open{display:block} .ansline{color:#2e6b3e;font-weight:600} .soltext p{margin:.35rem 0}
+.sols{margin-top:2.2rem;border-top:3px double var(--ink);padding-top:1rem}
+.sols .sol{display:block;border:0;background:none;padding:.1rem 0 .6rem}
+.solitem{border-bottom:1px dashed var(--line);padding:.5rem 0;display:flex;gap:.5rem;align-items:baseline}
+.solitem > .qnum{flex:none} .chsub{font-size:1rem;color:#6b675e;margin:1.1rem 0 .2rem}
+@media print{
+  body{background:#fff} .page{box-shadow:none;max-width:none;padding:0}
+  .noprint{display:none !important}
+  .sol{display:none} body.print-sol .sol{display:block}
+  .sols .sol{display:block}
+  .cover{page-break-after:always;min-height:85vh} .chapter{page-break-before:always} .chapter:first-of-type{page-break-before:auto}
+  .toc{page-break-after:always;border:0} .sols{page-break-before:always}
+  .qwrap.two{column-count:2;column-gap:9mm} .qwrap.two .prob{break-inside:avoid}
+  @page{size:A4;margin:16mm 14mm}
+}
+</style></head>
+<body><div class="page">
+${bar}
+${head}
+${toc}
+${main}
+${solsBack}
+<footer class="noprint" style="margin-top:2rem;color:#9a9488;font-size:.8rem;text-align:center">스터디피크 수학 랩에서 만든 문서 · 이 파일 하나로 어디서나 열람·인쇄할 수 있습니다</footer>
+</div>
+<script>
+function tgSol(n){ var e=document.getElementById('sol'+n); if(e) e.classList.toggle('open'); }
+function allSol(v){ document.querySelectorAll('.sol').forEach(function(e){ e.classList.toggle('open', v); }); }
+<\/script></body></html>`;
+  return { html, title };
+}
+async function downloadHtmlExport(mode){
+  const list = cartProblems();
+  if(!list.length){ toast('담긴 문제가 없습니다.'); return; }
+  if(!window.katex) toast('수식 구성요소(KaTeX)가 아직 로딩 전이라, 파일을 여는 쪽에서 인터넷으로 수식을 그립니다.');
+  const { html, title } = await buildHtmlExport(mode);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([html], {type:'text/html;charset=utf-8'}));
+  a.download = title.replace(/[\\/:*?"<>|]/g,'_') + (mode==='book'?' (교재)':'') + '.html';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+  logJob('학습지 출력', title, `${list.length}문항 · ${mode==='book'?'HTML 교재':'HTML 학습지'}`);
+  toast(mode==='book'
+    ? '📚 교재 파일 저장 완료 — 더블클릭해 열면 표지·목차·해설이 있는 교재가 보입니다. 인쇄하면 책/프린트물이 됩니다.'
+    : '🌐 학습지 파일 저장 완료 — 더블클릭해 열고, [정답·해설] 버튼과 인쇄를 그대로 쓸 수 있습니다.');
 }
 
 /* ═══════════════ HWPX(한글 파일) 생성 ═══════════════ */

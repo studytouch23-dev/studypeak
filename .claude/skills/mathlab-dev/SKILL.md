@@ -19,11 +19,12 @@ JS는 `/* ═══ 섹션명 ═══ */` 주석으로 구획되어 있다. Gr
 | 단원태그 관리 | `renderTags`, `add/rename/deleteSubject·Chapter·Section`, `remapProblems` |
 | 등록(단건/일괄) | `saveSingle`, `splitBulk`, `parseAnswerBlock`(해설지 [답] 형식), `saveBulk` |
 | 파일 파서 | `parseHWPX`, `parsePDF`, `hwpEqToLatex`, `extractTextFromFile`, `handleUploadFiles` |
-| PDF 영역 에디터 | `PDFED` 상태, `openPdfEditor(res,{solDefault})`, 페이지 `mode: prob/sol/skip`(클릭 순환), `detectRegionsByAnchors`, `detectRegionsByPixels`, `pdfedFinish`(해설 영역→`d.solImg` 번호 매칭), 그림 크롭 `validFigBox`/`cropDataURL`/`openImgCrop` |
+| PDF 영역 에디터 | `PDFED` 상태, `openPdfEditor(res,{solDefault})`, 페이지 `mode: prob/sol/skip`(클릭 순환), `detectRegionsByAnchors`, `detectRegionsByPixels`, `pdfedFinish`(해설 영역→`d.solImg` 번호 매칭), 그림 크롭 `validFigBox`/`cropDataURL`/`openImgCrop`, 그림 편집기 `IMGED`/`openImgEditor`(지우개·선명하게·기울기·스탬프, 저장은 saveProblem 경유), AI 벡터 복원 `imgedAiRedraw`/`sanitizeSvg`(Claude 비전→SVG, viewBox로 크기 결정·width/height 주입 필수) |
 | 검색·작업 | `problemsFiltered`, `renderDB`(30/페이지), `renderTree`, `semanticSearch`(bigram), `imgHash`(aHash 이미지검색), 프리셋 |
 | 일괄 작업 | `openBatchTag`, `batchAutoTag`, `batchReviewed`, `batchDelete` |
 | AI 변환 | `aiJsonCall`(공용 호출: `aiHeaders()`에 키·워크스페이스 ID, 재시도·오류 한국어 안내), `aiTranscribeImage`, `aiTranscribeDrafts`, `batchAiTranscribe`, `aiSolveProblem`/`batchAiSolve`/`aiSolveDetail`(해설 생성, #AI해설 태그), `batchQa`/`ruleCheckProblem`/`aiQaProblem`(검수: 깨끗→reviewed, 이상→#검수주의) — 테스트는 page에서 window.fetch 스텁 |
 | 학습지 | `renderSheet`, `autoCompose`, `printSheet`(doctype 4종), `setPoint` |
+| HTML 내보내기 | `downloadHtmlExport('sheet'|'book')`, `buildHtmlExport`, `mathToHtml`(katex.renderToString 사전 렌더), `htmlProblemBody`(박스·[그림] 슬롯·선택지 공용 렌더) — 내보내는 파일 안의 `</script>`는 반드시 `<\/script>`로 쓸 것(단일 파일 앱이라 스크립트가 끊김) |
 | HWPX 생성 | `latexToHwpEq`, `eqMeasure`(수식 크기), `hwpxEquation`, `hwpxPic`/`registerHwpxBin`, `saveHwpxFile`, `downloadHWPX` |
 
 ## 상태·저장소
@@ -77,5 +78,6 @@ await page.evaluate(()=>{ pdfjsLib.GlobalWorkerOptions.workerSrc='http://127.0.0
 
 ## 미구현(서버 필요) — 약속하지 말 것
 
-HWP 바이너리 파싱, 그림 AI 복원, DOCX/OMML 출력, 임베딩 검색, 멀티유저.
+HWP 바이너리 파싱, DOCX/OMML 출력, 임베딩 검색, 멀티유저.
+(그림 AI 복원은 `imgedAiRedraw`가 Claude 비전→SVG로 서버 없이 구현함)
 (OCR·분류·해설은 사용자 API 키 기반 AI 변환/해설 생성으로 대체됨) `lab/README.md` 로드맵 참조.
