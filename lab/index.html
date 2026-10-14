@@ -245,6 +245,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
   .pr-q .condbox{border:.5pt solid #000;padding:5pt 8pt;margin:5pt 0 5pt 10pt;white-space:pre-wrap}
   .pr-q img{max-width:100%;max-height:220px;display:block;margin:6px auto}
   .pr-q .choices{margin-top:5px}
+  .pr-q .src{font-size:8pt;color:#777}
   .pr-ans{page-break-before:always}
   .pr-ans h2{font-size:13pt;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:10px}
   .pr-ans .arow{margin-bottom:10px;break-inside:avoid}
@@ -3314,12 +3315,13 @@ function imgedApplyRotate(deg){
 }
 function imgedBakeRotate(){ IMGED.rotStarted = false; IMGED.rotBase = null; const r=$('#imged-rot'); if(r) r.value = 0; toast('기울기 보정을 적용했습니다.'); }
 /* ── AI 벡터 복원: Claude가 그림을 보고 SVG로 깨끗하게 다시 그림 (서버 불필요, 사용자 API 키) ── */
-function sanitizeSvg(svg){
+function sanitizeSvg(svg){ // script·이벤트핸들러·외부참조 제거 — 따옴표 없는 속성값도 처리
   return String(svg)
-    .replace(/<script[\s\S]*?<\/script>/gi,'')
-    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*')/gi,'')
-    .replace(/(xlink:)?href\s*=\s*("(?!#)[^"]*"|'(?!#)[^']*')/gi,'')
-    .replace(/<(image|foreignObject|iframe)[\s\S]*?(\/>|<\/\1>)/gi,'');
+    .replace(/<script[\s\S]*?(<\/script\s*>|$)/gi,'')
+    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,'')
+    .replace(/\s(xlink:)?href\s*=\s*("(?!#)[^"]*"|'(?!#)[^']*'|(?!["'#])[^\s>]+)/gi,'')
+    .replace(/<(image|foreignObject|iframe)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,'')
+    .replace(/<(image|foreignObject|iframe)\b[^>]*\/?>/gi,'');
 }
 function aiRedrawPrompt(){
   return '이 이미지는 수학 문제의 그림(도형·그래프·표)입니다. 흐림·잡티 없이 벡터로 깨끗하게 다시 그리세요. 아래 JSON 하나만 출력합니다. 설명·코드블록 금지.\n'
@@ -3340,12 +3342,15 @@ async function imgedAiRedraw(){
     const r = await aiJsonCall([
       { type:'image', source:{ type:'base64', media_type:m[1], data:m[2] } },
       { type:'text', text: aiRedrawPrompt() }
-    ], 4000);
+    ], 8000);
+    // 길이 제한에 잘린 응답은 tolerantJsonParse가 복구해 버리므로 닫는 태그로 완결성 확인
+    if(!/<\/svg\s*>\s*$/i.test(String(r.svg||'').trim()))
+      throw new Error('그림이 복잡해 AI 응답이 중간에 잘렸습니다 — 다시 시도해 보세요');
     let svg = sanitizeSvg(r.svg||'');
     if(!/^\s*<svg[\s>]/i.test(svg)) throw new Error('AI가 SVG를 만들지 못했습니다 — 다시 시도해 보세요');
     if(!/xmlns\s*=/.test(svg)) svg = svg.replace(/<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
     // 크기: viewBox 우선 (width/height 없는 SVG는 크롬이 300×150으로 보고·drawImage가 빈 그림이 됨)
-    const vb = svg.match(/viewBox\s*=\s*['"]\s*[\d.-]+\s+[\d.-]+\s+([\d.]+)\s+([\d.]+)/);
+    const vb = svg.match(/viewBox\s*=\s*['"]\s*[\d.-]+[\s,]+[\d.-]+[\s,]+([\d.]+)[\s,]+([\d.]+)/);
     let vw = vb ? +vb[1] : 0, vh = vb ? +vb[2] : 0;
     if(!vw || !vh){ vw = IMGED.cv.width; vh = IMGED.cv.height; }
     if(!/<svg[^>]*\swidth\s*=/i.test(svg))
@@ -3361,6 +3366,7 @@ async function imgedAiRedraw(){
     IMGED.cv.width = W; IMGED.cv.height = H;
     IMGED.ctx.fillStyle = '#fff'; IMGED.ctx.fillRect(0,0,W,H);
     IMGED.ctx.drawImage(img, 0, 0, W, H);
+    IMGED.rotStarted = false; IMGED.rotBase = null; const rr = $('#imged-rot'); if(rr) rr.value = 0;
     hint.textContent = '';
     toast('🪄 AI가 벡터로 다시 그렸습니다 — 원본과 비교해 확인하고, 다르면 [↶ 취소] 후 재시도·수정하세요.');
     logJob('AI 그림 복원', IMGED.p ? (stripBoxMarks(IMGED.p.question||'').slice(0,20)||IMGED.p.id) : '', '벡터 재생성');
@@ -3956,16 +3962,7 @@ async function printSheet(){
 
   const qHTML = list.map((p,i)=>`
     <div class="pr-q">
-      <span class="qn">${i+1}.</span>${pts(p)!=null?` <span style="font-size:8.5pt">[${pts(p)}점]</span>`:''} ${(()=>{
-        const imgs = (imgsMap.get(p.id)||[]).slice();
-        const img = ()=>{ const d = imgs.shift(); return d?`<img src="${d}" alt="">`:''; };
-        const html = splitBoxBlocks(p.question).map(b=> b.box
-          ? `<div class="condbox">${b.lines.map(l=>IMG_SLOT_RE.test(l)?img():esc(l)).join('<br>')}</div>`
-          : b.lines.map(l=>IMG_SLOT_RE.test(l)?img():`<span>${esc(l)} </span>`).join('')).join('');
-        return html + imgs.map(d=>`<img src="${d}" alt="">`).join('');
-      })()}
-      ${p.choices&&p.choices.length?`<div class="choices">${p.choices.map(c=>esc(c)).join('&nbsp;&nbsp; ')}</div>`:''}
-      ${withMeta&&p.srcName?`<div style="font-size:8pt;color:#777">[${esc(p.srcType)} · ${esc(p.srcName)}${p.srcYear?' '+esc(p.srcYear):''}]</div>`:''}
+      <span class="qn">${i+1}.</span>${pts(p)!=null?` <span style="font-size:8.5pt">[${pts(p)}점]</span>`:''} ${htmlProblemBody(p, imgsMap.get(p.id), withMeta)}
     </div>`).join('');
 
   const keyHTML = `
@@ -4000,18 +3997,28 @@ async function printSheet(){
 
 /* ═══════════════ HTML 내보내기 — 파일 하나로 보고·인쇄하는 학습지/교재 ═══════════════ */
 const KATEX_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11';
-function mathToHtml(s){ // $...$ / $$...$$ 를 KaTeX HTML로 사전 렌더 (katex 미로딩 시 원문 유지)
+function mathToHtml(s){ // $...$/$$...$$/\(...\)/\[...\] 를 KaTeX HTML로 사전 렌더 (katex 미로딩 시 원문 유지)
   s = String(s||'');
   if(!window.katex) return esc(s);
   let out='', i=0, m;
-  const re = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
+  const re = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\$([^$\n]+?)\$|\\\(([\s\S]+?)\\\)/g;
   while((m = re.exec(s))){
     out += esc(s.slice(i, m.index));
-    try{ out += katex.renderToString(m[1]||m[2], {throwOnError:false, displayMode:!!m[1]}); }
+    try{ out += katex.renderToString(m[1]||m[2]||m[3]||m[4], {throwOnError:false, displayMode:!!(m[1]||m[2])}); }
     catch(e){ out += esc(m[0]); }
     i = m.index + m[0].length;
   }
   return out + esc(s.slice(i));
+}
+let KATEX_CSS_CACHE = null;
+async function katexCssInline(){ // 내보내는 파일에 KaTeX CSS를 직접 심어 오프라인에서도 수식 배치가 유지되게
+  if(KATEX_CSS_CACHE !== null) return KATEX_CSS_CACHE;
+  try{
+    const r = await fetch(KATEX_CDN+'/katex.min.css');
+    if(!r.ok) throw 0;
+    KATEX_CSS_CACHE = (await r.text()).replace(/url\((['"]?)fonts\//g, (mm,q)=>`url(${q}${KATEX_CDN}/fonts/`);
+  }catch(e){ KATEX_CSS_CACHE = ''; }
+  return KATEX_CSS_CACHE;
 }
 function htmlProblemBody(p, imgs, withMeta){ // 질문 본문: [박스]→테두리, [그림]→원위치 이미지, 선택지
   const im = (imgs||[]).slice();
@@ -4021,7 +4028,7 @@ function htmlProblemBody(p, imgs, withMeta){ // 질문 본문: [박스]→테두
     : b.lines.map(l=>IMG_SLOT_RE.test(l)?img():`<span>${mathToHtml(l)} </span>`).join('')).join('');
   h += im.map(d=>`<img class="fig" src="${d}" alt="그림">`).join('');
   if(p.choices && p.choices.length)
-    h += `<div class="choices">${p.choices.map(c=>`<span>${mathToHtml(c)}</span>`).join('')}</div>`;
+    h += `<div class="choices">${p.choices.map(c=>`<span>${mathToHtml(c)}</span>`).join('&nbsp;&nbsp; ')}</div>`;
   if(withMeta && p.srcName)
     h += `<div class="src">[${esc(p.srcType||'기출')} · ${esc(p.srcName)}${p.srcYear?' '+esc(p.srcYear):''}]</div>`;
   return h;
@@ -4032,8 +4039,7 @@ function htmlSolutionBody(p){
     h += `<div class="soltext">${String(p.solution).split(/\n/).map(l=>l.trim()?`<p>${mathToHtml(l)}</p>`:'').join('')}</div>`;
   return h;
 }
-async function buildHtmlExport(mode){ // mode: 'sheet' 학습지 | 'book' 교재(표지+목차+뒤쪽 해설)
-  const list = cartProblems();
+async function buildHtmlExport(mode, list){ // mode: 'sheet' 학습지 | 'book' 교재(표지+목차+뒤쪽 해설)
   const imgsMap = new Map();
   for(const p of list) imgsMap.set(p.id, await imagesOf(p));
   const title = $('#s-title').value||'수학 연습 문제';
@@ -4090,8 +4096,9 @@ async function buildHtmlExport(mode){ // mode: 'sheet' 학습지 | 'book' 교재
     ${mode==='book'?'':'<label><input type="checkbox" onchange="document.body.classList.toggle(\'print-sol\',this.checked)"> 인쇄에 해설 포함</label>'}
     <button class="pr" onclick="window.print()">🖨 인쇄 / PDF 저장</button></div>`;
 
-  const katexTags = `<link rel="stylesheet" href="${KATEX_CDN}/katex.min.css">`
-    + (window.katex ? '' : `<script defer src="${KATEX_CDN}/katex.min.js"><\/script><script defer src="${KATEX_CDN}/contrib/auto-render.min.js" onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false})"><\/script>`);
+  const kcss = await katexCssInline();
+  const katexTags = (kcss ? `<style>${kcss}</style>` : `<link rel="stylesheet" href="${KATEX_CDN}/katex.min.css">`)
+    + (window.katex ? '' : `<script defer src="${KATEX_CDN}/katex.min.js"><\/script><script defer src="${KATEX_CDN}/contrib/auto-render.min.js" onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},{left:'\\\\(',right:'\\\\)',display:false},{left:'\\\\[',right:'\\\\]',display:true}],throwOnError:false})"><\/script>`);
 
   const html = `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -4120,7 +4127,7 @@ body{margin:0;background:#f3f1ec;color:var(--ink);font:15px/1.65 'Noto Sans KR',
 .sbtn{margin-left:auto;border:1px solid var(--line);background:#faf8f4;border-radius:7px;padding:.2rem .6rem;cursor:pointer;font-size:.8rem}
 .pbody{font-size:.98rem} .fig{display:block;max-width:min(420px,88%);margin:.6rem auto;border:0}
 .condbox{border:1.3px solid #4a463d;border-radius:4px;padding:.55rem .8rem;margin:.6rem 0;background:#fcfbf8}
-.choices{display:flex;flex-wrap:wrap;gap:.4rem 1.6rem;margin-top:.7rem}
+.choices{margin-top:.7rem;line-height:2}
 .src{font-size:.78rem;color:#9a9488;margin-top:.4rem}
 .sol{display:none;margin-top:.7rem;border:1px solid #cfe0cf;border-radius:8px;background:#f4f9f4;padding:.7rem .9rem;font-size:.93rem}
 .sol.open{display:block} .ansline{color:#2e6b3e;font-weight:600} .soltext p{margin:.35rem 0}
@@ -4129,8 +4136,14 @@ body{margin:0;background:#f3f1ec;color:var(--ink);font:15px/1.65 'Noto Sans KR',
 .solitem{border-bottom:1px dashed var(--line);padding:.5rem 0;display:flex;gap:.5rem;align-items:baseline}
 .solitem > .qnum{flex:none} .chsub{font-size:1rem;color:#6b675e;margin:1.1rem 0 .2rem}
 @media print{
-  body{background:#fff} .page{box-shadow:none;max-width:none;padding:0}
+  html,body{height:auto;background:#fff}
+  body{font-size:10.5pt;line-height:1.6}
+  .page{box-shadow:none;max-width:none;padding:0;min-height:0}
   .noprint{display:none !important}
+  .shead h1{font-size:16pt} .sinfo{font-size:9pt}
+  .pbody{font-size:10.5pt} .sol{font-size:9.5pt} .src{font-size:7.5pt}
+  .phead .qnum{font-size:11pt} .pt{font-size:8.5pt} .diff{display:none}
+  .fig{max-width:62%;max-height:70mm}
   .sol{display:none} body.print-sol .sol{display:block}
   .sols .sol{display:block}
   .cover{page-break-after:always;min-height:85vh} .chapter{page-break-before:always} .chapter:first-of-type{page-break-before:auto}
@@ -4157,7 +4170,7 @@ async function downloadHtmlExport(mode){
   const list = cartProblems();
   if(!list.length){ toast('담긴 문제가 없습니다.'); return; }
   if(!window.katex) toast('수식 구성요소(KaTeX)가 아직 로딩 전이라, 파일을 여는 쪽에서 인터넷으로 수식을 그립니다.');
-  const { html, title } = await buildHtmlExport(mode);
+  const { html, title } = await buildHtmlExport(mode, list);
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([html], {type:'text/html;charset=utf-8'}));
   a.download = title.replace(/[\\/:*?"<>|]/g,'_') + (mode==='book'?' (교재)':'') + '.html';
@@ -4466,6 +4479,9 @@ function latexToHwpEq(tex){
     overline:'bar',bar:'bar',vec:'vec',triangle:'triangle',angle:'angle',
     circ:'circ',degree:'circ',equiv:'equiv',approx:'approx',sim:'sim',
     cdots:'cdots',ldots:'ldots',dots:'cdots',sqrt:'sqrt'};
+  // 중괄호 없는 첨자는 LaTeX 규칙(한 글자·한 명령)대로 {}로 묶는다.
+  // 한글 수식은 공백 전까지 전부 첨자로 삼아 x^2=4^2 가 지수 속으로 빨려 들어가기 때문.
+  s = s.replace(/([_^])\s*(\\[a-zA-Z]+|[^{\s\\_^])/g, '$1{$2}');
   s = s.replace(/\\([a-zA-Z]+)/g, (m,w)=>{
     if(MAP[w]===undefined){ EQ_DIAG.unknown.add('\\'+w); return ' '+w+' '; }
     return ' '+MAP[w]+' ';

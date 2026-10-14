@@ -40,6 +40,12 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   });
   check('sanitizeSvg: script/on*/외부링크/image 제거', san.noScript && san.noOn && san.noExt && san.noImg, san.out.slice(0,120));
   check('sanitizeSvg: 로컬참조·도형·텍스트 유지', san.keepLocal && san.keepRect);
+  // 따옴표 없는 속성·닫히지 않은 image 태그도 안전하게
+  const san2 = await page.evaluate(() => {
+    const out = sanitizeSvg("<svg onload=alert(1) viewBox='0 0 9 9'><image href=https://x.io/a.png><rect x='1' y='1' width='3' height='3'/></svg>");
+    return { out, noOn: !/on\w+\s*=/.test(out), noExt: !out.includes('x.io'), keepRect: out.includes('<rect') };
+  });
+  check('sanitizeSvg: 따옴표 없는 on*/href 제거 + rect 보존', san2.noOn && san2.noExt && san2.keepRect, san2.out.slice(0,110));
 
   // ── 시드 문제 + 편집기 열기 ──
   await page.evaluate(async () => {
@@ -77,13 +83,13 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     const px = (x,y)=>ctx.getImageData(Math.round(x),Math.round(y),1,1).data[0];
     // viewBox 400×300 → W=800,H=600. rect 테두리는 (50,50)~(250,200) 스케일 ×2 = (100,100)~(500,400)
     return { w: cv.width, h: cv.height,
-      edge: px(100*cv.width/800, 200*cv.height/600*1.0),     // 좌변 위 한 점 (100, y=200)
+      edge: px(100, 300),                                     // 좌변 (x=100,y=300)
       edgeTop: px(300, 100),                                  // 윗변 (x=300,y=100)
       inside: px(300, 250),                                   // rect 내부(fill none→흰색)
       undoN: IMGED.undoStack.length };
   });
   check('캔버스가 viewBox 비율로 교체(800×600)', after.w===800 && after.h===600, after.w+'×'+after.h);
-  check('SVG 사각형이 그려짐(테두리 검정·내부 흰색)', after.edgeTop<120 && after.inside>230, 'edge='+after.edgeTop+' inside='+after.inside);
+  check('SVG 사각형이 그려짐(테두리 검정·내부 흰색)', after.edge<120 && after.edgeTop<120 && after.inside>230, 'edgeL='+after.edge+' edgeT='+after.edgeTop+' inside='+after.inside);
   check('undo 스택에 원본 저장', after.undoN>=1, after.undoN);
 
   // ── 2) undo → 원본 400×300 복귀 ──
