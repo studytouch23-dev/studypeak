@@ -63,8 +63,15 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   check('중지 안내 표시', r1.status.includes('중지됨'), r1.status.slice(0,60));
   check('중지 바 사라짐 + 상태 해제', r1.barHidden && !r1.running);
 
-  // ── 2) 다시 실행하면 남은 2개만 이어서 변환 ──
-  await page.evaluate(() => aiTranscribeDrafts());
+  // ── 2) 다시 실행하면 남은 2개만 이어서 변환 + 실행 중에는 중지 바가 보여야 함 ──
+  await page.evaluate(() => { window.__p = aiTranscribeDrafts(); });
+  await page.waitForTimeout(40);
+  const during = await page.evaluate(() => {
+    const b = document.querySelector('#ai-stopbar');
+    return { shown: b.style.display==='flex', visible: b.offsetParent!==null || b.getBoundingClientRect().height>0,
+      btn: !!b.querySelector('button[onclick="aiBatchCancel()"]') };
+  });
+  check('실행 중 하단에 ⏹ 중지 바 표시', during.shown && during.visible && during.btn, JSON.stringify(during));
   await page.waitForTimeout(1000);
   const r2 = await page.evaluate(() => ({
     calls: window.__n,

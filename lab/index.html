@@ -1820,7 +1820,7 @@ async function parsePDF(file){
     for(const it of items){
       const s = it.str.trim();
       pg.text += s;
-      if(!/^\d{1,2}\.?$/.test(s)) pg.bodyLen += s.length;
+      if(!/^\d{1,3}\.?$/.test(s)) pg.bodyLen += s.length;
     }
     pg.isQuickAns = pg.text.includes('빠른정답') || pg.text.includes('빠른 정답');
     pg.ansLabels = items.filter(it=>/^(정답|해설)$/.test(it.str.trim())).length;
@@ -1848,7 +1848,7 @@ function collectAnchors(items, pgW, pgH){
   const out = [];
   for(const it of items){
     const s = it.str.trim();
-    if(!/^\d{1,2}\.?$/.test(s)) continue;
+    if(!/^\d{1,3}\.?$/.test(s)) continue;                   // 001·002 같은 세 자리 문항 번호도 인정
     if(it.y < pgH*0.06 || it.y > pgH*0.94) continue;        // 꼬리말·머리말(쪽번호) 제외
     // 같은 줄에서 왼쪽에 바짝 붙은 글자가 있으면 문장 속 숫자다 (단 사이 여백 10pt 이상은 허용)
     const blocked = items.some(t=>{
@@ -1951,6 +1951,7 @@ function detectRegionsByPixels(canvas, pgW, pgH, pageIdx, startNum){
     if(segStart>=0) segs.push([segStart,lastInk]);
     for(const [a,b] of segs){
       if(b-a < 22*sx) continue;                            // 너무 작은 조각(머리말 등) 제외
+      if(b < H*0.13) continue;                             // 페이지 맨 위 제목 띠(로고·표제)만으로 끝나는 조각 제외
       out.push({ page:pageIdx, x:x0/sx, y:(a-4)/sx, w:(x1-x0)/sx, h:(b-a+10)/sx, num:String(num++) });
     }
   }

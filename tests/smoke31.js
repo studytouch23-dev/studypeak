@@ -99,6 +99,19 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   });
   check('수식 속 숫자 배제·줄 앞 번호만', JSON.stringify(ca)===JSON.stringify(['9','3']), ca.join(','));
 
+  // ── 5-2) '001' '002' 세 자리 문항 번호 (N제 문제집) → 1, 2로 인식 + 2단 영역 ──
+  const ca3 = await page.evaluate(() => {
+    const items = [
+      { str:'001', x:60,  y:620, w:28 },
+      { str:'002', x:330, y:620, w:28 },
+      { str:'문제 본문', x:60, y:590, w:80 }
+    ];
+    const anchors = collectAnchors(items, 600, 800);
+    const regs = detectRegionsByAnchors({ w:600, h:800, anchors }, 0);
+    return { nums: anchors.map(a=>a.num), nRegs: regs.length };
+  });
+  check('세 자리 번호(001→1, 002→2)', JSON.stringify(ca3.nums)===JSON.stringify(['1','2']) && ca3.nRegs===2, JSON.stringify(ca3));
+
   // ── 6) 추출 잉크 보정: 영역 밖으로 삐져나온 박스를 따라 확장, 빈 여백 축소 ──
   const rf = await page.evaluate(() => {
     const c = document.createElement('canvas'); c.width=800; c.height=400;
