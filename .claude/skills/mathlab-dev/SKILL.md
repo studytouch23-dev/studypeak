@@ -24,6 +24,7 @@ JS는 `/* ═══ 섹션명 ═══ */` 주석으로 구획되어 있다. Gr
 | 일괄 작업 | `openBatchTag`, `batchAutoTag`, `batchReviewed`, `batchDelete` |
 | AI 변환 | `aiJsonCall`(공용 호출: `aiHeaders()`에 키·워크스페이스 ID, 재시도·오류 한국어 안내), `aiTranscribeImage`, `aiTranscribeDrafts`, `batchAiTranscribe`, `aiSolveProblem`/`batchAiSolve`/`aiSolveDetail`(해설 생성, #AI해설 태그), `batchQa`/`ruleCheckProblem`/`aiQaProblem`(검수: 깨끗→reviewed, 이상→#검수주의) — 테스트는 page에서 window.fetch 스텁 |
 | 학습지 | `renderSheet`, `autoCompose`, `printSheet`(doctype 4종), `setPoint` |
+| HTML 내보내기 | `downloadHtmlExport('sheet'|'book')`, `buildHtmlExport`, `mathToHtml`(katex.renderToString 사전 렌더), `htmlProblemBody`(박스·[그림] 슬롯·선택지 공용 렌더) — 내보내는 파일 안의 `</script>`는 반드시 `<\/script>`로 쓸 것(단일 파일 앱이라 스크립트가 끊김) |
 | HWPX 생성 | `latexToHwpEq`, `eqMeasure`(수식 크기), `hwpxEquation`, `hwpxPic`/`registerHwpxBin`, `saveHwpxFile`, `downloadHWPX` |
 
 ## 상태·저장소

@@ -2,10 +2,13 @@
   "name": "studypeak-lab-tests",
   "private": true,
   "description": "수학 랩(lab/index.html) 자동 회귀 테스트 — node run-all.js 로 전체 실행",
-  "scripts": { "test": "node run-all.js" },
+  "scripts": {
+    "test": "node run-all.js"
+  },
   "dependencies": {
     "jszip": "^3.10.1",
-    "playwright-core": "^1.45.0",
-    "pdfjs-dist": "3.11.174"
+    "katex": "^0.16.11",
+    "pdfjs-dist": "3.11.174",
+    "playwright-core": "^1.45.0"
   }
 }

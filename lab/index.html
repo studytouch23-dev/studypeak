@@ -680,10 +680,13 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
   <div class="row">
     <button class="btn gold" id="btn-hwpx" onclick="downloadHWPX()">📥 한글 파일(HWPX) 다운로드</button>
     <button class="btn gold" id="btn-mock" onclick="downloadMockExam()">📘 모의고사 양식 (수능 A3)</button>
+    <button class="btn gold" id="btn-html" onclick="downloadHtmlExport('sheet')">🌐 HTML 학습지</button>
+    <button class="btn gold" id="btn-book" onclick="downloadHtmlExport('book')">📚 HTML 교재(책)</button>
     <button class="btn" id="btn-print" onclick="printSheet()">🖨 인쇄 / PDF 저장</button>
     <button class="btn ghost" onclick="saveWorksheet()">학습지 구성 저장</button>
   </div>
-  <p class="hint" style="margin-top:.4rem">HWPX는 한글(한컴오피스)에서 바로 열어 이어서 편집할 수 있습니다. <code>$...$</code> 수식은 <b>한글 수식 개체</b>로 변환되어 더블클릭하면 수식 편집기로 열립니다. 변환하지 못한 수식 명령이 있으면 다운로드 시 알려드립니다.<br>
+  <p class="hint" style="margin-top:.4rem"><b>HTML 학습지/교재</b>는 파일 하나에 그림·수식·해설이 모두 들어 있어, 아무 프로그램 없이 더블클릭으로 열어 보고(해설은 버튼으로 열고 닫기) 그대로 인쇄/PDF 저장이 됩니다. <b>교재(책)</b>는 표지·목차·단원별 구성에 해설이 책 뒤에 모여 있는 형태입니다.<br>
+  HWPX는 한글(한컴오피스)에서 바로 열어 이어서 편집할 수 있습니다. <code>$...$</code> 수식은 <b>한글 수식 개체</b>로 변환되어 더블클릭하면 수식 편집기로 열립니다. 변환하지 못한 수식 명령이 있으면 다운로드 시 알려드립니다.<br>
   <b>모의고사 양식</b>은 수능 문제지 조판 규칙(A3 2단, 쪽당 4문항 고정 슬롯, 번호 13.2pt·본문 11.2pt·수식 11pt)으로 출력합니다. 부제목 칸에 선택과목명(예: 확률과 통계)을 쓰면 "수학 영역" 옆에 붙습니다. 문항이 슬롯 높이를 넘치면 자동으로 줄이지 않고 먼저 알려드립니다.</p>
 
   <div class="card" style="margin-top:1rem">
@@ -3993,6 +3996,177 @@ async function printSheet(){
   const DOC_LABEL = {teacher:'강사용', student:'학생용', anskey:'정답표', solution:'해설지'};
   logJob('학습지 출력', title, `${list.length}문항 · ${DOC_LABEL[doctype]||doctype} · 인쇄/PDF`);
   setTimeout(()=>window.print(), 150);
+}
+
+/* ═══════════════ HTML 내보내기 — 파일 하나로 보고·인쇄하는 학습지/교재 ═══════════════ */
+const KATEX_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11';
+function mathToHtml(s){ // $...$ / $$...$$ 를 KaTeX HTML로 사전 렌더 (katex 미로딩 시 원문 유지)
+  s = String(s||'');
+  if(!window.katex) return esc(s);
+  let out='', i=0, m;
+  const re = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
+  while((m = re.exec(s))){
+    out += esc(s.slice(i, m.index));
+    try{ out += katex.renderToString(m[1]||m[2], {throwOnError:false, displayMode:!!m[1]}); }
+    catch(e){ out += esc(m[0]); }
+    i = m.index + m[0].length;
+  }
+  return out + esc(s.slice(i));
+}
+function htmlProblemBody(p, imgs, withMeta){ // 질문 본문: [박스]→테두리, [그림]→원위치 이미지, 선택지
+  const im = (imgs||[]).slice();
+  const img = ()=>{ const d=im.shift(); return d?`<img class="fig" src="${d}" alt="그림">`:''; };
+  let h = splitBoxBlocks(p.question).map(b=> b.box
+    ? `<div class="condbox">${b.lines.map(l=>IMG_SLOT_RE.test(l)?img():mathToHtml(l)).join('<br>')}</div>`
+    : b.lines.map(l=>IMG_SLOT_RE.test(l)?img():`<span>${mathToHtml(l)} </span>`).join('')).join('');
+  h += im.map(d=>`<img class="fig" src="${d}" alt="그림">`).join('');
+  if(p.choices && p.choices.length)
+    h += `<div class="choices">${p.choices.map(c=>`<span>${mathToHtml(c)}</span>`).join('')}</div>`;
+  if(withMeta && p.srcName)
+    h += `<div class="src">[${esc(p.srcType||'기출')} · ${esc(p.srcName)}${p.srcYear?' '+esc(p.srcYear):''}]</div>`;
+  return h;
+}
+function htmlSolutionBody(p){
+  let h = `<div class="ansline">정답&nbsp; <b>${mathToHtml(p.answer||'—')}</b></div>`;
+  if((p.solution||'').trim())
+    h += `<div class="soltext">${String(p.solution).split(/\n/).map(l=>l.trim()?`<p>${mathToHtml(l)}</p>`:'').join('')}</div>`;
+  return h;
+}
+async function buildHtmlExport(mode){ // mode: 'sheet' 학습지 | 'book' 교재(표지+목차+뒤쪽 해설)
+  const list = cartProblems();
+  const imgsMap = new Map();
+  for(const p of list) imgsMap.set(p.id, await imagesOf(p));
+  const title = $('#s-title').value||'수학 연습 문제';
+  const sub = $('#s-sub').value, author = $('#s-author').value, date = $('#s-date').value;
+  const withMeta = $('#s-meta').checked, twoCol = $('#s-2col').checked;
+  const pts = p=> state.points[p.id]!=null ? state.points[p.id] : null;
+  const total = list.reduce((s,p)=>s+(pts(p)||0),0);
+
+  const probArt = (p,n)=>`
+<article class="prob" id="q${n}" data-id="${esc(p.id)}" data-subject="${esc(p.subject||'')}" data-chapter="${esc(p.chapter||'')}" data-section="${esc(p.section||'')}" data-grade="${esc(p.grade||'')}" data-difficulty="${p.difficulty||3}" data-answer="${esc(p.answer||'')}">
+<div class="phead"><span class="qnum">${n}.</span>${pts(p)!=null?`<span class="pt">[${pts(p)}점]</span>`:''}<span class="diff">${'●'.repeat(p.difficulty||3)}${'○'.repeat(Math.max(0,5-(p.difficulty||3)))}</span><button class="sbtn noprint" onclick="tgSol(${n})">정답·해설</button></div>
+<div class="pbody">${htmlProblemBody(p, imgsMap.get(p.id), withMeta)}</div>
+<div class="sol" id="sol${n}">${htmlSolutionBody(p)}</div>
+</article>`;
+
+  let main='', toc='', solsBack='';
+  if(mode==='book'){
+    // 과목 › 대단원으로 묶기 (담은 순서 유지)
+    const groups = []; const idx = new Map();
+    list.forEach(p=>{
+      const key = (p.subject||'미분류')+(p.chapter?' › '+p.chapter:'');
+      if(!idx.has(key)){ idx.set(key, groups.length); groups.push({key, items:[]}); }
+      groups[idx.get(key)].items.push(p);
+    });
+    let n=0;
+    toc = `<nav class="toc"><h2>목차</h2><ol>${groups.map((g,gi)=>{
+      const from=n+1; n+=g.items.length;
+      return `<li><a href="#ch${gi+1}">${esc(g.key)}</a> <span class="tcnt">${from}~${n}번 · ${g.items.length}문항</span></li>`;
+    }).join('')}<li><a href="#sols">정답 및 해설</a></li></ol></nav>`;
+    n=0;
+    main = groups.map((g,gi)=>{
+      const arts = g.items.map(p=>probArt(p,++n)).join('');
+      return `<section class="chapter" id="ch${gi+1}"><h2 class="chtitle">${esc(g.key)}</h2>${arts}</section>`;
+    }).join('');
+    n=0;
+    solsBack = `<section class="sols" id="sols"><h2>정답 및 해설</h2>${groups.map(g=>
+      `<h3 class="chsub">${esc(g.key)}</h3>`+g.items.map(p=>{ n++;
+        return `<div class="solitem"><span class="qnum">${n}.</span>${htmlSolutionBody(p)}</div>`; }).join('')
+    ).join('')}</section>`;
+  } else {
+    main = `<div class="qwrap${twoCol?' two':''}">${list.map((p,i)=>probArt(p,i+1)).join('')}</div>`;
+  }
+
+  const head = mode==='book'
+    ? `<header class="cover">${sub?`<div class="c-sub">${esc(sub)}</div>`:''}<h1>${esc(title)}</h1>
+       <div class="c-meta">${[author,date].filter(Boolean).map(esc).join(' · ')}</div>
+       <div class="c-cnt">전체 ${list.length}문항</div></header>`
+    : `<header class="shead"><h1>${esc(title)}</h1>${sub?`<div class="c-sub">${esc(sub)}</div>`:''}
+       <div class="sinfo"><span>${[date,author].filter(Boolean).map(esc).join(' · ')}</span>
+       <span>총 ${list.length}문항${total?` · ${total}점`:''}</span><span>이름: ______________</span></div></header>`;
+
+  const bar = `<div class="bar noprint"><b>${esc(title)}</b>
+    <button onclick="allSol(true)">해설 전체 열기</button><button onclick="allSol(false)">전체 닫기</button>
+    ${mode==='book'?'':'<label><input type="checkbox" onchange="document.body.classList.toggle(\'print-sol\',this.checked)"> 인쇄에 해설 포함</label>'}
+    <button class="pr" onclick="window.print()">🖨 인쇄 / PDF 저장</button></div>`;
+
+  const katexTags = `<link rel="stylesheet" href="${KATEX_CDN}/katex.min.css">`
+    + (window.katex ? '' : `<script defer src="${KATEX_CDN}/katex.min.js"><\/script><script defer src="${KATEX_CDN}/contrib/auto-render.min.js" onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false})"><\/script>`);
+
+  const html = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(title)}</title>${katexTags}
+<style>
+:root{--line:#d8d2c6;--ink:#1c1b18}
+*{box-sizing:border-box} .katex-mathml{display:none}
+body{margin:0;background:#f3f1ec;color:var(--ink);font:15px/1.65 'Noto Sans KR','Malgun Gothic',sans-serif}
+.page{max-width:840px;margin:0 auto;padding:20px 16px 60px;background:#fff;min-height:100vh;box-shadow:0 0 14px rgba(0,0,0,.07)}
+.bar{position:sticky;top:0;z-index:5;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;background:#23321f;color:#fff;padding:.55rem .9rem;border-radius:0 0 10px 10px;margin:0 0 1rem}
+.bar b{margin-right:auto} .bar button{border:1px solid #ffffff55;background:transparent;color:#fff;border-radius:7px;padding:.3rem .7rem;cursor:pointer}
+.bar button.pr{background:#c9a227;border-color:#c9a227;color:#22201a;font-weight:700}
+.bar label{display:flex;gap:.3rem;align-items:center;font-size:.85rem}
+.shead h1{margin:.2rem 0;font-size:1.5rem;text-align:center} .c-sub{text-align:center;color:#6b675e}
+.sinfo{display:flex;justify-content:space-between;gap:1rem;border-top:2px solid var(--ink);border-bottom:1px solid var(--line);padding:.4rem .2rem;margin:.8rem 0 1.2rem;font-size:.9rem;flex-wrap:wrap}
+.cover{min-height:70vh;display:flex;flex-direction:column;justify-content:center;text-align:center;gap:.6rem}
+.cover h1{font-size:2.2rem;margin:0} .c-meta{color:#6b675e} .c-cnt{color:#9a9488;font-size:.9rem}
+.toc{border:1px solid var(--line);border-radius:10px;padding:1rem 1.4rem;margin:1.4rem 0}
+.toc h2{margin:.1rem 0 .6rem;font-size:1.1rem} .toc ol{margin:0;padding-left:1.3rem} .toc li{margin:.25rem 0}
+.toc a{color:inherit;text-decoration:none} .tcnt{color:#9a9488;font-size:.85rem}
+.chapter{margin-top:1.6rem} .chtitle{border-left:5px solid #c9a227;padding-left:.6rem;font-size:1.15rem}
+.prob{border-bottom:1px solid var(--line);padding:1rem .2rem .9rem;break-inside:avoid}
+.phead{display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem}
+.qnum{font-weight:800;font-size:1.05rem} .pt{font-size:.82rem;color:#6b675e}
+.diff{color:#c9a227;font-size:.7rem;letter-spacing:1px}
+.sbtn{margin-left:auto;border:1px solid var(--line);background:#faf8f4;border-radius:7px;padding:.2rem .6rem;cursor:pointer;font-size:.8rem}
+.pbody{font-size:.98rem} .fig{display:block;max-width:min(420px,88%);margin:.6rem auto;border:0}
+.condbox{border:1.3px solid #4a463d;border-radius:4px;padding:.55rem .8rem;margin:.6rem 0;background:#fcfbf8}
+.choices{display:flex;flex-wrap:wrap;gap:.4rem 1.6rem;margin-top:.7rem}
+.src{font-size:.78rem;color:#9a9488;margin-top:.4rem}
+.sol{display:none;margin-top:.7rem;border:1px solid #cfe0cf;border-radius:8px;background:#f4f9f4;padding:.7rem .9rem;font-size:.93rem}
+.sol.open{display:block} .ansline{color:#2e6b3e;font-weight:600} .soltext p{margin:.35rem 0}
+.sols{margin-top:2.2rem;border-top:3px double var(--ink);padding-top:1rem}
+.sols .sol{display:block;border:0;background:none;padding:.1rem 0 .6rem}
+.solitem{border-bottom:1px dashed var(--line);padding:.5rem 0;display:flex;gap:.5rem;align-items:baseline}
+.solitem > .qnum{flex:none} .chsub{font-size:1rem;color:#6b675e;margin:1.1rem 0 .2rem}
+@media print{
+  body{background:#fff} .page{box-shadow:none;max-width:none;padding:0}
+  .noprint{display:none !important}
+  .sol{display:none} body.print-sol .sol{display:block}
+  .sols .sol{display:block}
+  .cover{page-break-after:always;min-height:85vh} .chapter{page-break-before:always} .chapter:first-of-type{page-break-before:auto}
+  .toc{page-break-after:always;border:0} .sols{page-break-before:always}
+  .qwrap.two{column-count:2;column-gap:9mm} .qwrap.two .prob{break-inside:avoid}
+  @page{size:A4;margin:16mm 14mm}
+}
+</style></head>
+<body><div class="page">
+${bar}
+${head}
+${toc}
+${main}
+${solsBack}
+<footer class="noprint" style="margin-top:2rem;color:#9a9488;font-size:.8rem;text-align:center">스터디피크 수학 랩에서 만든 문서 · 이 파일 하나로 어디서나 열람·인쇄할 수 있습니다</footer>
+</div>
+<script>
+function tgSol(n){ var e=document.getElementById('sol'+n); if(e) e.classList.toggle('open'); }
+function allSol(v){ document.querySelectorAll('.sol').forEach(function(e){ e.classList.toggle('open', v); }); }
+<\/script></body></html>`;
+  return { html, title };
+}
+async function downloadHtmlExport(mode){
+  const list = cartProblems();
+  if(!list.length){ toast('담긴 문제가 없습니다.'); return; }
+  if(!window.katex) toast('수식 구성요소(KaTeX)가 아직 로딩 전이라, 파일을 여는 쪽에서 인터넷으로 수식을 그립니다.');
+  const { html, title } = await buildHtmlExport(mode);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([html], {type:'text/html;charset=utf-8'}));
+  a.download = title.replace(/[\\/:*?"<>|]/g,'_') + (mode==='book'?' (교재)':'') + '.html';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+  logJob('학습지 출력', title, `${list.length}문항 · ${mode==='book'?'HTML 교재':'HTML 학습지'}`);
+  toast(mode==='book'
+    ? '📚 교재 파일 저장 완료 — 더블클릭해 열면 표지·목차·해설이 있는 교재가 보입니다. 인쇄하면 책/프린트물이 됩니다.'
+    : '🌐 학습지 파일 저장 완료 — 더블클릭해 열고, [정답·해설] 버튼과 인쇄를 그대로 쓸 수 있습니다.');
 }
 
 /* ═══════════════ HWPX(한글 파일) 생성 ═══════════════ */
