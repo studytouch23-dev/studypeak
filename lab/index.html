@@ -3310,6 +3310,62 @@ function imgedApplyRotate(deg){
   ctx.restore();
 }
 function imgedBakeRotate(){ IMGED.rotStarted = false; IMGED.rotBase = null; const r=$('#imged-rot'); if(r) r.value = 0; toast('기울기 보정을 적용했습니다.'); }
+/* ── AI 벡터 복원: Claude가 그림을 보고 SVG로 깨끗하게 다시 그림 (서버 불필요, 사용자 API 키) ── */
+function sanitizeSvg(svg){
+  return String(svg)
+    .replace(/<script[\s\S]*?<\/script>/gi,'')
+    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*')/gi,'')
+    .replace(/(xlink:)?href\s*=\s*("(?!#)[^"]*"|'(?!#)[^']*')/gi,'')
+    .replace(/<(image|foreignObject|iframe)[\s\S]*?(\/>|<\/\1>)/gi,'');
+}
+function aiRedrawPrompt(){
+  return '이 이미지는 수학 문제의 그림(도형·그래프·표)입니다. 흐림·잡티 없이 벡터로 깨끗하게 다시 그리세요. 아래 JSON 하나만 출력합니다. 설명·코드블록 금지.\n'
+    +'{"svg":"<svg viewBox=\'0 0 W H\' xmlns=\'http://www.w3.org/2000/svg\'>...</svg>"}\n'
+    +'- SVG 속성값은 반드시 작은따옴표(\')로 감싸고, 문자열 안에 줄바꿈을 넣지 마세요.\n'
+    +'- viewBox 비율은 원본 그대로. 배경 흰색, 선은 검정 #000 (stroke-width 2~3), 축 화살표 포함.\n'
+    +'- 원본의 모든 선·곡선·점·화살표·숫자·라벨을 빠짐없이, 위치 비율을 최대한 똑같이.\n'
+    +'- 글자는 <text>로: 점 이름(A,B,O)과 숫자는 serif, 변수(x,y)는 italic serif. 한글 라벨도 그대로.\n'
+    +'- script, 외부 링크, image 태그는 절대 사용 금지.';
+}
+async function imgedAiRedraw(){
+  if(!aiSettings().key){ toast('API 키가 없습니다 — [백업·데이터 → AI 변환 설정]에서 먼저 저장하세요.'); return; }
+  if(!confirm('AI가 이 그림을 벡터로 새로 그립니다 (본인 API 키, 소액 과금).\n결과가 원본과 다르면 [↶ 취소]로 되돌리고 다시 시도하거나 다른 도구로 수정할 수 있습니다.\n계속할까요?')) return;
+  const hint = $('#imged-hint');
+  try{
+    hint.textContent = '🪄 AI가 그림을 다시 그리는 중… (수십 초 걸릴 수 있어요)';
+    const m = IMGED.cv.toDataURL('image/png').match(/^data:(image\/\w+);base64,(.+)$/);
+    const r = await aiJsonCall([
+      { type:'image', source:{ type:'base64', media_type:m[1], data:m[2] } },
+      { type:'text', text: aiRedrawPrompt() }
+    ], 4000);
+    let svg = sanitizeSvg(r.svg||'');
+    if(!/^\s*<svg[\s>]/i.test(svg)) throw new Error('AI가 SVG를 만들지 못했습니다 — 다시 시도해 보세요');
+    if(!/xmlns\s*=/.test(svg)) svg = svg.replace(/<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+    // 크기: viewBox 우선 (width/height 없는 SVG는 크롬이 300×150으로 보고·drawImage가 빈 그림이 됨)
+    const vb = svg.match(/viewBox\s*=\s*['"]\s*[\d.-]+\s+[\d.-]+\s+([\d.]+)\s+([\d.]+)/);
+    let vw = vb ? +vb[1] : 0, vh = vb ? +vb[2] : 0;
+    if(!vw || !vh){ vw = IMGED.cv.width; vh = IMGED.cv.height; }
+    if(!/<svg[^>]*\swidth\s*=/i.test(svg))
+      svg = svg.replace(/<svg/i, `<svg width="${vw}" height="${vh}"`);
+    const img = new Image();
+    await new Promise((res,rej)=>{
+      img.onload = res;
+      img.onerror = ()=>rej(new Error('SVG 렌더링 실패 — [↶ 취소] 후 다시 시도하세요'));
+      img.src = 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+    });
+    imgedPushUndo();
+    const W = Math.round(Math.max(700, Math.min(1600, vw*2))), H = Math.round(W*vh/vw);
+    IMGED.cv.width = W; IMGED.cv.height = H;
+    IMGED.ctx.fillStyle = '#fff'; IMGED.ctx.fillRect(0,0,W,H);
+    IMGED.ctx.drawImage(img, 0, 0, W, H);
+    hint.textContent = '';
+    toast('🪄 AI가 벡터로 다시 그렸습니다 — 원본과 비교해 확인하고, 다르면 [↶ 취소] 후 재시도·수정하세요.');
+    logJob('AI 그림 복원', IMGED.p ? (stripBoxMarks(IMGED.p.question||'').slice(0,20)||IMGED.p.id) : '', '벡터 재생성');
+  }catch(e){
+    hint.textContent = '';
+    toast('⚠ AI 그림 복원 실패: '+(e.message||e));
+  }
+}
 async function imgedUndo(){
   if(!IMGED.undoStack.length) return;
   IMGED.redoStack.push(IMGED.cv.toDataURL('image/png'));
@@ -3355,6 +3411,7 @@ async function openImgEditor(id, idx){
       <button class="btn ghost sm" data-t="crop">✂ 크롭</button>
       <label style="color:#dfe7df;font-size:.78rem;display:flex;align-items:center;gap:.3rem">굵기<input id="imged-size" type="range" min="2" max="60" value="14" style="width:80px"></label>
       <button class="btn ghost sm" onclick="imgedSharpen()" title="흐린 스캔을 깨끗한 흑백으로">✨ 선명하게</button>
+      <button class="btn ghost sm" onclick="imgedAiRedraw()" title="AI가 그림을 벡터(SVG)로 깨끗하게 다시 그립니다 (API 키 필요)">🪄 AI로 새로 그리기</button>
       <label style="color:#dfe7df;font-size:.78rem;display:flex;align-items:center;gap:.3rem">기울기<input id="imged-rot" type="range" min="-7" max="7" step="0.2" value="0" style="width:80px"></label>
       <button class="btn ghost sm" onclick="imgedBakeRotate()">기울기 적용</button>
       <button class="btn ghost sm" onclick="imgedUndo()">↶ 취소</button>
