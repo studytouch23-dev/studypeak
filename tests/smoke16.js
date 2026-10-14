@@ -34,9 +34,11 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     const mk=(id,q,ch,sol)=>({id, question:q, choices:ch, answer:'', solution:sol, images:[], imgN:0,
       subject:'확률과 통계', chapter:'경우의 수', section:'', grade:'고2', srcType:'기출', srcName:'세화여고', srcYear:'2026',
       difficulty:4, tags:[], origNo:'', reviewed:false, createdAt:Date.now(), updatedAt:Date.now()});
+    let seedT = Date.now();
     const ps=[ mk('s1', long, ['① $45$','② $48$','③ $51$','④ $54$','⑤ $57$'], ''),
       mk('s2','간단한 문제 $1+1$의 값은?',['① 1','② 2','③ 3','④ 4','⑤ 5'],'자명하다. 답 ②'),
       mk('s3','숫자 $2,3,4,4,5,6$을 나열할 때 소수끼리 이웃하지 않을 확률을 구하시오.',[],'') ];
+    ps.forEach((p,i)=>{ p.createdAt = seedT - i; p.updatedAt = seedT - i; });  // s1이 항상 최신(첫 카드)이 되도록
     for(const p of ps){ await saveProblem(p); state.problems.push(lightenProblem(p)); }
     state.cart=['s1','s2','s3']; persistCart(); go('db'); renderDB();
   });

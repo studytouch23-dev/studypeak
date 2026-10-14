@@ -19,10 +19,10 @@ JS는 `/* ═══ 섹션명 ═══ */` 주석으로 구획되어 있다. Gr
 | 단원태그 관리 | `renderTags`, `add/rename/deleteSubject·Chapter·Section`, `remapProblems` |
 | 등록(단건/일괄) | `saveSingle`, `splitBulk`, `parseAnswerBlock`(해설지 [답] 형식), `saveBulk` |
 | 파일 파서 | `parseHWPX`, `parsePDF`, `hwpEqToLatex`, `extractTextFromFile`, `handleUploadFiles` |
-| PDF 영역 에디터 | `PDFED` 상태, `openPdfEditor(res,{solDefault})`, 페이지 `mode: prob/sol/skip`(클릭 순환), `detectRegionsByAnchors`, `detectRegionsByPixels`, `pdfedFinish`(해설 영역→`d.solImg` 번호 매칭), 그림 크롭 `validFigBox`/`cropDataURL`/`openImgCrop`, 그림 편집기 `IMGED`/`openImgEditor`(지우개·선명하게·기울기·스탬프, 저장은 saveProblem 경유), AI 벡터 복원 `imgedAiRedraw`/`sanitizeSvg`(Claude 비전→SVG, viewBox로 크기 결정·width/height 주입 필수) |
+| PDF 영역 에디터 | `PDFED` 상태, `openPdfEditor(res,{solDefault})`(PDF 여러 개 통합: pg.srcName/fileSol, 파일명·'정답 및 해설' 표제로 페이지 자동 해설 분류), 페이지 `mode: prob/sol/skip`(클릭 순환), `detectRegionsByAnchors`(마침표 앵커 우선 + `bestAnchorSeq` 번호 수열 정합으로 쪽번호·꼬리말 숫자 제거), `detectRegionsByPixels`, `pdfedFinish`(해설 영역→`d.solImg` 번호 매칭), 그림 크롭 `validFigBox`/`cropDataURL`/`openImgCrop`, 그림 편집기 `IMGED`/`openImgEditor`(지우개·선명하게·기울기·스탬프, 저장은 saveProblem 경유), AI 벡터 복원 `imgedAiRedraw`/`sanitizeSvg`(Claude 비전→SVG, viewBox로 크기 결정·width/height 주입 필수) |
 | 검색·작업 | `problemsFiltered`, `renderDB`(30/페이지), `renderTree`, `semanticSearch`(bigram), `imgHash`(aHash 이미지검색), 프리셋 |
 | 일괄 작업 | `openBatchTag`, `batchAutoTag`, `batchReviewed`, `batchDelete` |
-| AI 변환 | `aiJsonCall`(공용 호출: `aiHeaders()`에 키·워크스페이스 ID, 재시도·오류 한국어 안내), `aiTranscribeImage`, `aiTranscribeDrafts`, `batchAiTranscribe`, `aiSolveProblem`/`batchAiSolve`/`aiSolveDetail`(해설 생성, #AI해설 태그), `batchQa`/`ruleCheckProblem`/`aiQaProblem`(검수: 깨끗→reviewed, 이상→#검수주의) — 테스트는 page에서 window.fetch 스텁 |
+| AI 변환 | `aiJsonCall`(공용 호출: `aiHeaders()`에 키·워크스페이스 ID, 재시도·오류 한국어 안내), `aiTranscribeImage`, `aiTranscribeDrafts`, `batchAiTranscribe`(단원 태깅은 소단원까지: `curriculumBriefFull` 분류표 + CURRICULUM 대조 검증), `aiSolveProblem`/`batchAiSolve`/`aiSolveDetail`(해설 생성, #AI해설 태그), `batchQa`/`ruleCheckProblem`/`aiQaProblem`/`aiFixProblem`(검수→자동수정→재검수: 통과→reviewed+#AI수정, 실패→#검수주의) — 테스트는 page에서 window.fetch 스텁(교정자/검수자 프롬프트로 분기) |
 | 학습지 | `renderSheet`, `autoCompose`, `printSheet`(doctype 4종), `setPoint` |
 | HTML 내보내기 | `downloadHtmlExport('sheet'|'book')`, `buildHtmlExport`, `mathToHtml`(katex.renderToString 사전 렌더), `htmlProblemBody`(박스·[그림] 슬롯·선택지 공용 렌더) — 내보내는 파일 안의 `</script>`는 반드시 `<\/script>`로 쓸 것(단일 파일 앱이라 스크립트가 끊김) |
 | HWPX 생성 | `latexToHwpEq`, `eqMeasure`(수식 크기), `hwpxEquation`, `hwpxPic`/`registerHwpxBin`, `saveHwpxFile`, `downloadHWPX` |
