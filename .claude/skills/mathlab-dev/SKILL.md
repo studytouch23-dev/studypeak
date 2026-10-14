@@ -22,7 +22,7 @@ JS는 `/* ═══ 섹션명 ═══ */` 주석으로 구획되어 있다. Gr
 | PDF 영역 에디터 | `PDFED` 상태, `openPdfEditor(res,{solDefault})`, 페이지 `mode: prob/sol/skip`(클릭 순환), `detectRegionsByAnchors`, `detectRegionsByPixels`, `pdfedFinish`(해설 영역→`d.solImg` 번호 매칭), 그림 크롭 `validFigBox`/`cropDataURL`/`openImgCrop` |
 | 검색·작업 | `problemsFiltered`, `renderDB`(30/페이지), `renderTree`, `semanticSearch`(bigram), `imgHash`(aHash 이미지검색), 프리셋 |
 | 일괄 작업 | `openBatchTag`, `batchAutoTag`, `batchReviewed`, `batchDelete` |
-| AI 변환 | `aiJsonCall`(공용 호출: `aiHeaders()`에 키·워크스페이스 ID, 재시도·오류 한국어 안내), `aiTranscribeImage`, `aiTranscribeDrafts`, `batchAiTranscribe`, `aiSolveProblem`/`batchAiSolve`/`aiSolveDetail`(해설 생성, #AI해설 태그) — 테스트는 page에서 window.fetch 스텁 |
+| AI 변환 | `aiJsonCall`(공용 호출: `aiHeaders()`에 키·워크스페이스 ID, 재시도·오류 한국어 안내), `aiTranscribeImage`, `aiTranscribeDrafts`, `batchAiTranscribe`, `aiSolveProblem`/`batchAiSolve`/`aiSolveDetail`(해설 생성, #AI해설 태그), `batchQa`/`ruleCheckProblem`/`aiQaProblem`(검수: 깨끗→reviewed, 이상→#검수주의) — 테스트는 page에서 window.fetch 스텁 |
 | 학습지 | `renderSheet`, `autoCompose`, `printSheet`(doctype 4종), `setPoint` |
 | HWPX 생성 | `latexToHwpEq`, `eqMeasure`(수식 크기), `hwpxEquation`, `hwpxPic`/`registerHwpxBin`, `saveHwpxFile`, `downloadHWPX` |
 
