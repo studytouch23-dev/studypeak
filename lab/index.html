@@ -2850,10 +2850,14 @@ function clearAiSettings(){
 /* AI가 역슬래시를 이중 이스케이프해 본문에 리터럴 \n(₩n으로 보임)이 남는 경우를 줄바꿈으로 정리.
    수식($...$) 안은 건드리지 않는다(\neq, \nabla 같은 명령 보호). */
 function fixAiNewlines(s){
-  return String(s||'').split(/(\$\$[^$]+\$\$|\$[^$\n]+\$)/).map((part,i)=>
+  // $$…$$(여러 줄 포함)는 한 줄짜리 $…$ 로 정규화 — 한글 수식 run 분리가 줄 단위라서
+  s = String(s||'').replace(/\$\$\s*([^$]+?)\s*\$\$/g, (m,eq)=>'$'+eq.replace(/\s+/g,' ').trim()+'$');
+  return s.split(/(\$\$[^$]+\$\$|\$[^$\n]+\$)/).map((part,i)=>
     i%2 ? part : part.replace(/\\n/g,'\n').replace(/\\t/g,' ')
   ).join('');
 }
+/* 그림 위치 마커: AI가 그림이 있던 자리에 [그림] 을 넣는다. "(그림: 설명)" 같은 대체 문구도 자리로 취급 */
+const IMG_SLOT_RE = /^\s*(\[그림\s*\d*\]|\(그림\s*[::][^)]*\)?)\s*$/;
 /* 본문이 그림·표·그래프를 언급하면 AI가 hasFigure=false라 해도 이미지를 지우지 않는다(표·그래프 유실 방지) */
 const AI_FIG_RE = /그림|그래프|도형|도표|다음 표|아래 표|주어진 표|(?<![가-힣])표[를는에와가]/;
 function curriculumBrief(){
@@ -2870,7 +2874,9 @@ function aiPrompt(){
   +'"chapter":"",  // 그 과목의 대단원명 중 하나. 불확실하면 ""\n'
   +'"difficulty": 3}  // 1~5 난이도 추정(정수)\n'
   +'분류표:\n'+curriculumBrief()+'\n읽을 수 없는 글자는 [판독불가]로 표시하세요.\n'
-  +'테두리 상자 안의 조건((가), (나) 등)이나 <보기>(ㄱ, ㄴ, ㄷ)는 반드시 question 안에서 상자 내용 바로 앞줄에 [박스], 바로 뒷줄에 [/박스] 를 한 줄씩 넣어 표시하세요. 상자 밖 문장과 섞지 마세요. 원본의 그림·표·도형·상자 배치를 최대한 충실하게 옮기세요.';
+  +'테두리 상자 안의 조건((가), (나) 등)이나 <보기>(ㄱ, ㄴ, ㄷ)는 반드시 question 안에서 상자 내용 바로 앞줄에 [박스], 바로 뒷줄에 [/박스] 를 한 줄씩 넣어 표시하세요. 상자 밖 문장과 섞지 마세요.\n'
+  +'그림·그래프·도형·표가 있던 자리에는 question 안에 [그림] 을 한 줄로 넣으세요(상자 안에 있었으면 [박스]와 [/박스] 사이의 원래 자리에). 그림 내용을 말로 풀어 쓰지 말고 반드시 [그림] 표시만 하세요. 원본의 배치를 최대한 충실하게 재현하는 것이 목표입니다.\n'
+  +'figureBox는 최대한 정밀하게: 그림의 테두리에 밀착한 좌표를 소수점 셋째 자리까지 쓰고, 주변 문장·선택지를 포함하지 마세요. 수식은 $$ 대신 항상 한 줄짜리 $...$ 를 쓰세요.';
 }
 /* AI의 JSON이 어긋나도 살려내는 관대한 파서:
    문자열 안의 생 줄바꿈·탭을 이스케이프하고, 출력이 중간에 잘렸으면 문자열·배열·중괄호를 닫아서 다시 시도 */
@@ -2952,19 +2958,47 @@ function validFigBox(b){
     && b.w>0.04 && b.h>0.04 && b.w<=1 && b.h<=1 && b.x>=-0.02 && b.y>=-0.02 && b.x+b.w<=1.05 && b.y+b.h<=1.05
     && b.w*b.h < 0.82;                                     // 이미지 거의 전체면 자르는 의미 없음
 }
-function cropDataURL(dataURL, box){ // box: 0~1 비율 좌표. 실패 시 null
+function cropDataURL(dataURL, box){ // box: 0~1 비율 좌표. AI 좌표를 픽셀 기준으로 정밀 보정. 실패 시 null
   return new Promise(res=>{
     const im = new Image();
     im.onload = ()=>{
       try{
-        const W = im.naturalWidth, H = im.naturalHeight, P = 0.025;   // 2.5% 여유
-        let x = Math.max(0, Math.round((box.x-P)*W)), y = Math.max(0, Math.round((box.y-P)*H));
-        let w = Math.min(W-x, Math.round((box.w+2*P)*W)), h = Math.min(H-y, Math.round((box.h+2*P)*H));
+        const W = im.naturalWidth, H = im.naturalHeight;
+        if(!W || !H) return res(null);
+        const full = document.createElement('canvas'); full.width=W; full.height=H;
+        const fctx = full.getContext('2d');
+        fctx.fillStyle='#fff'; fctx.fillRect(0,0,W,H);
+        fctx.drawImage(im,0,0);
+        const d = fctx.getImageData(0,0,W,H).data;
+        const ink = (x,y)=>{ const i=(y*W+x)*4; return 0.299*d[i]+0.587*d[i+1]+0.114*d[i+2] < 235; };
+        const rowInk = (y,x0,x1)=>{ if(y<0||y>=H) return false; for(let x=Math.max(0,x0); x<Math.min(W,x1); x+=2) if(ink(x,y)) return true; return false; };
+        const colInk = (x,y0,y1)=>{ if(x<0||x>=W) return false; for(let y=Math.max(0,y0); y<Math.min(H,y1); y+=2) if(ink(x,y)) return true; return false; };
+        // AI 좌표에서 시작
+        let x0 = Math.round(box.x*W), y0 = Math.round(box.y*H);
+        let x1 = Math.round((box.x+box.w)*W), y1 = Math.round((box.y+box.h)*H);
+        x0=Math.max(0,x0); y0=Math.max(0,y0); x1=Math.min(W,x1); y1=Math.min(H,y1);
+        if(x1-x0<24 || y1-y0<24) return res(null);
+        // ① 경계가 그림 획을 자르고 있으면 흰 줄이 나올 때까지 바깥으로 확장 (최대 8%)
+        const exW = Math.round(W*0.08), exH = Math.round(H*0.08);
+        let n;
+        for(n=0; n<exH && rowInk(y0-1, x0, x1); n++) y0--;
+        for(n=0; n<exH && rowInk(y1,   x0, x1); n++) y1++;
+        for(n=0; n<exW && colInk(x0-1, y0, y1); n++) x0--;
+        for(n=0; n<exW && colInk(x1,   y0, y1); n++) x1++;
+        // ② 안쪽의 빈 여백은 깎아서 그림에 밀착 (잘림 없음 — 흰 줄만 제거)
+        while(y1-y0>24 && !rowInk(y0, x0, x1)) y0++;
+        while(y1-y0>24 && !rowInk(y1-1, x0, x1)) y1--;
+        while(x1-x0>24 && !colInk(x0, y0, y1)) x0++;
+        while(x1-x0>24 && !colInk(x1-1, y0, y1)) x1--;
+        // ③ 일정한 얇은 여백
+        const PAD = Math.max(6, Math.round(Math.min(W,H)*0.012));
+        x0=Math.max(0,x0-PAD); y0=Math.max(0,y0-PAD); x1=Math.min(W,x1+PAD); y1=Math.min(H,y1+PAD);
+        const w = x1-x0, h = y1-y0;
         if(w<24 || h<24) return res(null);
         const c = document.createElement('canvas'); c.width=w; c.height=h;
         const ctx = c.getContext('2d');
         ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h);
-        ctx.drawImage(im, x,y,w,h, 0,0,w,h);
+        ctx.drawImage(full, x0,y0,w,h, 0,0,w,h);
         res(c.toDataURL('image/jpeg', 0.9));
       }catch(e){ res(null); }
     };
@@ -3590,8 +3624,14 @@ async function printSheet(){
 
   const qHTML = list.map((p,i)=>`
     <div class="pr-q">
-      <span class="qn">${i+1}.</span>${pts(p)!=null?` <span style="font-size:8.5pt">[${pts(p)}점]</span>`:''} ${splitBoxBlocks(p.question).map(b=>b.box?`<div class="condbox">${b.lines.map(esc).join('<br>')}</div>`:`<span>${esc(b.lines.join('\n'))}</span>`).join('')}
-      ${(imgsMap.get(p.id)||[]).map(d=>`<img src="${d}" alt="">`).join('')}
+      <span class="qn">${i+1}.</span>${pts(p)!=null?` <span style="font-size:8.5pt">[${pts(p)}점]</span>`:''} ${(()=>{
+        const imgs = (imgsMap.get(p.id)||[]).slice();
+        const img = ()=>{ const d = imgs.shift(); return d?`<img src="${d}" alt="">`:''; };
+        const html = splitBoxBlocks(p.question).map(b=> b.box
+          ? `<div class="condbox">${b.lines.map(l=>IMG_SLOT_RE.test(l)?img():esc(l)).join('<br>')}</div>`
+          : b.lines.map(l=>IMG_SLOT_RE.test(l)?img():`<span>${esc(l)} </span>`).join('')).join('');
+        return html + imgs.map(d=>`<img src="${d}" alt="">`).join('');
+      })()}
       ${p.choices&&p.choices.length?`<div class="choices">${p.choices.map(c=>esc(c)).join('&nbsp;&nbsp; ')}</div>`:''}
       ${withMeta&&p.srcName?`<div style="font-size:8pt;color:#777">[${esc(p.srcType)} · ${esc(p.srcName)}${p.srcYear?' '+esc(p.srcYear):''}]</div>`:''}
     </div>`).join('');
@@ -3898,6 +3938,7 @@ function convertSqrts(s){ // \sqrt{A} → sqrt {A}, 중첩 중괄호 안전
 function latexToHwpEq(tex){
   let s = String(tex);
   s = s.replace(/\\left\s*/g,'').replace(/\\right\s*/g,'');
+  s = s.replace(/\\([()\[\]])/g, (m,c)=> c==='(' ? '(' : c===')' ? ')' : ' ');  // \( \) \[ \] 구분자 정리
   s = convertFracs(s);
   s = convertSqrts(s);
   s = s.replace(/\\begin\{cases\}/g, ' cases{ ').replace(/\\end\{cases\}/g, ' } ');
@@ -4062,20 +4103,26 @@ async function downloadHWPX(){
       const p = list[i];
       const headTxt = (i+1)+'.'+(pts(p)!=null?` [${pts(p)}점]`:'')+' ';
       const blocks = splitBoxBlocks(p.question);
+      const imgParas = await hwpxImageParas(await imagesOf(p));
+      let imgUsed = 0;
+      const takeImg = ()=> imgUsed < imgParas.length ? imgParas[imgUsed++] : null;
       let firstDone = false;
       for(const b of blocks){
-        if(b.box){                                    // 조건 상자 → 테두리 표
+        if(b.box){                                    // 조건 상자 → 테두리 표 ([그림] 자리에는 그림)
           if(!firstDone){ paras.push(hwpxP(headTxt, 1, 0)); firstDone = true; }
-          paras.push(hwpxBoxP(b.lines, {w:40000, borderFill:3}));
+          const items = b.lines.map(l=> IMG_SLOT_RE.test(l) ? {xml: takeImg()} : l)
+            .filter(it=> typeof it==='string' ? true : !!it.xml);
+          paras.push(hwpxBoxP(items, {w:40000, borderFill:3}));
           continue;
         }
         for(const l of b.lines){
+          if(IMG_SLOT_RE.test(l)){ const ip = takeImg(); if(ip) paras.push(ip); continue; }
           if(!firstDone){ paras.push(hwpxP(headTxt+l, 1, 0)); firstDone = true; }
           else paras.push(hwpxP(l, 0, 0));
         }
       }
       if(!firstDone) paras.push(hwpxP(headTxt, 1, 0));
-      paras.push(...await hwpxImageParas(await imagesOf(p)));
+      paras.push(...imgParas.slice(imgUsed));         // 자리 표시가 없던 나머지 그림은 끝에
       if(p.choices && p.choices.length) paras.push(hwpxP(p.choices.join('    '), 0, 0));
       if(withMeta && p.srcName) paras.push(hwpxP(`[${p.srcType||'출처'} · ${p.srcName}${p.srcYear?' '+p.srcYear:''}]`, 0, 0));
       paras.push(hwpxP('',0,0));
@@ -4157,7 +4204,10 @@ function mockSlotTbl(paras, h, opts){ // 1×1 표. opts:{w, borderFill(기본 1=
 }
 function hwpxBoxP(lines, opts){ // 조건 상자: 테두리 1×1 표(treatAsChar)를 담은 문단. 높이는 최소값 — 내용만큼 늘어남
   opts = opts||{};
-  const inner = lines.map(l=>hwpxP(l, opts.charPr||0, opts.paraPr!=null?opts.paraPr:0));
+  // 항목이 문자열이면 문단으로, {xml}이면 이미 만든 문단(그림 등)을 그대로 넣는다
+  const inner = lines.map(l=> typeof l==='string'
+    ? hwpxP(l, opts.charPr||0, opts.paraPr!=null?opts.paraPr:0)
+    : (l && l.xml) || '').filter(Boolean);
   const h = Math.max(1200, lines.length*1900 + 1400);
   const tbl = mockSlotTbl(inner, h, { w:opts.w||40000, borderFill:opts.borderFill||3,
     outV:283, inMarg:{l:1130, r:1130, t:850, b:850} });
@@ -4200,22 +4250,27 @@ async function mockItemParas(p, no, pts, label){ // 한 문항 → 슬롯 안 �
     const lastText = [...blocks].reverse().find(b=>!b.box) || blocks[blocks.length-1];
     lastText.lines[lastText.lines.length-1] += ` [${pts}점]`;
   }
+  const imgParas = await hwpxImageParas(await imagesOf(p), {maxW:14470, maxH:17000, paraPr:1}); // 단 폭 45%·최대 60mm·가운데(§8)
+  let imgUsed = 0;
+  const takeImg = ()=> imgUsed < imgParas.length ? imgParas[imgUsed++] : null;
   let firstDone = false;
   const numP = txt=>`<hp:p paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="3"><hp:t>${xesc(no+'. ')}</hp:t></hp:run>${hwpxRuns(txt, 0)}</hp:p>`;
   for(const b of blocks){
-    if(b.box){                                               // 조건 상자(§8-4): 들여쓰기 폭의 테두리 표
+    if(b.box){                                               // 조건 상자(§8-4): 들여쓰기 폭의 테두리 표 ([그림] 자리 포함)
       if(!firstDone){ out.push(numP('')); firstDone = true; }
-      out.push(hwpxBoxP(b.lines, {w:30400, borderFill:4, paraPr:2, wrapPr:2}));
+      const items = b.lines.map(l=> IMG_SLOT_RE.test(l) ? {xml: takeImg()} : l)
+        .filter(it=> typeof it==='string' ? true : !!it.xml);
+      out.push(hwpxBoxP(items, {w:30400, borderFill:4, paraPr:2, wrapPr:2}));
       continue;
     }
     for(const l of b.lines){
+      if(IMG_SLOT_RE.test(l)){ if(!firstDone){ out.push(numP('')); firstDone = true; } const ip = takeImg(); if(ip) out.push(ip); continue; }
       if(!firstDone){ out.push(numP(l)); firstDone = true; continue; }
       if(/^\$\$?[^$]+\$\$?$/.test(l)) out.push(hwpxP(l, 0, 3)); // 독립 수식: 왼쪽+추가 들여쓰기(§6)
       else out.push(hwpxP(l, 0, 2));
     }
   }
-  const imgs = await imagesOf(p);
-  if(imgs.length) out.push(...await hwpxImageParas(imgs, {maxW:14470, maxH:17000, paraPr:1})); // 단 폭 45%·최대 60mm·가운데(§8)
+  out.push(...imgParas.slice(imgUsed));                      // 자리 표시 없던 그림은 질문 뒤에
   const ch = mockChoiceParas(p.choices);
   if(ch.paras.length){ out.push(hwpxP('', 0, 2)); out.push(...ch.paras); }
   return out;
@@ -4228,6 +4283,7 @@ async function mockEstimateHU(p, hasLabel, pts){ // §9 사전 높이 추정(HWP
   for(const b of blocks){
     const ls = b.lines.map(s=>s.trim()).filter(Boolean);
     for(const l of ls){
+      if(IMG_SLOT_RE.test(l)) continue;                      // 그림 높이는 아래에서 별도 합산
       if(!b.box && /^\$\$?[^$]+\$\$?$/.test(l)){ h += Math.max(Math.round(eqMeasure(latexToHwpEq(l.replace(/\$/g,''))).h*1.1), MOCK.LINE) + 2800; continue; }
       h += Math.max(1, Math.ceil(mockVisPt(l)/usable)) * MOCK.LINE;
     }
