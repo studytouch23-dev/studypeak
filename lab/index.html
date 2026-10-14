@@ -397,6 +397,43 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
     <button class="btn ghost" id="mode-bulk" onclick="setAddMode('bulk')">일괄 등록 (붙여넣기 분할)</button>
   </div>
 
+  <div class="card" id="gen-card">
+    <h3>🤖 AI 문제 생성 — 클로드 프로젝트 연동 (Max 구독 사용)</h3>
+    <p class="hint" style="margin-bottom:.6rem">
+      API 과금 없이 <b>claude.ai의 Max 구독</b>으로 문제를 만듭니다: ① 아래에서 조건을 고르고 <b>[프롬프트 복사]</b>
+      ② claude.ai의 <b>[수학 전용] 스터디피크 문제 생성</b> 프로젝트에 붙여넣어 생성
+      ③ 결과 전체를 복사해 아래 <b>일괄 등록</b> 칸에 붙여넣으면 문제·정답·해설이 자동 분할됩니다.
+    </p>
+    <div class="grid3">
+      <div class="field"><label>과목</label><select id="g-subject"></select></div>
+      <div class="field"><label>대단원</label><select id="g-chapter"></select></div>
+      <div class="field"><label>중단원</label><select id="g-section"></select></div>
+    </div>
+    <div class="grid4">
+      <div class="field"><label>학년</label><select id="g-grade"></select></div>
+      <div class="field"><label>난이도</label><select id="g-diff">
+        <option value="혼합">혼합 (쉬움~어려움)</option>
+        <option value="1">● 1 (쉬움)</option><option value="2">●● 2</option>
+        <option value="3" selected>●●● 3</option><option value="4">●●●● 4</option>
+        <option value="5">●●●●● 5 (킬러)</option></select></div>
+      <div class="field"><label>문항 수</label><input id="g-count" type="number" min="1" max="30" value="5"></div>
+      <div class="field"><label>유형</label><select id="g-type">
+        <option>객관식(5지선다)</option><option>단답형</option><option selected>혼합</option></select></div>
+    </div>
+    <div class="field"><label>추가 요청 (선택)</label><input id="g-extra" placeholder="예: 세화여고 중간고사 스타일로, 조건 상자 (가)(나) 포함 문항 2개 이상"></div>
+    <details style="margin-bottom:.6rem">
+      <summary class="hint" style="cursor:pointer"><b>생성 지침(프로젝트 지침) — 최초 1회 붙여넣기 (선택)</b></summary>
+      <p class="hint" style="margin:.4rem 0">claude.ai 프로젝트에 이미 지침이 저장돼 있다면 비워 두세요(프로젝트가 알아서 적용).
+        프로젝트 없이 일반 대화에서 생성하려면 그 지침을 여기 붙여넣으면 프롬프트에 포함됩니다.</p>
+      <textarea id="g-inst" style="min-height:80px" placeholder="[수학 전용] 스터디피크 문제 생성 프로젝트의 지침 내용"></textarea>
+    </details>
+    <div class="row">
+      <button class="btn gold" onclick="copyGenPrompt()">📋 생성 프롬프트 복사</button>
+      <a class="btn ghost" href="https://claude.ai/projects" target="_blank" rel="noopener">claude.ai 프로젝트 열기 ↗</a>
+      <span class="hint" id="gen-status"></span>
+    </div>
+  </div>
+
   <div id="add-single">
     <div class="card">
       <h3>① 문제 내용</h3>
@@ -1378,9 +1415,40 @@ function parseAnswerBlock(chunk){
   sol = sol.replace(/^\s*\[풀이\]\s*\n?/,'').trim();
   return { question, choices, ans, sol };
 }
+function splitChoicesFromBody(body){ // 본문 꼬리의 ①~⑤ 선택지를 분리
+  const i = body.indexOf('①');
+  if(i<0) return { text: body.trim(), choices: [] };
+  const choices = body.slice(i).split(/(?=[①②③④⑤])/).map(s=>s.trim()).filter(Boolean);
+  if(choices.length<2) return { text: body.trim(), choices: [] };
+  return { text: body.slice(0,i).trim(), choices };
+}
 function splitBulk(){
   const raw = $('#bulk-text').value;
   if(!raw.trim()){ toast('파일을 올리거나 텍스트를 먼저 붙여넣으세요.'); return; }
+  // ── AI 생성 형식: "번호. 문제 … [답] … [해설] …" — 형식이 고정이라 결정적으로 분할 ──
+  if(/^\s*\d{1,2}\.\s/m.test(raw) && /^\s*\[답\]/m.test(raw) && /^\s*\[해설\]/m.test(raw)){
+    const chunks = ('\n'+raw.replace(/\r/g,'')).split(/\n(?=\s*\d{1,2}\.\s)/)
+      .map(s=>s.trim()).filter(s=>/^\d{1,2}\.\s/.test(s));
+    if(chunks.length){
+      const drafts = chunks.map(c=>{
+        const num = c.match(/^(\d{1,2})\./)[1];
+        const ansIdx = c.search(/^\s*\[답\]/m), solIdx = c.search(/^\s*\[해설\]/m);
+        const cut = Math.min(ansIdx<0?Infinity:ansIdx, solIdx<0?Infinity:solIdx);
+        const body = (isFinite(cut)? c.slice(0,cut) : c).replace(/^\d{1,2}\.\s*/,'').trim();
+        const ansM = c.match(/^\s*\[답\]\s*(.+)$/m);
+        const sol = solIdx>=0 ? c.slice(solIdx).replace(/^\s*\[해설\]\s*/,'').trim() : '';
+        const { text, choices } = splitChoicesFromBody(body);
+        return { text, num, sol, ans: ansM? ansM[1].trim() : '', choices };
+      }).filter(d=>d.text.length>=4);
+      if(drafts.length){
+        state.bulkDrafts = drafts;
+        $('#bulk-preview-card').style.display='block';
+        rerenderBulk();
+        $('#bulk-status').textContent = `AI 생성 형식 감지 — ${drafts.length}문항 (문제·선택지·정답·해설 자동 분리). 확인 후 [전체 저장]하세요.`;
+        return;
+      }
+    }
+  }
   // ── 해설지 형식 감지: [답] 블록이 2개 이상이면 번호 분할 대신 블록 분할 ──
   const ansLines = (raw.match(/^\s*\[답\]/gm)||[]).length;
   if(ansLines>=2){
@@ -2675,6 +2743,44 @@ function clearCart(){
   state.cart=[]; persistCart();
   if($('#view-db').classList.contains('active')) renderDB();
   if($('#view-sheet').classList.contains('active')) renderSheet();
+}
+
+/* ═══ AI 문제 생성 — claude.ai 프로젝트 연동(Max 구독, API 과금 없음) ═══
+   랩이 프롬프트를 만들어 주고, 생성은 claude.ai에서, 결과는 일괄 등록 칸으로 왕복한다.
+   출력 형식은 splitBulk/parseAnswerBlock이 그대로 읽는 번호+[답]+[해설] 형식. */
+function buildGenPrompt(){
+  const subj = $('#g-subject').value, chap = $('#g-chapter').value, sect = $('#g-section').value;
+  const grade = $('#g-grade').value, diff = $('#g-diff').value;
+  const count = Math.max(1, Math.min(30, +$('#g-count').value||5));
+  const type = $('#g-type').value, extra = $('#g-extra').value.trim();
+  const inst = $('#g-inst').value.trim();
+  localStorage.setItem('sp-lab-geninst', inst);
+  return (inst ? inst+'\n\n---\n\n' : '')
+    +`한국 고등학교 수학 문제 ${count}개를 새로 만들어 주세요.\n`
+    +`- 범위: ${subj}${chap?' > '+chap:''}${sect?' > '+sect:''}\n`
+    +`- 대상 학년: ${grade||'고등'}\n`
+    +`- 난이도: ${diff==='혼합'?'쉬움부터 어려움까지 고르게':diff+' / 5 수준으로 일정하게'}\n`
+    +`- 유형: ${type}\n`
+    +(extra?`- 추가 요청: ${extra}\n`:'')
+    +`\n출력 형식(반드시 그대로 지킬 것 — 프로그램이 자동으로 읽습니다):\n`
+    +`- 각 문항은 "1. " 처럼 번호+마침표+공백으로 시작\n`
+    +`- 모든 수식은 $...$ 안에 LaTeX로 (예: $\\dfrac{1}{2}$, $x^{2}$)\n`
+    +`- 객관식은 ① ② ③ ④ ⑤ 선택지를 본문 다음 줄에\n`
+    +`- 조건 상자가 필요하면 상자 내용 앞뒤 줄에 [박스] / [/박스]\n`
+    +`- 각 문항 마지막에 "[답] 정답" 한 줄, 그 다음 "[해설] 풀이 과정" (해설도 수식은 $...$)\n`
+    +`- 문항 사이에는 빈 줄 하나. 인사말·설명·제목 등 다른 텍스트는 절대 쓰지 말 것`;
+}
+async function copyGenPrompt(){
+  const txt = buildGenPrompt();
+  try{ await navigator.clipboard.writeText(txt); }
+  catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = txt; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove();
+  }
+  $('#gen-status').textContent = '✅ 복사됨 — claude.ai 프로젝트에 붙여넣고, 생성 결과를 아래 일괄 등록 칸에 붙여넣으세요.';
+  setAddMode('bulk');
+  logJob('문제 생성 프롬프트', [$('#g-subject').value,$('#g-chapter').value].filter(Boolean).join(' > '), $('#g-count').value+'문항 요청');
 }
 
 /* ═══ AI 변환 (이미지 문항 → 텍스트·수식, 사용자 API 키) ═══ */
@@ -4436,6 +4542,10 @@ function renderDash(){
   })();
   fillSubjectSelect($('#f-subject'));
   linkUnitSelects($('#f-subject'), $('#f-chapter'), $('#f-section'));
+  fillSubjectSelect($('#g-subject'));
+  linkUnitSelects($('#g-subject'), $('#g-chapter'), $('#g-section'));
+  $('#g-grade').innerHTML = GRADES.map(g=>`<option ${g==='고2'?'selected':''}>${g}</option>`).join('');
+  $('#g-inst').value = localStorage.getItem('sp-lab-geninst')||'';
   fillSubjectSelect($('#b-subject'));
   fillSubjectSelect($('#filter-subject'), true);
   $('#f-grade').innerHTML = GRADES.map(g=>`<option>${g}</option>`).join('');
