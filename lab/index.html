@@ -845,6 +845,10 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 </div>
 
 <div id="toast"></div>
+<div id="ai-stopbar" style="display:none;position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:60;background:#23321f;color:#fff;padding:.5rem .9rem;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.3);align-items:center;gap:.7rem">
+  <span id="ai-stopbar-label">AI 작업 중…</span>
+  <button class="btn danger sm" onclick="aiBatchCancel()">⏹ 중지</button>
+</div>
 <div id="print-area"></div>
 
 <script>
@@ -1810,14 +1814,13 @@ async function parsePDF(file){
     const page = await pdf.getPage(i);
     const vp = page.getViewport({scale:1});
     const tc = await page.getTextContent();
-    const items = tc.items.map(it=>({str:it.str, x:it.transform[4], y:it.transform[5]}));
+    const items = tc.items.map(it=>({str:it.str, x:it.transform[4], y:it.transform[5], w:it.width||0}));
     const pg = {page, w:vp.width, h:vp.height, items, anchors:[], bodyLen:0, text:''};
+    pg.anchors = collectAnchors(items, vp.width, vp.height);
     for(const it of items){
       const s = it.str.trim();
       pg.text += s;
-      if(it.y < pg.h*0.06 || it.y > pg.h*0.94) continue;   // 꼬리말·머리말(쪽번호) 제외
-      if(/^\d{1,2}\.?$/.test(s)) pg.anchors.push({num:String(parseInt(s,10)), x:it.x, y:it.y, dot:s.endsWith('.')});
-      else pg.bodyLen += s.length;
+      if(!/^\d{1,3}\.?$/.test(s)) pg.bodyLen += s.length;
     }
     pg.isQuickAns = pg.text.includes('빠른정답') || pg.text.includes('빠른 정답');
     pg.ansLabels = items.filter(it=>/^(정답|해설)$/.test(it.str.trim())).length;
@@ -1839,6 +1842,25 @@ async function parsePDF(file){
   // 어느 쪽이든 영역 인식 에디터로 열 수 있도록 pdf를 함께 반환한다.
   const imageMode = anchorTotal >= 3 && (bodyTotal/pages.length) < 150;
   return { kind:'pdfEditor', pdf, pages, fileName:file.name, text:out.join('\n'), imageMode };
+}
+/* ── 번호 앵커 수집: 줄 맨 앞(왼쪽이 비어 있는) 숫자만 — 수식 속 =1, 7 같은 숫자 배제 ── */
+function collectAnchors(items, pgW, pgH){
+  const out = [];
+  for(const it of items){
+    const s = it.str.trim();
+    if(!/^\d{1,3}\.?$/.test(s)) continue;                   // 001·002 같은 세 자리 문항 번호도 인정
+    if(it.y < pgH*0.06 || it.y > pgH*0.94) continue;        // 꼬리말·머리말(쪽번호) 제외
+    // 같은 줄에서 왼쪽에 바짝 붙은 글자가 있으면 문장 속 숫자다 (단 사이 여백 10pt 이상은 허용)
+    const blocked = items.some(t=>{
+      if(t===it || !t.str.trim()) return false;
+      if(Math.abs(t.y - it.y) > 3) return false;
+      const end = t.x + (t.w||0);
+      return end <= it.x + 1 && it.x - end < 10;
+    });
+    if(blocked) continue;
+    out.push({num:String(parseInt(s,10)), x:it.x, y:it.y, dot:s.endsWith('.')});
+  }
+  return out;
 }
 /* ── 번호 앵커 기반 영역 자동 인식: top-left 좌표계 rect 목록 ── */
 function bestAnchorSeq(list){ // 읽기 순서에서 +1~+4씩 이어지는 최장 번호 수열만 신뢰 (쪽번호·배점·'5지선다형' 등 제거)
@@ -1862,7 +1884,9 @@ function detectRegionsByAnchors(pg, pageIdx){
   const dotted = anchors.filter(a=>a.dot);
   if(dotted.length>=2) anchors = dotted;
   const mid = pg.w/2;
-  const twoCol = anchors.some(a=>a.x < mid*0.8) && anchors.some(a=>a.x >= mid);
+  const rightXs = anchors.filter(a=>a.x >= mid).map(a=>a.x);
+  const twoCol = anchors.some(a=>a.x < mid*0.8) && rightXs.length>0
+    && Math.min(...rightXs) < pg.w*0.62;                  // 진짜 2단이면 오른단 번호는 가운데 부근에서 시작
   let cols = twoCol ? [anchors.filter(a=>a.x<mid), anchors.filter(a=>a.x>=mid)] : [anchors.slice()];
   cols = cols.map(c=>c.sort((a,b)=>b.y-a.y));             // PDF 좌표(아래 0) → 위에서 아래로
   // 번호 수열 정합 + 같은 번호 중복 제거
@@ -1927,6 +1951,7 @@ function detectRegionsByPixels(canvas, pgW, pgH, pageIdx, startNum){
     if(segStart>=0) segs.push([segStart,lastInk]);
     for(const [a,b] of segs){
       if(b-a < 22*sx) continue;                            // 너무 작은 조각(머리말 등) 제외
+      if(b < H*0.13) continue;                             // 페이지 맨 위 제목 띠(로고·표제)만으로 끝나는 조각 제외
       out.push({ page:pageIdx, x:x0/sx, y:(a-4)/sx, w:(x1-x0)/sx, h:(b-a+10)/sx, num:String(num++) });
     }
   }
@@ -2203,6 +2228,33 @@ function pdfedClearPage(){
   });
 })();
 /* 완료: 영역별 크롭 → 일괄 등록 초안 */
+/* 영역 가장자리 잉크 보정: 경계에 글·선·박스가 걸려 있으면 바깥으로 따라가 확장, 빈 여백은 축소 */
+function refineRectOnCanvas(img, X, Y, W, H, pgW, pgH){ // img: 페이지 전체 getImageData().data (페이지당 1회)
+  const dark = (x,y)=>{ if(x<0||y<0||x>=pgW||y>=pgH) return false;
+    const i=(y*pgW+x)*4; return (0.299*img[i]+0.587*img[i+1]+0.114*img[i+2]) < 190; };
+  const stripInk = (side, x0,y0,w,h)=>{ // 사각형 안쪽 해당 변의 3px 띠에 잉크가 있는지
+    let sx=x0, sy=y0, ex=x0+w, ey=y0+h;
+    if(side==='l') ex=x0+3; else if(side==='r') sx=x0+w-3;
+    else if(side==='t') ey=y0+3; else sy=y0+h-3;
+    for(let y=Math.max(0,sy|0); y<Math.min(pgH,ey); y+=2)
+      for(let x=Math.max(0,sx|0); x<Math.min(pgW,ex); x+=2) if(dark(x,y)) return true;
+    return false;
+  };
+  let x=X, y=Y, w=W, h=H;
+  const maxH = Math.min(W*0.35, pgW*0.2), maxV = 26;       // 가로는 잘린 박스를 따라, 세로는 소폭만
+  for(let e=0; e<maxH && stripInk('r', x,y,w,h); e+=3) w+=3;      // 오른쪽 확장
+  for(let e=0; e<maxH && stripInk('l', x,y,w,h); e+=3){ x-=3; w+=3; }
+  for(let e=0; e<maxV && stripInk('b', x,y,w,h); e+=3) h+=3;
+  for(let e=0; e<maxV && stripInk('t', x,y,w,h); e+=3){ y-=3; h+=3; }
+  const blank = side=>!stripInk(side, x,y,w,h);
+  while(w>60 && blank('r')) w-=3;                                 // 빈 여백 축소
+  while(w>60 && blank('l')){ x+=3; w-=3; }
+  while(h>40 && blank('b')) h-=3;
+  while(h>40 && blank('t')){ y+=3; h-=3; }
+  x-=5; y-=5; w+=10; h+=10;                                       // 숨 쉴 여백
+  x=Math.max(0,x); y=Math.max(0,y);
+  return { x, y, w: Math.min(w, pgW-x), h: Math.min(h, pgH-y) };
+}
 async function pdfedFinish(){
   if(!PDFED.regions.length){ toast('인식된 영역이 없습니다. 드래그로 영역을 추가하세요.'); return; }
   $('#pdfed-finish').disabled = true;
@@ -2217,10 +2269,13 @@ async function pdfedFinish(){
       const c = document.createElement('canvas');
       c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
       await pg.page.render({canvasContext:c.getContext('2d'), viewport:vp}).promise;
+      const pageImg = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
       for(const r of regs){
+        // 잉크 경계 보정: 경계에 걸린 조건 박스·선택지를 따라 확장, 빈 여백은 잘라냄
+        const rr = refineRectOnCanvas(pageImg, r.x*scale, r.y*scale, r.w*scale, r.h*scale, c.width, c.height);
         const c2 = document.createElement('canvas');
-        c2.width = Math.ceil(r.w*scale); c2.height = Math.ceil(r.h*scale);
-        c2.getContext('2d').drawImage(c, r.x*scale, r.y*scale, r.w*scale, r.h*scale, 0, 0, c2.width, c2.height);
+        c2.width = Math.ceil(rr.w); c2.height = Math.ceil(rr.h);
+        c2.getContext('2d').drawImage(c, rr.x, rr.y, rr.w, rr.h, 0, 0, c2.width, c2.height);
         const img = c2.toDataURL('image/jpeg', 0.87);
         if(r.kind==='sol') solPieces.push({ num:String(+r.num||r.num), img });
         else drafts.push({ text:'', num:r.num, sol:'', ans:'', img });
@@ -3002,6 +3057,22 @@ function aiHeaders(){ // 공통 API 헤더. 워크스페이스 ID가 저장돼 �
   if(wsid) h['anthropic-workspace-id'] = wsid;
   return h;
 }
+/* ── AI 일괄 작업 중지: 모든 AI 루프(변환·해설·검수)가 매 문항 전에 cancel 플래그를 확인 ── */
+const AI_BATCH = { running:false, cancel:false };
+function aiBatchStart(label){
+  AI_BATCH.running = true; AI_BATCH.cancel = false;
+  const b = $('#ai-stopbar');
+  if(b){ b.style.display='flex'; $('#ai-stopbar-label').textContent = label; }
+}
+function aiBatchDone(){
+  AI_BATCH.running = false; AI_BATCH.cancel = false;
+  const b = $('#ai-stopbar'); if(b) b.style.display='none';
+}
+function aiBatchCancel(){
+  if(!AI_BATCH.running) return;
+  AI_BATCH.cancel = true;
+  const l = $('#ai-stopbar-label'); if(l) l.textContent = '⏹ 중지 요청됨 — 진행 중인 문항까지만 끝냅니다…';
+}
 const AI_WS_HELP = '이 API 키는 워크스페이스에 속하지 않은 키입니다. 해결 방법 두 가지 중 하나를 쓰세요.\n'
   +'① (권장) console.anthropic.com → API Keys → [Create Key]에서 Workspace를 선택해 새 키를 만들고, 여기 키 칸에 바꿔 넣고 [저장]\n'
   +'② console.anthropic.com → Settings → Workspaces에서 워크스페이스 ID(wrkspc_...)를 복사해 아래 "워크스페이스 ID" 칸에 넣고 [저장]';
@@ -3354,8 +3425,10 @@ async function batchQa(){
     `[취소] 무료 규칙 검사만 — 수식 짝·잘림·선택지·그림/해설 유무 (수정 없음).\n\n`+
     `이상이 없는 문항은 자동으로 "검수 완료" 처리되고, 고쳐지지 않은 문항에는 #검수주의 태그가 붙습니다.`);
   const report = [];
-  let clean = 0, flagged = 0, fixedN = 0, aiFail = 0, lastErr = '';
+  let clean = 0, flagged = 0, fixedN = 0, aiFail = 0, lastErr = '', qaStopped = false;
+  aiBatchStart(useAi ? '🔎 AI 검수·자동 수정 중' : '🔎 규칙 검수 중');
   for(let i=0;i<list.length;i++){
+    if(AI_BATCH.cancel){ qaStopped = true; break; }
     const p = list[i];
     toast(`🔎 검수 중… ${i+1}/${list.length}`);
     let issues = ruleCheckProblem(p);
@@ -3387,13 +3460,14 @@ async function batchQa(){
     await saveProblem(p);
     report.push({ id:p.id, no: state.numOf ? state.numOf.get(p.id) : null, issues, fixed, q: stripBoxMarks(p.question||'').slice(0,60) });
   }
+  aiBatchDone();
   renderDB(); refreshCounts();
-  logJob('AI 검수', '선택 문항', `${list.length}개 중 이상 ${flagged}개`+(fixedN?` · 자동수정 ${fixedN}개`:'')+(useAi?' · AI 정밀':' · 규칙만'));
+  logJob('AI 검수', '선택 문항', `${report.length}개 중 이상 ${flagged}개`+(fixedN?` · 자동수정 ${fixedN}개`:'')+(useAi?' · AI 정밀':' · 규칙만')+(qaStopped?' · 중지됨':''));
   // 보고서 모달
   const m = $('#modal-body');
   m.innerHTML = `
     <button class="close" onclick="closeModal()">✕</button>
-    <h3>🔎 검수 결과 — ${list.length}문항 (${useAi?'규칙+AI 정밀+자동 수정':'규칙 검사만'})</h3>
+    <h3>🔎 검수 결과 — ${report.length}문항${qaStopped?` (⏹ 중지됨 — ${list.length}개 중 ${report.length}개까지 검수)`:''} (${useAi?'규칙+AI 정밀+자동 수정':'규칙 검사만'})</h3>
     <p class="hint">✅ 이상 없음·수정 완료 ${clean}개는 자동으로 <b>검수 완료</b> 처리했습니다.${fixedN?` 그중 🔧 <b>AI가 고쳐서 재검수를 통과한 문항이 ${fixedN}개</b>입니다(#AI수정 태그 — 한 번 훑어보시길 권합니다).`:''} ${flagged?`⚠ ${flagged}개는 자동 수정으로도 해결되지 않아 <b>#검수주의</b> 태그를 붙였으니 아래에서 확인하세요.`:''}${aiFail?` · AI 검사 실패 ${aiFail}건(${esc(lastErr.slice(0,60))})`:''}</p>
     ${fixedN ? `<details style="margin-bottom:.6rem"><summary style="cursor:pointer">🔧 자동 수정된 문항 ${fixedN}개 보기</summary>${report.filter(r=>r.fixed).map(r=>`
       <div style="border:1px solid #cfe0cf;border-radius:10px;padding:.45rem .7rem;margin:.4rem 0;background:#f4f9f4">
@@ -3415,8 +3489,10 @@ async function batchAiSolve(){
   if(!aiSettings().key){ toast('API 키가 없습니다 — [백업·데이터 → AI 변환 설정]에서 먼저 저장하세요.'); return; }
   if(!confirm(`선택 문항 중 해설이 없는 ${targets.length}개의 정답·해설을 AI로 작성합니다.\n본인 API 키로 호출되어 문항당 요금이 부과됩니다.\n\n※ AI 풀이는 틀릴 수 있습니다. 생성된 문항에는 #AI해설 태그가 붙으니 반드시 검토해 주세요.\n계속할까요?`)) return;
   let ok=0, fail=0, lastErr='';
+  aiBatchStart('🤖 AI 해설 작성 중');
   try{
     for(let i=0;i<targets.length;i++){
+      if(AI_BATCH.cancel){ toast(`⏹ 중지됨 — ${ok}개까지 작성 완료`); break; }
       const p = targets[i];
       toast(`🤖 AI 해설 작성 중… ${i+1}/${targets.length}`);
       try{
@@ -3432,10 +3508,10 @@ async function batchAiSolve(){
         if(ok===0 || /API 키|401|네트워크|API 오류 4|워크스페이스/.test(lastErr)) throw e;
       }
     }
-    toast(`✅ AI 해설 완료 — ${ok}개 작성`+(fail?`, ${fail}개 실패 (${lastErr})`:'')+` · 나만의 태그 #AI해설 로 모아 검토하세요`);
+    if(!AI_BATCH.cancel) toast(`✅ AI 해설 완료 — ${ok}개 작성`+(fail?`, ${fail}개 실패 (${lastErr})`:'')+` · 나만의 태그 #AI해설 로 모아 검토하세요`);
   }catch(e){
     toast('⚠ AI 해설 중단: '+(e.message||e)+(ok?` — ${ok}개는 저장됨`:'')+' · [백업·데이터]의 [연결 테스트]로 원인을 확인하세요.');
-  }
+  }finally{ aiBatchDone(); }
   renderDB(); refreshCounts();
   logJob('AI 해설 생성', '선택 문항', ok+'개 작성'+(fail?`, ${fail}개 실패`:''));
 }
@@ -3790,9 +3866,11 @@ async function aiTranscribeDrafts(){
   if(!aiSettings().key){ toast('API 키가 없습니다 — [백업·데이터 → AI 변환 설정]에서 먼저 저장하세요.'); return; }
   const btn = $('#btn-ai-drafts'); btn.disabled = true;
   state._aiBusy = true;
-  let ok=0, fail=0, lastErr='';
+  aiBatchStart('🤖 AI 변환 중 — 진행된 문항은 유지됩니다');
+  let ok=0, fail=0, lastErr='', stopped=false;
   try{
     for(let i=0;i<targets.length;i++){
+      if(AI_BATCH.cancel){ stopped = true; break; }
       const d = targets[i];
       $('#bulk-status').textContent = `🤖 AI 변환 중… ${i+1}/${targets.length} (문항 ${d.num||''})`;
       try{
@@ -3829,6 +3907,7 @@ async function aiTranscribeDrafts(){
     const sols = solTargets();
     let sOk=0, sFail=0;
     for(let i=0;i<sols.length;i++){
+      if(AI_BATCH.cancel){ stopped = true; break; }
       const d = sols[i];
       $('#bulk-status').textContent = `🤖 해설 변환 중… ${i+1}/${sols.length} (문항 ${d.num||''})`;
       try{
@@ -3842,18 +3921,22 @@ async function aiTranscribeDrafts(){
       }catch(e){ sFail++; lastErr = e.message||String(e); if(sOk===0 && /API 키|401|네트워크|API 오류 4/.test(lastErr)) throw e; }
       rerenderBulk();
     }
-    if(sols.length) $('#bulk-status').textContent = `🤖 AI 변환 완료 — 문항 ${ok}개, 해설 ${sOk}개`
+    if(sols.length || stopped) $('#bulk-status').textContent =
+      (stopped ? `⏹ 중지됨 — 여기까지 변환된 결과는 그대로 남아 있습니다. 문항 ${ok}개, 해설 ${sOk}개`
+               : `🤖 AI 변환 완료 — 문항 ${ok}개, 해설 ${sOk}개`)
       +((fail||sFail)?` · 실패 ${fail+sFail}개 · 마지막 오류: ${lastErr}`:'')+'. 아래 변환 결과를 확인한 뒤 [전체 저장]하세요.';
-    logJob('AI 텍스트 변환', '분할 문항', ok+'개 변환'+(sOk?` · 해설 ${sOk}개`:'')+(fail+sFail?`, ${fail+sFail}개 실패`:''));
+    if(stopped) toast('⏹ 변환을 중지했습니다 — 변환된 문항까지는 그대로 사용할 수 있어요. [AI 텍스트 변환]을 다시 누르면 남은 것만 이어서 합니다.');
+    logJob('AI 텍스트 변환', '분할 문항', ok+'개 변환'+(sOk?` · 해설 ${sOk}개`:'')+(fail+sFail?`, ${fail+sFail}개 실패`:'')+(stopped?' · 중지됨':''));
     // 변환 결과 확인 화면으로 이동
     $('#bulk-preview-card').scrollIntoView({behavior:'smooth', block:'start'});
-    if(ok) toast(`변환 완료 — 수식이 렌더링된 결과를 확인하세요 (${ok}문항)`);
+    if(ok && !stopped) toast(`변환 완료 — 수식이 렌더링된 결과를 확인하세요 (${ok}문항)`);
   }catch(e){
     $('#bulk-status').textContent = '⚠ AI 변환 중단: '+(e.message||e)+' — [백업·데이터 → AI 변환 설정]의 [연결 테스트]로 원인을 확인하세요.';
     toast(e.message||String(e));
   }finally{
     btn.disabled = false;
     state._aiBusy = false;
+    aiBatchDone();
   }
 }
 async function batchAiTranscribe(){
@@ -3861,8 +3944,10 @@ async function batchAiTranscribe(){
   if(!targets.length){ toast('변환 대상이 없습니다 — 텍스트가 비어 있는 이미지 문항을 선택하세요.'); return; }
   if(!aiSettings().key){ toast('API 키가 없습니다 — [백업·데이터 → AI 변환 설정]에서 먼저 저장하세요.'); return; }
   let ok=0, fail=0;
+  aiBatchStart('🤖 선택 문항 AI 변환 중');
   try{
     for(let i=0;i<targets.length;i++){
+      if(AI_BATCH.cancel){ toast(`⏹ 중지됨 — ${ok}개까지 변환 완료`); break; }
       const p = targets[i];
       toast(`🤖 AI 변환 중… ${i+1}/${targets.length}`);
       try{
@@ -3893,10 +3978,10 @@ async function batchAiTranscribe(){
         if(ok===0 || /API 키|401|네트워크|API 오류 4/.test(lastErr2)) throw e;
       }
     }
-    toast(`AI 변환 완료 — ${ok}개 성공`+(fail?`, ${fail}개 실패 (${lastErr2})`:''));
+    if(!AI_BATCH.cancel) toast(`AI 변환 완료 — ${ok}개 성공`+(fail?`, ${fail}개 실패 (${lastErr2})`:''));
   }catch(e){
     toast('⚠ AI 변환 중단: '+(e.message||e)+' — [백업·데이터]의 [연결 테스트]로 원인을 확인하세요.');
-  }
+  }finally{ aiBatchDone(); }
   renderDB(); refreshCounts();
   logJob('AI 텍스트 변환', '선택 문항', ok+'개 변환'+(fail?`, ${fail}개 실패`:''));
 }
