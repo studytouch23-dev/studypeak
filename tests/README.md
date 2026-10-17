@@ -29,6 +29,9 @@ node run-all.js      # 전체 실행 (크로미움 경로가 다르면 PW_CHROMI
 | smoke31 | PDF 인식 정밀화: 번호 수열 정합·마침표 우선·쪽번호 제거·줄 앞 번호만, 잉크 경계 보정, 페이지 자동 분류 |
 | smoke32 | AI 일괄 작업 ⏹ 중지: 변환 중단·부분 결과 유지·이어서 재개 |
 | smoke33 | 클라우드 동기화(Supabase 스텁): 세션 복원·자동 푸시·증분 풀·삭제 전파·전체 올리기 |
+| smoke34 | tools/ingest.js: 생성 PDF로 업로드→영역→AI변환→저장→클라우드 전 구간 (API 스텁 + --max 가짜 claude) |
+| smoke35 | 오류 기록함: 변환 결과 검증(역슬래시·미지원 환경)·자동 수집·보고서·전역 오류 후킹 |
+| smoke36 | tools/generate.js: Claude Code(Max) 문제 생성→분할→저장→클라우드 (가짜 claude), 없는 과목 거부 |
 
 실제 사용자 파일(PDF·HWPX)이 필요한 테스트(영역 에디터 플로우 등)는 저장소에 넣지 않는다 —
 세션 scratchpad에서 사용자 업로드 파일로 작성·실행한다(mathlab-dev 스킬 참조).

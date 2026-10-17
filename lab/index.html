@@ -761,6 +761,24 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
         <button class="btn ghost" onclick="sbLogout()">로그아웃</button>
       </div>
       <p class="hint" id="sb-sync-status" style="margin-top:.4rem"></p>
+      <details style="margin-top:.6rem"><summary style="cursor:pointer;font-size:.85rem">🔑 자동화(컴퓨터 에이전트)용 비밀번호 설정</summary>
+        <p class="hint" style="margin:.4rem 0">내 컴퓨터에서 PDF 자동 등록 스크립트를 돌릴 때 쓰는 로그인 비밀번호입니다 (8자 이상). 평소 웹 로그인은 지금처럼 이메일 링크로 하면 됩니다.</p>
+        <div class="row">
+          <input id="sb-pw" type="password" placeholder="새 비밀번호 (8자 이상)" style="max-width:220px">
+          <button class="btn sm" onclick="sbSetPassword()">비밀번호 설정</button>
+        </div>
+      </details>
+    </div>
+  </div>
+  <div class="card">
+    <h3>🧾 오류 기록 — 클로드에게 한 번에 수정 맡기기</h3>
+    <p class="hint" style="margin-bottom:.6rem">한글 출력·수식 변환·AI 검수에서 생긴 문제를 자동으로 모아 둡니다.
+      <b>[보고서 복사]</b>를 눌러 클로드 코드 채팅에 붙여넣고 "이 오류들 고쳐줘"라고 하면,
+      원인 수정과 재발 방지 테스트까지 한 번에 처리됩니다.</p>
+    <div class="row">
+      <span class="hint" id="errlog-count"></span>
+      <button class="btn gold" onclick="copyErrReport()">📋 보고서 복사</button>
+      <button class="btn ghost" onclick="clearErrLog()">기록 지우기</button>
     </div>
   </div>
   <div class="card">
@@ -3223,6 +3241,7 @@ async function aiJsonCall(content, maxTokens){ // 공용: content 배열 → JSO
     const t = await r.text().catch(()=> '');
     let detail = t.slice(0,160);
     try{ const j = JSON.parse(t); if(j.error && j.error.message) detail = j.error.message.slice(0,200); }catch(e){}
+    errLog('AI 호출 오류', 'HTTP '+r.status+': '+detail);
     if(r.status===401) throw new Error('API 키가 올바르지 않습니다 (401). 키를 다시 확인하세요.');
     if(r.status===400 && /workspace/i.test(detail)) throw new Error('워크스페이스 설정 필요 (400) — [백업·데이터 → AI 변환 설정]에서 해결하세요.\n'+AI_WS_HELP);
     throw new Error('API 오류 '+r.status+': '+detail);
@@ -3235,6 +3254,7 @@ async function aiJsonCall(content, maxTokens){ // 공용: content 배열 → JSO
   try{
     return tolerantJsonParse(b>a ? txt.slice(a, b+1) : txt.slice(a));
   }catch(e){
+    errLog('AI 응답 해석 실패', (data.stop_reason==='max_tokens'?'[max_tokens 잘림] ':'')+txt.slice(0,200));
     if(data.stop_reason==='max_tokens') throw new Error('AI 응답이 길이 제한에 잘렸습니다 — 문항이 매우 길면 나눠서 변환해 보세요.');
     throw new Error('AI 응답 JSON 해석 실패: '+String(e.message||e).slice(0,80));
   }
@@ -3348,7 +3368,14 @@ function ruleCheckProblem(p){ // 무료 규칙 검사 → 이슈 문자열 배�
   for(const ch of all){ if(ch==='{') depth++; else if(ch==='}'){ depth--; if(depth<0){ braceBad=true; break; } } }
   if(braceBad || depth!==0) issues.push('수식 중괄호 짝이 안 맞음');
   resetEqDiag();
-  all.replace(/\$\$?([^$\n]+)\$\$?/g, (m,eq)=>{ latexToHwpEq(eq); return ''; });
+  all.replace(/\$\$?([^$\n]+)\$\$?/g, (m,eq)=>{      // 실제 변환 결과까지 검증 — "한글에서 안 열리는 양식" 차단
+    const o = latexToHwpEq(eq);
+    if(/\\/.test(o)) issues.push('수식 변환 결과에 역슬래시가 남음(한글 수식 깨짐): '+eq.slice(0,40));
+    let d=0, bb=false;
+    for(const ch of o){ if(ch==='{')d++; else if(ch==='}'){ d--; if(d<0){ bb=true; break; } } }
+    if(bb || d!==0) issues.push('수식 변환 결과 중괄호 불균형(한글 수식 깨짐): '+eq.slice(0,40));
+    return '';
+  });
   if(EQ_DIAG.unknown.size) issues.push('한글 미지원 수식 명령 사용: '+[...EQ_DIAG.unknown].slice(0,3).join(' '));
   if(fixAiNewlines(all, true) !== all) issues.push('깨진 줄바꿈 문자(₩n)가 남아 있음 — 저장 시 자동 정리됨');
   if(/�/.test(all)) issues.push('깨진 문자(�) 포함 — 원본 대조 필요');
@@ -3479,7 +3506,10 @@ async function batchQa(){
       }catch(e){ lastErr = e.message||String(e); }
     }
     p.tags = (p.tags||[]).filter(t=>t!=='검수주의');
-    if(issues.length){ flagged++; p.tags.push('검수주의'); }
+    if(issues.length){
+      flagged++; p.tags.push('검수주의');
+      if(useAi) errLog('검수 후 미해결(자동수정 실패)', issues.join(' · '), p.id);
+    }
     else { clean++; p.reviewed = true; if(fixed) fixedN++; }
     p.updatedAt = Date.now();
     await saveProblem(p);
@@ -3884,6 +3914,33 @@ async function aiSolveDetail(id){ // 상세 모달에서 한 문항만
     toast('✅ 해설을 채웠습니다 — 내용을 확인한 뒤 [수정 저장]을 누르세요. (AI 풀이는 틀릴 수 있습니다)');
   }catch(e){ toast('⚠ AI 해설 실패: '+(e.message||e)); }
 }
+/* AI 전사 결과를 드래프트에 반영 — 웹(API)·맥 에이전트(Max, tools/ingest.js --max) 공용 */
+async function applyAiDraftResult(d, r){
+  d.text = fixAiNewlines(r.question||'').trim();
+  if(Array.isArray(r.choices) && r.choices.length) d.choices = r.choices.map(c=>fixAiNewlines(c));
+  if(r.answer && !d.ans) d.ans = String(r.answer);
+  if(r.subject && CURRICULUM[r.subject]){
+    d.aiSub = r.subject;
+    if(r.chapter && CURRICULUM[r.subject][r.chapter]){
+      d.aiChap = r.chapter;
+      if(r.section && CURRICULUM[r.subject][r.chapter].includes(r.section)) d.aiSect = r.section;
+    }
+  }
+  const dd = Math.round(+r.difficulty); if(dd>=1 && dd<=5) d.aiDiff = dd;
+  if(r.hasFigure === false && !AI_FIG_RE.test(r.question||'')) d.img = null; // 그림 없는 문항만 이미지 제거(본문이 그림·표를 언급하면 보존)
+  else if(d.img && validFigBox(r.figureBox)){        // 그림 부분만 잘라 보관 (문제 글·선택지 제거)
+    const cropped = await cropDataURL(d.img, r.figureBox);
+    if(cropped) d.img = cropped;
+  }
+  d.aiDone = true;
+}
+function applyAiSolResult(d, r){
+  if((r.solution||'').trim()){
+    d.sol = fixAiNewlines(r.solution).trim();
+    d.solImg = null;                                 // 텍스트로 옮겨졌을 때만 이미지 조각을 버림
+  }
+  if(r.answer && !d.ans) d.ans = String(r.answer).trim();
+}
 async function aiTranscribeDrafts(){
   const targets = state.bulkDrafts.filter(d=>d.img && !(d.text||'').trim());
   const solTargets = ()=>state.bulkDrafts.filter(d=>d.solImg && !(d.sol||'').trim());
@@ -3900,23 +3957,7 @@ async function aiTranscribeDrafts(){
       $('#bulk-status').textContent = `🤖 AI 변환 중… ${i+1}/${targets.length} (문항 ${d.num||''})`;
       try{
         const r = await aiTranscribeImage(d.img);
-        d.text = fixAiNewlines(r.question||'').trim();
-        if(Array.isArray(r.choices) && r.choices.length) d.choices = r.choices.map(c=>fixAiNewlines(c));
-        if(r.answer && !d.ans) d.ans = String(r.answer);
-        if(r.subject && CURRICULUM[r.subject]){
-          d.aiSub=r.subject;
-          if(r.chapter && CURRICULUM[r.subject][r.chapter]){
-            d.aiChap=r.chapter;
-            if(r.section && CURRICULUM[r.subject][r.chapter].includes(r.section)) d.aiSect=r.section;
-          }
-        }
-        const dd = Math.round(+r.difficulty); if(dd>=1 && dd<=5) d.aiDiff = dd;
-        if(r.hasFigure === false && !AI_FIG_RE.test(r.question||'')) d.img = null; // 그림 없는 문항만 이미지 제거(본문이 그림·표를 언급하면 보존)
-        else if(d.img && validFigBox(r.figureBox)){        // 그림 부분만 잘라 보관 (문제 글·선택지 제거)
-          const cropped = await cropDataURL(d.img, r.figureBox);
-          if(cropped) d.img = cropped;
-        }
-        d.aiDone = true;
+        await applyAiDraftResult(d, r);
         ok++;
       }catch(e){
         fail++; lastErr = e.message||String(e);
@@ -3937,11 +3978,7 @@ async function aiTranscribeDrafts(){
       $('#bulk-status').textContent = `🤖 해설 변환 중… ${i+1}/${sols.length} (문항 ${d.num||''})`;
       try{
         const r = await aiTranscribeSolution(d.solImg);
-        if((r.solution||'').trim()){
-          d.sol = fixAiNewlines(r.solution).trim();
-          d.solImg = null;                                 // 텍스트로 옮겨졌을 때만 이미지 조각을 버림
-        }
-        if(r.answer && !d.ans) d.ans = String(r.answer).trim();
+        applyAiSolResult(d, r);
         sOk++;
       }catch(e){ sFail++; lastErr = e.message||String(e); if(sOk===0 && /API 키|401|네트워크|API 오류 4/.test(lastErr)) throw e; }
       rerenderBulk();
@@ -4734,8 +4771,8 @@ const HWPX_SECPR = `<hp:secPr id="" textDirection="HORIZONTAL" spaceColumns="113
 /* ── LaTeX → 한글(HWP) 수식 스크립트 변환 ──
    스펙 정책: 변환 결과는 EQ_DIAG(export diagnostics)에 기록하고,
    변환하지 못한 명령은 허위로 성공 처리하지 않고 사용자에게 보고한다. */
-const EQ_DIAG = { count:0, unknown:new Set() };
-function resetEqDiag(){ EQ_DIAG.count = 0; EQ_DIAG.unknown.clear(); }
+const EQ_DIAG = { count:0, unknown:new Set(), samples:[] };
+function resetEqDiag(){ EQ_DIAG.count = 0; EQ_DIAG.unknown.clear(); EQ_DIAG.samples = []; }
 function eqDiagSummary(){
   if(!EQ_DIAG.count) return '';
   let s = ` · 수식 ${EQ_DIAG.count}개를 한글 수식 개체로 변환`;
@@ -4778,6 +4815,7 @@ function convertSqrts(s){ // \sqrt{A} → sqrt {A}, 중첩 중괄호 안전
   return s;
 }
 function latexToHwpEq(tex){
+  const unkBefore = EQ_DIAG.unknown.size;
   let s = String(tex);
   s = s.replace(/\\left\s*/g,'').replace(/\\right\s*/g,'');
   s = s.replace(/\\([()\[\]])/g, (m,c)=> c==='(' ? '(' : c===')' ? ')' : ' ');  // \( \) \[ \] 구분자 정리
@@ -4817,6 +4855,8 @@ function latexToHwpEq(tex){
   });
   // 밑첨자/위첨자로 시작하는 조합 기호(₃H₂ 등)는 빈 그룹 {}를 앞에 붙여야 한글이 렌더한다
   s = s.replace(/(^|[=(,{+\-])(\s*)([_^])/g, '$1$2{}$3');
+  if(EQ_DIAG.unknown.size > unkBefore && EQ_DIAG.samples.length < 20)
+    EQ_DIAG.samples.push(String(tex).slice(0,160));          // 오류 보고서용 수식 원문 샘플
   return s.replace(/\s+/g,' ').trim();
 }
 /* ── 수식 크기 추정(hwpunit, 10pt 기준): 작게 잡으면 뒤 글자와 겹치므로 구조를 재귀 측정 ── */
@@ -5001,6 +5041,7 @@ async function downloadHWPX(){
   const DOC_LABEL = {teacher:'강사용', student:'학생용', anskey:'정답표', solution:'해설지'};
   logJob('학습지 출력', title, `${list.length}문항 · ${DOC_LABEL[doctype]||doctype} · HWPX`);
   toast('한글 파일(HWPX) 다운로드 완료'+eqDiagSummary()+(HWPX_BINS.length?` · 그림 ${HWPX_BINS.length}장 포함`:''));
+  errLogEqDiag('한글(HWPX) 다운로드: '+title);
 }
 async function saveHwpxFile(title, paras){
   return saveHwpxSections(title, [hwpxSectionXML(title, paras)], hwpxHeaderXML());
@@ -5034,6 +5075,7 @@ async function convertTextToHWPX(){
   await saveHwpxFile(title, paras);
   logJob('HWPX 변환', title, 'PDF/텍스트 → 한글 파일');
   toast('추출 텍스트를 한글(HWPX) 파일로 변환했습니다'+eqDiagSummary());
+  errLogEqDiag('추출 텍스트 → HWPX 변환');
 }
 
 /* ═══ 모의고사(수능 양식) 조판 ═══
@@ -5240,6 +5282,7 @@ async function downloadMockExam(){
     await saveHwpxSections(title, sections, mockHeaderXML(sections.length));
     const pages = 1 + Math.ceil(Math.max(0, n-4)/4);
     logJob('모의고사 출력', title, `${n}문항 · 수능 A3 양식 · ${pages}쪽 · HWPX`);
+    errLogEqDiag('모의고사(A3) 다운로드');
     toast(`모의고사(수능 A3) 한글 파일 다운로드 완료 · ${n}문항 ${pages}쪽`+eqDiagSummary()
       +(HWPX_BINS.length?` · 그림 ${HWPX_BINS.length}장`:'')
       +(warn.length?` · ⚠ ${warn.join(', ')}번은 풀이 공간이 빠듯합니다(슬롯 60% 초과)`:''));
@@ -5365,6 +5408,68 @@ $('#import-file').addEventListener('change', async e=>{
   }catch(err){ toast('가져오기 실패: 올바른 백업 파일인지 확인하세요.'); }
   e.target.value='';
 });
+/* ═══ 🧾 오류 기록 — 문제가 생기면 자동 수집, [보고서 복사]로 클로드 코드에 한 번에 수정 의뢰 ═══ */
+function errLog(kind, detail, pid){
+  try{
+    const log = lsJson('sp-lab-errlog', []);
+    log.push({ t: Date.now(), kind, detail: String(detail).slice(0,600), pid: pid||'' });
+    while(log.length > 300) log.shift();
+    localStorage.setItem('sp-lab-errlog', JSON.stringify(log));
+    renderErrCount();
+  }catch(e){}
+}
+function renderErrCount(){
+  const el = $('#errlog-count'); if(!el) return;
+  const n = lsJson('sp-lab-errlog', []).length;
+  el.textContent = n ? `🧾 쌓인 기록 ${n}건` : '쌓인 기록 없음 — 문제가 생기면 자동으로 기록됩니다.';
+}
+function buildErrReport(){
+  const log = lsJson('sp-lab-errlog', []);
+  if(!log.length) return '';
+  const lines = [
+    '# 스터디피크 수학 랩 오류 보고서 — '+new Date().toLocaleString('ko-KR'), '',
+    '사용자(비개발자)의 랩에서 자동 수집된 오류입니다. lab/index.html에서 각 원인을 고치고,',
+    '재발 방지 회귀 테스트를 tests/에 추가해 주세요.', ''
+  ];
+  log.forEach((e,i)=>{
+    lines.push(`## ${i+1}. [${e.kind}] ${new Date(e.t).toLocaleString('ko-KR')}`);
+    const p = e.pid ? state.problems.find(x=>x.id===e.pid) : null;
+    if(p) lines.push(`- 문항(id ${e.pid}): ${stripBoxMarks(p.question||'').slice(0,100)}`);
+    else if(e.pid) lines.push(`- 문항 id: ${e.pid}`);
+    lines.push('- 내용: '+e.detail, '');
+  });
+  return lines.join('\n');
+}
+async function copyErrReport(){
+  const txt = buildErrReport();
+  if(!txt){ toast('쌓인 오류 기록이 없습니다.'); return; }
+  try{
+    await navigator.clipboard.writeText(txt);
+    toast('📋 보고서 복사 완료 — 클로드 코드 채팅에 붙여넣고 "이 오류들 고쳐줘" 라고 하면 됩니다.');
+  }catch(e){
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([txt], {type:'text/markdown'}));
+    a.download = '스터디피크-오류보고서.md';
+    document.body.appendChild(a); a.click(); a.remove();
+    toast('복사가 막혀 파일로 내려받았습니다 — 그 파일을 클로드 코드에 올려주세요.');
+  }
+  logJob('오류 보고서', '클로드 수정 의뢰용', lsJson('sp-lab-errlog',[]).length+'건');
+}
+function clearErrLog(){
+  if(!confirm('오류 기록을 모두 지울까요? (수정 의뢰를 마친 뒤에 지우는 것을 권장)')) return;
+  localStorage.removeItem('sp-lab-errlog');
+  renderErrCount(); toast('기록을 지웠습니다.');
+}
+function errLogEqDiag(context){ // 한글 변환 진단 → 기록 (다운로드 경로에서 호출)
+  if(!EQ_DIAG.unknown.size) return;
+  errLog('한글 수식 변환', context+' — 미지원 명령: '+[...EQ_DIAG.unknown].join(' ')
+    + (EQ_DIAG.samples.length ? '\n수식 원문 예시: '+EQ_DIAG.samples.slice(0,5).map(s=>'$'+s+'$').join('   ') : ''));
+}
+window.addEventListener('error', e=>{ try{
+  errLog('JS 오류', (e.message||'')+' @'+String(e.filename||'').split('/').pop()+':'+(e.lineno||'')); }catch(_){ } });
+window.addEventListener('unhandledrejection', e=>{ try{
+  const r = e.reason; errLog('비동기 오류', (r && (r.message||r))||'unknown'); }catch(_){ } });
+
 /* ═══ ☁️ 클라우드 동기화 (Supabase) — 어디서나 이어서, 계정별 분리 ═══ */
 const SUPA_URL = 'https://vtbpeznvampiisadinjy.supabase.co';
 const SUPA_KEY = 'sb_publishable_-1ixpk3wNhXvPJzc71k_zg_aaarZDoD';   // 공개용 키(publishable) — RLS로 보호됨
@@ -5545,6 +5650,17 @@ async function sbPushAll(){ // 최초 이전: 이 기기의 전체를 업로드
     } else toast(`⏹ 중지 — ${n}개까지 올렸습니다. 다시 누르면 처음부터 확인하며 올립니다.`);
   }catch(e){ toast('⚠ 올리기 실패: '+(e.message||e)); }
   finally{ aiBatchDone(); }
+}
+async function sbSetPassword(){ // 자동화 스크립트(signInWithPassword)용 비밀번호
+  const pw = $('#sb-pw').value;
+  if(pw.length < 8){ toast('비밀번호는 8자 이상으로 입력하세요.'); return; }
+  try{
+    const c = await sbLoad();
+    const { error } = await c.auth.updateUser({ password: pw });
+    if(error) throw error;
+    $('#sb-pw').value = '';
+    toast('🔑 비밀번호 설정 완료 — 자동 등록 스크립트에서 이메일 + 이 비밀번호로 로그인합니다.');
+  }catch(e){ toast('⚠ 설정 실패: '+(e.message||e)); }
 }
 async function sbPullAll(){
   if(!SB.user){ toast('먼저 로그인하세요.'); return; }
@@ -5762,6 +5878,7 @@ function renderDash(){
     : '처음이라면 아래 "클라이언트 ID 만드는 방법"을 열어 최초 1회 설정을 해주세요.');
   if(ai.key) $('#ai-status').textContent = '✅ 키 저장됨 — AI 변환 사용 가능';
   sbInit();                                                // 클라우드 로그인 상태면 세션 복원 + 변경분 내려받기
+  renderErrCount();
  }catch(e){
   console.error(e);
   document.body.insertAdjacentHTML('beforeend',
