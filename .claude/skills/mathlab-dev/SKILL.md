@@ -25,6 +25,7 @@ JS는 `/* ═══ 섹션명 ═══ */` 주석으로 구획되어 있다. Gr
 | AI 변환 | `aiJsonCall`(공용 호출: `aiHeaders()`에 키·워크스페이스 ID, 재시도·오류 한국어 안내), `aiTranscribeImage`, `aiTranscribeDrafts`, `batchAiTranscribe`(단원 태깅은 소단원까지: `curriculumBriefFull` 분류표 + CURRICULUM 대조 검증), `aiSolveProblem`/`batchAiSolve`/`aiSolveDetail`(해설 생성, #AI해설 태그), `batchQa`/`ruleCheckProblem`/`aiQaProblem`/`aiFixProblem`(검수→자동수정→재검수: 통과→reviewed+#AI수정, 실패→#검수주의) — 테스트는 page에서 window.fetch 스텁(교정자/검수자 프롬프트로 분기). 모든 AI 루프는 매 문항 전 `AI_BATCH.cancel` 확인(⏹ 중지 바: aiBatchStart/Done/Cancel) |
 | 학습지 | `renderSheet`, `autoCompose`, `printSheet`(doctype 4종), `setPoint` |
 | HTML 내보내기 | `downloadHtmlExport('sheet'|'book')`, `buildHtmlExport`, `mathToHtml`(katex.renderToString 사전 렌더), `htmlProblemBody`(박스·[그림] 슬롯·선택지 공용 렌더) — 내보내는 파일 안의 `</script>`는 반드시 `<\/script>`로 쓸 것(단일 파일 앱이라 스크립트가 끊김) |
+| 오류 기록 | `errLog`/`errLogEqDiag`(EQ_DIAG.samples 수식 원문)/`buildErrReport`/`copyErrReport` — localStorage sp-lab-errlog(최대 300). 다운로드·검수·aiJsonCall·window error에서 자동 수집. 사용자가 보고서를 붙여넣으면: 각 항목 원인 수정 + tests/ 회귀 추가 |
 | 클라우드 동기화 | `SB`/`sbInit`/`sbLoad`(jsdelivr 동적 로드)/`sbQueue`·`sbQueueDel`(saveProblem·삭제 훅)/`sbFlush`(1.2s 묶음 upsert)/`sbPull`(updated_at 증분, 최신 우선)/`sbPushAll`·`sbPullAll` — 테이블 스키마 `supabase/schema.sql`(RLS), 테스트는 window.supabase 스텁 |
 | HWPX 생성 | `latexToHwpEq`, `eqMeasure`(수식 크기), `hwpxEquation`, `hwpxPic`/`registerHwpxBin`, `saveHwpxFile`, `downloadHWPX` |
 
