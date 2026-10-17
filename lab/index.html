@@ -761,6 +761,13 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
         <button class="btn ghost" onclick="sbLogout()">로그아웃</button>
       </div>
       <p class="hint" id="sb-sync-status" style="margin-top:.4rem"></p>
+      <details style="margin-top:.6rem"><summary style="cursor:pointer;font-size:.85rem">🔑 자동화(컴퓨터 에이전트)용 비밀번호 설정</summary>
+        <p class="hint" style="margin:.4rem 0">내 컴퓨터에서 PDF 자동 등록 스크립트를 돌릴 때 쓰는 로그인 비밀번호입니다 (8자 이상). 평소 웹 로그인은 지금처럼 이메일 링크로 하면 됩니다.</p>
+        <div class="row">
+          <input id="sb-pw" type="password" placeholder="새 비밀번호 (8자 이상)" style="max-width:220px">
+          <button class="btn sm" onclick="sbSetPassword()">비밀번호 설정</button>
+        </div>
+      </details>
     </div>
   </div>
   <div class="card">
@@ -5545,6 +5552,17 @@ async function sbPushAll(){ // 최초 이전: 이 기기의 전체를 업로드
     } else toast(`⏹ 중지 — ${n}개까지 올렸습니다. 다시 누르면 처음부터 확인하며 올립니다.`);
   }catch(e){ toast('⚠ 올리기 실패: '+(e.message||e)); }
   finally{ aiBatchDone(); }
+}
+async function sbSetPassword(){ // 자동화 스크립트(signInWithPassword)용 비밀번호
+  const pw = $('#sb-pw').value;
+  if(pw.length < 8){ toast('비밀번호는 8자 이상으로 입력하세요.'); return; }
+  try{
+    const c = await sbLoad();
+    const { error } = await c.auth.updateUser({ password: pw });
+    if(error) throw error;
+    $('#sb-pw').value = '';
+    toast('🔑 비밀번호 설정 완료 — 자동 등록 스크립트에서 이메일 + 이 비밀번호로 로그인합니다.');
+  }catch(e){ toast('⚠ 설정 실패: '+(e.message||e)); }
 }
 async function sbPullAll(){
   if(!SB.user){ toast('먼저 로그인하세요.'); return; }

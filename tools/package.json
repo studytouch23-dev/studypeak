@@ -1,0 +1,11 @@
+{
+  "name": "studypeak-ingest",
+  "private": true,
+  "description": "스터디피크 수학 랩 — PDF 자동 등록 스크립트",
+  "scripts": {
+    "ingest": "node ingest.js"
+  },
+  "dependencies": {
+    "playwright": "^1.47.0"
+  }
+}
