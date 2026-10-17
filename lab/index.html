@@ -3914,6 +3914,33 @@ async function aiSolveDetail(id){ // 상세 모달에서 한 문항만
     toast('✅ 해설을 채웠습니다 — 내용을 확인한 뒤 [수정 저장]을 누르세요. (AI 풀이는 틀릴 수 있습니다)');
   }catch(e){ toast('⚠ AI 해설 실패: '+(e.message||e)); }
 }
+/* AI 전사 결과를 드래프트에 반영 — 웹(API)·맥 에이전트(Max, tools/ingest.js --max) 공용 */
+async function applyAiDraftResult(d, r){
+  d.text = fixAiNewlines(r.question||'').trim();
+  if(Array.isArray(r.choices) && r.choices.length) d.choices = r.choices.map(c=>fixAiNewlines(c));
+  if(r.answer && !d.ans) d.ans = String(r.answer);
+  if(r.subject && CURRICULUM[r.subject]){
+    d.aiSub = r.subject;
+    if(r.chapter && CURRICULUM[r.subject][r.chapter]){
+      d.aiChap = r.chapter;
+      if(r.section && CURRICULUM[r.subject][r.chapter].includes(r.section)) d.aiSect = r.section;
+    }
+  }
+  const dd = Math.round(+r.difficulty); if(dd>=1 && dd<=5) d.aiDiff = dd;
+  if(r.hasFigure === false && !AI_FIG_RE.test(r.question||'')) d.img = null; // 그림 없는 문항만 이미지 제거(본문이 그림·표를 언급하면 보존)
+  else if(d.img && validFigBox(r.figureBox)){        // 그림 부분만 잘라 보관 (문제 글·선택지 제거)
+    const cropped = await cropDataURL(d.img, r.figureBox);
+    if(cropped) d.img = cropped;
+  }
+  d.aiDone = true;
+}
+function applyAiSolResult(d, r){
+  if((r.solution||'').trim()){
+    d.sol = fixAiNewlines(r.solution).trim();
+    d.solImg = null;                                 // 텍스트로 옮겨졌을 때만 이미지 조각을 버림
+  }
+  if(r.answer && !d.ans) d.ans = String(r.answer).trim();
+}
 async function aiTranscribeDrafts(){
   const targets = state.bulkDrafts.filter(d=>d.img && !(d.text||'').trim());
   const solTargets = ()=>state.bulkDrafts.filter(d=>d.solImg && !(d.sol||'').trim());
@@ -3930,23 +3957,7 @@ async function aiTranscribeDrafts(){
       $('#bulk-status').textContent = `🤖 AI 변환 중… ${i+1}/${targets.length} (문항 ${d.num||''})`;
       try{
         const r = await aiTranscribeImage(d.img);
-        d.text = fixAiNewlines(r.question||'').trim();
-        if(Array.isArray(r.choices) && r.choices.length) d.choices = r.choices.map(c=>fixAiNewlines(c));
-        if(r.answer && !d.ans) d.ans = String(r.answer);
-        if(r.subject && CURRICULUM[r.subject]){
-          d.aiSub=r.subject;
-          if(r.chapter && CURRICULUM[r.subject][r.chapter]){
-            d.aiChap=r.chapter;
-            if(r.section && CURRICULUM[r.subject][r.chapter].includes(r.section)) d.aiSect=r.section;
-          }
-        }
-        const dd = Math.round(+r.difficulty); if(dd>=1 && dd<=5) d.aiDiff = dd;
-        if(r.hasFigure === false && !AI_FIG_RE.test(r.question||'')) d.img = null; // 그림 없는 문항만 이미지 제거(본문이 그림·표를 언급하면 보존)
-        else if(d.img && validFigBox(r.figureBox)){        // 그림 부분만 잘라 보관 (문제 글·선택지 제거)
-          const cropped = await cropDataURL(d.img, r.figureBox);
-          if(cropped) d.img = cropped;
-        }
-        d.aiDone = true;
+        await applyAiDraftResult(d, r);
         ok++;
       }catch(e){
         fail++; lastErr = e.message||String(e);
@@ -3967,11 +3978,7 @@ async function aiTranscribeDrafts(){
       $('#bulk-status').textContent = `🤖 해설 변환 중… ${i+1}/${sols.length} (문항 ${d.num||''})`;
       try{
         const r = await aiTranscribeSolution(d.solImg);
-        if((r.solution||'').trim()){
-          d.sol = fixAiNewlines(r.solution).trim();
-          d.solImg = null;                                 // 텍스트로 옮겨졌을 때만 이미지 조각을 버림
-        }
-        if(r.answer && !d.ans) d.ans = String(r.answer).trim();
+        applyAiSolResult(d, r);
         sOk++;
       }catch(e){ sFail++; lastErr = e.message||String(e); if(sOk===0 && /API 키|401|네트워크|API 오류 4/.test(lastErr)) throw e; }
       rerenderBulk();

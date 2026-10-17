@@ -22,7 +22,7 @@ JS는 `/* ═══ 섹션명 ═══ */` 주석으로 구획되어 있다. Gr
 | PDF 영역 에디터 | `PDFED` 상태, `openPdfEditor(res,{solDefault})`(PDF 여러 개 통합: pg.srcName/fileSol, 파일명·'정답 및 해설' 표제로 페이지 자동 해설 분류), 페이지 `mode: prob/sol/skip`(클릭 순환), `detectRegionsByAnchors`(마침표 앵커 우선 + `bestAnchorSeq` 번호 수열 정합으로 쪽번호·꼬리말 숫자 제거), `detectRegionsByPixels`, `pdfedFinish`(해설 영역→`d.solImg` 번호 매칭, `refineRectOnCanvas` 잉크 경계 보정), `collectAnchors`(줄 앞 숫자만 앵커), 그림 크롭 `validFigBox`/`cropDataURL`/`openImgCrop`, 그림 편집기 `IMGED`/`openImgEditor`(지우개·선명하게·기울기·스탬프, 저장은 saveProblem 경유), AI 벡터 복원 `imgedAiRedraw`/`sanitizeSvg`(Claude 비전→SVG, viewBox로 크기 결정·width/height 주입 필수) |
 | 검색·작업 | `problemsFiltered`, `renderDB`(30/페이지), `renderTree`, `semanticSearch`(bigram), `imgHash`(aHash 이미지검색), 프리셋 |
 | 일괄 작업 | `openBatchTag`, `batchAutoTag`, `batchReviewed`, `batchDelete` |
-| AI 변환 | `aiJsonCall`(공용 호출: `aiHeaders()`에 키·워크스페이스 ID, 재시도·오류 한국어 안내), `aiTranscribeImage`, `aiTranscribeDrafts`, `batchAiTranscribe`(단원 태깅은 소단원까지: `curriculumBriefFull` 분류표 + CURRICULUM 대조 검증), `aiSolveProblem`/`batchAiSolve`/`aiSolveDetail`(해설 생성, #AI해설 태그), `batchQa`/`ruleCheckProblem`/`aiQaProblem`/`aiFixProblem`(검수→자동수정→재검수: 통과→reviewed+#AI수정, 실패→#검수주의) — 테스트는 page에서 window.fetch 스텁(교정자/검수자 프롬프트로 분기). 모든 AI 루프는 매 문항 전 `AI_BATCH.cancel` 확인(⏹ 중지 바: aiBatchStart/Done/Cancel) |
+| AI 변환 | `aiJsonCall`(공용 호출: `aiHeaders()`에 키·워크스페이스 ID, 재시도·오류 한국어 안내), `aiTranscribeImage`, `aiTranscribeDrafts`, `batchAiTranscribe`(단원 태깅은 소단원까지: `curriculumBriefFull` 분류표 + CURRICULUM 대조 검증), `aiSolveProblem`/`batchAiSolve`/`aiSolveDetail`(해설 생성, #AI해설 태그), `batchQa`/`ruleCheckProblem`/`aiQaProblem`/`aiFixProblem`(검수→자동수정→재검수: 통과→reviewed+#AI수정, 실패→#검수주의) — 테스트는 page에서 window.fetch 스텁(교정자/검수자 프롬프트로 분기). 모든 AI 루프는 매 문항 전 `AI_BATCH.cancel` 확인(⏹ 중지 바: aiBatchStart/Done/Cancel). 전사 결과 반영은 `applyAiDraftResult`/`applyAiSolResult` 공용 함수 — `tools/ingest.js --max`(Claude Code 변환)가 page.evaluate로 같은 함수를 호출하므로 시그니처 변경 시 tools/ 동반 수정 |
 | 학습지 | `renderSheet`, `autoCompose`, `printSheet`(doctype 4종), `setPoint` |
 | HTML 내보내기 | `downloadHtmlExport('sheet'|'book')`, `buildHtmlExport`, `mathToHtml`(katex.renderToString 사전 렌더), `htmlProblemBody`(박스·[그림] 슬롯·선택지 공용 렌더) — 내보내는 파일 안의 `</script>`는 반드시 `<\/script>`로 쓸 것(단일 파일 앱이라 스크립트가 끊김) |
 | 오류 기록 | `errLog`/`errLogEqDiag`(EQ_DIAG.samples 수식 원문)/`buildErrReport`/`copyErrReport` — localStorage sp-lab-errlog(최대 300). 다운로드·검수·aiJsonCall·window error에서 자동 수집. 사용자가 보고서를 붙여넣으면: 각 항목 원인 수정 + tests/ 회귀 추가 |
@@ -81,6 +81,10 @@ await page.evaluate(()=>{ pdfjsLib.GlobalWorkerOptions.workerSrc='http://127.0.0
 - 이미지 dataURL이 IndexedDB에 저장되므로 크롭은 JPEG 품질 0.87, 스케일 2 유지.
 - 기능 추가 시 `lab/README.md` 현황표 갱신.
 - 커밋 메시지에 모델명 금지. 브랜치에 push 후 사용자가 PR merge(배포는 사용자 몫).
+- `tools/`(맥 자동화: ingest·generate)는 공용 모듈 `tools/_common.js`(서빙·브라우저·로그인·
+  Claude Code 호출·supabase 스텁)를 쓴다. 수정 시 smoke34(ingest)·smoke36(generate)으로 검증.
+  페이지의 전역 함수(aiPrompt, buildGenPrompt, genResultToBulk, applyAi*Result)에 의존하므로
+  이름을 바꾸면 tools/ 도 함께 고칠 것.
 
 ## 미구현(서버 필요) — 약속하지 말 것
 
