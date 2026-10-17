@@ -741,6 +741,29 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
     </div>
   </div>
   <div class="card">
+    <h3>☁️ 클라우드 동기화 — 어디서나 이어서 (Supabase)</h3>
+    <p class="hint" style="margin-bottom:.6rem">
+      이메일로 로그인하면 문제를 저장할 때마다 <b>자동으로 클라우드 DB에 올라가서</b>,
+      학원 PC·집·태블릿 어디서 열어도 같은 DB로 이어서 작업할 수 있습니다.
+      다른 선생님도 이 사이트에서 각자 로그인하면 <b>각자 자기만의 DB</b>를 쓰게 됩니다.</p>
+    <div id="cloud-login">
+      <div class="row">
+        <input id="sb-email" type="email" placeholder="이메일 주소" style="max-width:260px">
+        <button class="btn gold" onclick="sbSendLink()">로그인 메일 받기</button>
+      </div>
+      <p class="hint" id="sb-status" style="margin-top:.4rem">메일 속 로그인 링크를 누르면 이 사이트가 열리면서 로그인됩니다. (로그인하려는 기기에서 메일을 열어주세요)</p>
+    </div>
+    <div id="cloud-on" style="display:none">
+      <p class="hint" id="sb-user"></p>
+      <div class="row">
+        <button class="btn gold" onclick="sbPushAll()">⬆ 전체 올리기 (처음 1회)</button>
+        <button class="btn" onclick="sbPullAll()">⬇ 전체 내려받기</button>
+        <button class="btn ghost" onclick="sbLogout()">로그아웃</button>
+      </div>
+      <p class="hint" id="sb-sync-status" style="margin-top:.4rem"></p>
+    </div>
+  </div>
+  <div class="card">
     <h3>☁️ 구글 드라이브 백업·동기화</h3>
     <p class="hint" style="margin-bottom:.6rem">
       구글 계정으로 로그인하면 문제 DB를 <b>내 구글 드라이브의 앱 전용 공간</b>에 백업하고,
@@ -1074,6 +1097,7 @@ async function saveProblem(p){
   await DB.put('problems', toStore);
   IMG_CACHE.delete(p.id);
   if(typeof state!=='undefined' && state.imgHashCache) state.imgHashCache.delete(p.id); // 이미지 검색 해시 무효화
+  sbQueue('problems', p.id);                               // 클라우드 자동 동기화 (로그인 시)
   return toStore;
 }
 
@@ -2950,6 +2974,7 @@ function closeModal(){ $('#modal-bg').classList.remove('show'); }
 async function removeProblem(id){
   if(!confirm('이 문제를 삭제할까요? 되돌릴 수 없습니다.')) return;
   await DB.del('problems', id);
+  sbQueueDel('problems', id);
   state.problems = state.problems.filter(p=>p.id!==id);
   state.cart = state.cart.filter(c=>c!==id); persistCart();
   renderDB(); refreshCounts();
@@ -4102,7 +4127,7 @@ async function batchDelete(){
   const list = cartList();
   if(!list.length){ toast('선택된 문제가 없습니다.'); return; }
   if(!confirm(`선택한 ${list.length}개 문항을 삭제할까요? 되돌릴 수 없습니다.`)) return;
-  for(const p of list){ await DB.del('problems', p.id); }
+  for(const p of list){ await DB.del('problems', p.id); sbQueueDel('problems', p.id); }
   const ids = new Set(list.map(p=>p.id));
   state.problems = state.problems.filter(p=>!ids.has(p.id));
   state.cart = []; persistCart();
@@ -5230,6 +5255,7 @@ async function saveWorksheet(){
     author: $('#s-author').value, date: $('#s-date').value, ids: state.cart.slice(),
     points: pointsSnap, doctype: $('#s-doctype').value, createdAt: Date.now() };
   await DB.put('worksheets', ws);
+  sbQueue('worksheets', ws.id);
   state.worksheets.push(ws);
   renderWorksheetList(); refreshCounts();
   toast('학습지 구성이 저장되었습니다.');
@@ -5259,6 +5285,7 @@ function loadWorksheet(id){
 }
 async function deleteWorksheet(id){
   await DB.del('worksheets', id);
+  sbQueueDel('worksheets', id);
   state.worksheets = state.worksheets.filter(w=>w.id!==id);
   renderWorksheetList(); refreshCounts();
 }
@@ -5338,6 +5365,198 @@ $('#import-file').addEventListener('change', async e=>{
   }catch(err){ toast('가져오기 실패: 올바른 백업 파일인지 확인하세요.'); }
   e.target.value='';
 });
+/* ═══ ☁️ 클라우드 동기화 (Supabase) — 어디서나 이어서, 계정별 분리 ═══ */
+const SUPA_URL = 'https://vtbpeznvampiisadinjy.supabase.co';
+const SUPA_KEY = 'sb_publishable_-1ixpk3wNhXvPJzc71k_zg_aaarZDoD';   // 공개용 키(publishable) — RLS로 보호됨
+const SB = { client:null, user:null, flushTimer:null, queue:new Map(), busy:false };
+const SB_CHUNK = 8;
+async function sbLoad(){
+  if(SB.client) return SB.client;
+  if(!window.supabase){
+    await new Promise((res, rej)=>{
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js';
+      s.onload = res;
+      s.onerror = ()=>rej(new Error('동기화 구성요소를 불러오지 못했습니다 — 인터넷 연결을 확인하세요'));
+      document.head.appendChild(s);
+    });
+  }
+  SB.client = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+  return SB.client;
+}
+function sbUI(){
+  const on = !!SB.user;
+  const l = $('#cloud-login'), o = $('#cloud-on');
+  if(l) l.style.display = on ? 'none' : 'block';
+  if(o) o.style.display = on ? 'block' : 'none';
+  if(on && $('#sb-user')) $('#sb-user').textContent =
+    '✅ 로그인됨: '+(SB.user.email||'')+' — 저장할 때마다 자동으로 클라우드에 올라갑니다.';
+}
+async function sbInit(){ // 시작 시: 전에 로그인한 적 있으면 조용히 세션 복원 후 변경분 내려받기
+  if(localStorage.getItem('sp-lab-cloud') !== '1') return;
+  try{
+    const c = await sbLoad();
+    c.auth.onAuthStateChange((ev, session)=>{
+      SB.user = session ? session.user : null;
+      if(SB.user) localStorage.setItem('sp-lab-cloud','1');
+      sbUI();
+      if(SB.user && ev === 'SIGNED_IN') sbPull().catch(()=>{});
+    });
+    const { data } = await c.auth.getSession();
+    if(data && data.session){ SB.user = data.session.user; sbUI(); sbPull().catch(()=>{}); }
+  }catch(e){ /* 오프라인 등 — 로컬만으로 계속 동작 */ }
+}
+async function sbSendLink(){
+  const email = ($('#sb-email').value||'').trim();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ toast('이메일 주소를 입력하세요.'); return; }
+  try{
+    const c = await sbLoad();
+    $('#sb-status').textContent = '⏳ 로그인 메일 보내는 중…';
+    const { error } = await c.auth.signInWithOtp({ email, options:{ emailRedirectTo: location.origin + location.pathname } });
+    if(error) throw error;
+    localStorage.setItem('sp-lab-cloud','1');
+    $('#sb-status').textContent = '📧 메일을 보냈습니다! 이 기기에서 메일함을 열고, 메일 속 로그인 버튼(링크)을 누르면 이 사이트가 다시 열리면서 로그인됩니다. 안 보이면 스팸함도 확인하세요.';
+  }catch(e){ $('#sb-status').textContent = '⚠ '+(e.message||e); }
+}
+async function sbLogout(){
+  try{ const c = await sbLoad(); await c.auth.signOut(); }catch(e){}
+  SB.user = null;
+  localStorage.removeItem('sp-lab-cloud'); localStorage.removeItem('sp-lab-cloudsince');
+  sbUI(); toast('로그아웃했습니다 — 이 기기에 저장된 문제는 그대로 남아 있습니다.');
+}
+/* 저장·삭제 훅: saveProblem/삭제/학습지에서 호출 → 1.2초 묶음으로 밀어올림 */
+function sbQueue(table, id){ if(SB.user){ SB.queue.set(table+'|'+id, {table, id, del:false}); sbScheduleFlush(); } }
+function sbQueueDel(table, id){ if(SB.user){ SB.queue.set(table+'|'+id, {table, id, del:true}); sbScheduleFlush(); } }
+function sbScheduleFlush(){
+  clearTimeout(SB.flushTimer);
+  SB.flushTimer = setTimeout(()=>{ sbFlush().catch(()=>{}); }, 1200);
+}
+async function sbFlush(){
+  if(!SB.user || SB.busy || !SB.queue.size) return;
+  SB.busy = true;
+  try{
+    const c = await sbLoad();
+    const entries = [...SB.queue.entries()];            // [key, {table,id,del}]
+    const byTable = {};
+    for(const [key, it] of entries){ (byTable[it.table] = byTable[it.table]||[]).push({key, ...it}); }
+    for(const [table, list] of Object.entries(byTable)){
+      for(let i=0; i<list.length; i+=SB_CHUNK){
+        const part = list.slice(i, i+SB_CHUNK);
+        const rows = [];
+        for(const it of part){
+          if(it.del) rows.push({ id: it.id, data: {}, updated_at: Date.now(), deleted: true });
+          else{
+            const rec = await DB.get(table, it.id).catch(()=>null);
+            if(rec) rows.push({ id: it.id, data: rec, updated_at: rec.updatedAt||rec.createdAt||Date.now(), deleted: false });
+          }
+        }
+        if(rows.length){
+          const { error } = await c.from(table).upsert(rows);
+          if(error) throw error;
+        }
+        part.forEach(it=>SB.queue.delete(it.key));      // 성공분만 큐에서 제거 — 실패분은 자동 재시도
+      }
+    }
+    const el = $('#sb-sync-status');
+    if(el) el.textContent = '☁️ 동기화됨 — '+new Date().toLocaleTimeString('ko-KR');
+  }catch(e){
+    const el = $('#sb-sync-status');
+    if(el) el.textContent = '⚠ 동기화 지연: '+(e.message||e)+' — 연결되면 자동 재시도합니다.';
+    sbScheduleFlush();
+  }finally{ SB.busy = false; }
+}
+/* 내려받기: updated_at 증분, 최신 수정본 우선. full=true면 처음부터 전부 */
+async function sbPull(full){
+  if(!SB.user) return 0;
+  const c = await sbLoad();
+  const since = full ? 0 : +(localStorage.getItem('sp-lab-cloudsince')||0);
+  let maxT = since, applied = 0;
+  for(const table of ['problems','worksheets']){
+    let from = 0;
+    for(;;){
+      const { data, error } = await c.from(table)
+        .select('id,data,updated_at,deleted')
+        .gt('updated_at', since)
+        .order('updated_at', {ascending:true})
+        .range(from, from+49);
+      if(error) throw error;
+      if(!data || !data.length) break;
+      for(const row of data){
+        maxT = Math.max(maxT, +row.updated_at||0);
+        if(table === 'problems'){
+          const local = state.problems.find(p=>p.id===row.id);
+          if(row.deleted){
+            if(local){ await DB.del('problems', row.id); state.problems = state.problems.filter(p=>p.id!==row.id);
+              state.cart = state.cart.filter(x=>x!==row.id); applied++; }
+          }else if(row.data && row.data.id && (!local || (+row.updated_at||0) > (local.updatedAt||0))){
+            const stored = await saveProblem(row.data);
+            if(local) Object.assign(local, lightenProblem(stored));
+            else state.problems.push(lightenProblem(stored));
+            applied++;
+          }
+        }else{
+          const local = (state.worksheets||[]).find(w=>w.id===row.id);
+          if(row.deleted){
+            if(local){ await DB.del('worksheets', row.id); state.worksheets = state.worksheets.filter(w=>w.id!==row.id); applied++; }
+          }else if(row.data && row.data.id && (!local || (+row.updated_at||0) > (local.createdAt||0))){
+            await DB.put('worksheets', row.data);
+            state.worksheets = state.worksheets.filter(w=>w.id!==row.id);
+            state.worksheets.push(row.data);
+            applied++;
+          }
+        }
+      }
+      if(data.length < 50) break;
+      from += 50;
+    }
+  }
+  localStorage.setItem('sp-lab-cloudsince', String(maxT));
+  if(applied){ persistCart(); refreshCounts(); if($('#view-db').classList.contains('active')) renderDB(); renderWorksheetList(); }
+  const el = $('#sb-sync-status');
+  if(el) el.textContent = applied ? `⬇ 클라우드에서 ${applied}건 가져왔습니다.` : '☁️ 최신 상태입니다.';
+  return applied;
+}
+async function sbPushAll(){ // 최초 이전: 이 기기의 전체를 업로드
+  if(!SB.user){ toast('먼저 로그인하세요.'); return; }
+  if(!confirm('이 기기의 모든 문제·학습지를 클라우드에 올립니다.\n(클라우드에 같은 문제가 있으면 이 기기 것으로 덮습니다)\n계속할까요?')) return;
+  aiBatchStart('☁️ 클라우드에 올리는 중');
+  let n = 0, stopped = false;
+  try{
+    const c = await sbLoad();
+    const recs = [];
+    await DB.each('problems', rec=>recs.push(rec));
+    for(let i=0; i<recs.length; i+=SB_CHUNK){
+      if(AI_BATCH.cancel){ stopped = true; break; }
+      const rows = recs.slice(i, i+SB_CHUNK).map(r=>({ id:r.id, data:r, updated_at:r.updatedAt||r.createdAt||Date.now(), deleted:false }));
+      const { error } = await c.from('problems').upsert(rows);
+      if(error) throw error;
+      n += rows.length;
+      toast(`☁️ 올리는 중… ${n}/${recs.length}`);
+    }
+    if(!stopped){
+      const wss = await DB.getAll('worksheets');
+      for(let i=0; i<wss.length; i+=SB_CHUNK){
+        const { error } = await c.from('worksheets').upsert(
+          wss.slice(i,i+SB_CHUNK).map(w=>({ id:w.id, data:w, updated_at:w.createdAt||Date.now(), deleted:false })));
+        if(error) throw error;
+      }
+      logJob('클라우드 동기화', '전체 올리기', `문제 ${n}개`);
+      toast(`✅ 전체 올리기 완료 — 문제 ${n}개, 학습지 ${(await DB.getAll('worksheets')).length}개. 이제 다른 기기에서 로그인하고 [전체 내려받기]를 누르세요.`);
+    } else toast(`⏹ 중지 — ${n}개까지 올렸습니다. 다시 누르면 처음부터 확인하며 올립니다.`);
+  }catch(e){ toast('⚠ 올리기 실패: '+(e.message||e)); }
+  finally{ aiBatchDone(); }
+}
+async function sbPullAll(){
+  if(!SB.user){ toast('먼저 로그인하세요.'); return; }
+  aiBatchStart('☁️ 클라우드에서 내려받는 중');
+  try{
+    const n = await sbPull(true);
+    logJob('클라우드 동기화', '전체 내려받기', n+'건');
+    toast(`✅ 내려받기 완료 — ${n}건 반영`);
+  }catch(e){ toast('⚠ 내려받기 실패: '+(e.message||e)); }
+  finally{ aiBatchDone(); }
+}
+
 /* ═══ 구글 드라이브 백업·동기화 (서버 없음 — 내 드라이브의 앱 전용 공간에 저장) ═══ */
 const GD = { token:null, exp:0 };
 const GD_FILE = 'sp-math-lab-backup.json';
@@ -5542,6 +5761,7 @@ function renderDash(){
     ? (gdlast ? `마지막 드라이브 백업: ${new Date(gdlast).toLocaleString('ko-KR')}` : '클라이언트 ID 저장됨 — [① 구글 로그인] 후 백업하세요.')
     : '처음이라면 아래 "클라이언트 ID 만드는 방법"을 열어 최초 1회 설정을 해주세요.');
   if(ai.key) $('#ai-status').textContent = '✅ 키 저장됨 — AI 변환 사용 가능';
+  sbInit();                                                // 클라우드 로그인 상태면 세션 복원 + 변경분 내려받기
  }catch(e){
   console.error(e);
   document.body.insertAdjacentHTML('beforeend',
