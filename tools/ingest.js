@@ -88,8 +88,9 @@ if(EACH){
       if(MAX){
         // Max 모드: 크롭 이미지를 파일로 내보내 이 컴퓨터의 Claude Code가 변환 (API 과금 없음)
         const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'sp-max-'));
-        const metas = await page.evaluate(() => state.bulkDrafts.map((d,i)=>({
-          i, num:d.num, needQ: !!d.img && !(d.text||'').trim(), needS: !!d.solImg && !(d.sol||'').trim() })));
+        const usePool = await page.evaluate(() => (state.solPool||[]).length > 0);   // 해설은 조각 전부를 내용으로 짝짓기
+        const metas = await page.evaluate(usePool => state.bulkDrafts.map((d,i)=>({
+          i, num:d.num, needQ: !!d.img && !(d.text||'').trim(), needS: !usePool && !!d.solImg && !(d.sol||'').trim() })), usePool);
         let mOk = 0, mFail = 0, mRetry = 0;
         // 읽기 → 렌더 검증(페이지의 transcriptionIssues) → 문제 있으면 같은 이미지로 1회 재판독, 나은 쪽 채택
         const readChecked = async (promptFn, issuesFn, i, f) => {
@@ -120,12 +121,45 @@ if(EACH){
               const b64 = await page.evaluate(i => state.bulkDrafts[i].solImg.split(',')[1], m.i);
               const f = path.join(tmp, `s${m.i}.png`);
               fs.writeFileSync(f, Buffer.from(b64, 'base64'));
-              const { r, iss } = await readChecked(([i, iss]) => aiSolImgPrompt(state.bulkDrafts[i].solText, iss),
+              // 찾을 문제(번호·본문)를 알려 줘서 여러 해설이 섞인 조각에서도 이 문제의 해설만 옮기게
+              const { r, iss } = await readChecked(([i, iss]) => aiSolImgPrompt(state.bulkDrafts[i].solText, iss, solCtxOf(state.bulkDrafts[i])),
                 r => solutionIssues(r), m.i, f);
-              await page.evaluate(([i, r, iss]) => { const d = state.bulkDrafts[i]; applyAiSolResult(d, r); d.solIssues = iss; rerenderBulk(); }, [m.i, r, iss]);
+              await page.evaluate(([i, r, iss]) => {
+                const d = state.bulkDrafts[i];
+                d.solIssues = applyAiSolResult(d, r) ? iss : [SOL_NOT_FOUND(d.num)];   // 다른 문제의 해설이면 붙이지 않음
+                rerenderBulk();
+              }, [m.i, r, iss]);
             }
             mOk++;
           }catch(e){ mFail++; console.error(`\n  ⚠ 문항 ${m.num || m.i+1} 변환 실패: `+(e.message||e).split('\n')[0]); }
+        }
+        // 해설: 조각마다 문항별 해설로 나눠 읽고 → 문제 내용과 대조해 짝짓기 (번호 인식이 틀려도 제자리로)
+        let solLine = '';
+        if(usePool){
+          const nPool = await page.evaluate(() => state.solPool.length);
+          for(let j = 0; j < nPool; j++){
+            process.stdout.write(`  🤖 해설 조각 읽는 중… ${j+1}/${nPool}   \r`);
+            try{
+              const b64 = await page.evaluate(j => (state.solPool[j].img||'').split(',')[1] || '', j);
+              if(!b64) continue;
+              const f = path.join(tmp, `p${j}.png`);
+              fs.writeFileSync(f, Buffer.from(b64, 'base64'));
+              const r = runClaude(CLAUDE_BIN, await page.evaluate(j => aiSolPiecePrompt(state.solPool[j].hint), j), { img: f, timeoutMs: 300000 });
+              await page.evaluate(([j, r]) => { state.solPool[j].items = solItemsOf(r); }, [j, r]);
+            }catch(e){ console.error(`\n  ⚠ 해설 조각 ${j+1} 읽기 실패: `+(e.message||e).split('\n')[0]); }
+          }
+          const mp = await page.evaluate(() => { const probs = solProbsOfDrafts(), sols = solPoolItems(state.solPool);
+            return sols.length && probs.length ? aiSolMatchPrompt(probs, sols) : ''; });
+          let r = null;
+          if(mp){ try{ r = runClaude(CLAUDE_BIN, mp, { timeoutMs: 300000 }); }catch(e){ console.error('\n  ⚠ 해설 짝짓기 실패 — 번호로만 맞춥니다: '+(e.message||e).split('\n')[0]); } }
+          const res = await page.evaluate(r => {
+            const probs = solProbsOfDrafts(), sols = solPoolItems(state.solPool);
+            const pairs = r ? solPairsOf(r, probs.length, sols.length) : solPairsByNumber(probs, sols);
+            const out = applySolPairsToDrafts(probs, sols, pairs);
+            state.solPoolDone = true; rerenderBulk();
+            return { ...out, total: sols.length };
+          }, r);
+          solLine = ` · 해설 ${res.matched}문항에 짝지음` + (res.leftover ? ` (짝 못 찾은 해설 ${res.leftover}개)` : '');
         }
         fs.rmSync(tmp, { recursive: true, force: true });
         // 단원 분류: 텍스트만 8문항씩 묶어 따로 (전사와 분리 — 각 호출이 한 가지 일만)
@@ -145,7 +179,7 @@ if(EACH){
           }catch(e){ console.error('  ⚠ 단원 분류 실패: '+(e.message||e).split('\n')[0]); }
         }
         const warn = await page.evaluate(() => state.bulkDrafts.filter(d=>(d.aiIssues&&d.aiIssues.length)||(d.solIssues&&d.solIssues.length)).length);
-        console.log(`\n  Max 변환 — 성공 ${mOk} · 실패 ${mFail} · 재판독 ${mRetry} · 단원 분류 ${cOk}/${cls.length}`
+        console.log(`\n  Max 변환 — 성공 ${mOk} · 실패 ${mFail} · 재판독 ${mRetry} · 단원 분류 ${cOk}/${cls.length}${solLine}`
           + (warn ? ` · ⚠ 수식 확인 필요 ${warn}개(#검수주의로 저장)` : ''));
       }else{
         await page.waitForFunction(() => !state._aiBusy, null, { timeout: TIMEOUT_MIN*60000 });
