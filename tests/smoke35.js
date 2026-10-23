@@ -33,7 +33,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     const base = { choices:[], answer:'1', solution:'풀이', images:[], imgN:0, tags:[] };
     return {
       backslash: ruleCheckProblem({...base, question:'값 $a \\& b$ 는?'}).some(i=>i.includes('역슬래시')),
-      env: ruleCheckProblem({...base, question:'$\\begin{matrix} a \\\\ b \\end{matrix}$ 의 값은?'}).some(i=>i.includes('미지원')),
+      env: ruleCheckProblem({...base, question:'$\\begin{array}{cc} a & b \\end{array}$ 의 값은?'}).some(i=>i.includes('미지원')),
       clean: ruleCheckProblem({...base, question:'$x^{2}+1=5$ 일 때 $x$는? [3점]'}).length === 0
     };
   });
@@ -44,10 +44,10 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   // ── 2) 변환 진단 → 자동 기록 (수식 원문 샘플 포함) ──
   const eq = await page.evaluate(() => {
     resetEqDiag();
-    latexToHwpEq('\\begin{matrix} p & q \\end{matrix}');
+    latexToHwpEq('\\begin{array}{cc} p & q \\end{array}');
     errLogEqDiag('테스트 다운로드');
     const log = lsJson('sp-lab-errlog', []);
-    return { n: log.length, kind: log[0] && log[0].kind, hasSample: /matrix/.test(log[0] && log[0].detail||'') };
+    return { n: log.length, kind: log[0] && log[0].kind, hasSample: /array/.test(log[0] && log[0].detail||'') };
   });
   check('미지원 수식 → 기록 + 원문 샘플', eq.n===1 && eq.kind==='한글 수식 변환' && eq.hasSample, JSON.stringify(eq));
 

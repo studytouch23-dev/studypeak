@@ -1790,6 +1790,24 @@ function hwpEqToLatex(s){
     if(!g) break;
     s = s.slice(0, m.index)+'\\begin{cases}'+g[0].replace(/#/g,' \\\\ ')+'\\end{cases}'+s.slice(g[1]);
   }
+  // pmatrix { a & b # c & d } → \begin{pmatrix}a&b\\c&d\end{pmatrix}
+  for(let guard=0; guard<50; guard++){
+    const m = s.match(/\b([pbd]?matrix)\b\s*\{/i);
+    if(!m) break;
+    const g = readBraceGroup(s, m.index + m[0].length - 1);
+    if(!g) break;
+    const env = {dmatrix:'vmatrix'}[m[1].toLowerCase()] || m[1].toLowerCase();
+    s = s.slice(0, m.index)+'\\begin{'+env+'}'+g[0].replace(/#/g,' \\\\ ')+'\\end{'+env+'}'+s.slice(g[1]);
+  }
+  // root {n} of {x} → \sqrt[n]{x}
+  for(let guard=0; guard<50; guard++){
+    const m = s.match(/\broot\b\s*/i);
+    if(!m) break;
+    const a = readTexArg(s, m.index + m[0].length); if(!a) break;
+    const o = s.slice(a[1]).match(/^\s*of\b\s*/i); if(!o) break;
+    const b = readTexArg(s, a[1] + o[0].length); if(!b) break;
+    s = s.slice(0, m.index)+'\\sqrt['+a[0]+']{'+b[0]+'}'+s.slice(b[1]);
+  }
   s = convHwpOver(s);
   s = s.replace(/\b(vec|bar|hat|dyad|acute|grave|check|arch|tilde)\b\s*\{/gi,(m,w)=>'\\'+({bar:'overline',dyad:'overline',arch:'overline'}[w.toLowerCase()]||w.toLowerCase())+'{');
   s = s.replace(/\b(vec|bar|hat)\b\s+([A-Za-z0-9]+)/gi,(m,w,a)=>'\\'+({bar:'overline'}[w.toLowerCase()]||w.toLowerCase())+'{'+a+'}');
@@ -4788,42 +4806,79 @@ function readBraceGroup(s, i){ // s[i]==='{' 가정, 균형 잡힌 그룹 [내�
   }
   return null;
 }
-function convertFracs(s){ // \frac{A}{B} → {A} over {B}, 중첩 중괄호 안전
-  const re = /\\[dt]?frac\s*/;
+function readTexArg(s, i){ // 명령의 인수 하나: {그룹} 또는 중괄호 없는 한 토큰(한 글자·한 명령) → [내용, 다음 인덱스]
+  while(s[i]===' ') i++;
+  if(i>=s.length) return null;
+  if(s[i]==='{') return readBraceGroup(s, i);
+  if(s[i]==='\\'){
+    const m = s.slice(i).match(/^\\([a-zA-Z]+|.)/);
+    return m ? [m[0], i+m[0].length] : null;
+  }
+  if(s[i]==='}' || s[i]==='^' || s[i]==='_' || s[i]==='&') return null;
+  return [s[i], i+1];
+}
+function convertFracs(s){ // \frac{A}{B}·\frac12 → {A} over {B}, 중첩 중괄호 안전
+  const re = /\\[dt]?frac(?![a-zA-Z])\s*/;
   for(let guard=0; guard<200; guard++){
     const m = s.match(re);
     if(!m) break;
-    const start = m.index; let i = start + m[0].length;
-    if(s[i]!=='{') break;
-    const g1 = readBraceGroup(s, i); if(!g1) break;
-    let k = g1[1]; while(s[k]===' ') k++;
-    if(s[k]!=='{') break;
-    const g2 = readBraceGroup(s, k); if(!g2) break;
+    const start = m.index;
+    const g1 = readTexArg(s, start + m[0].length); if(!g1) break;
+    const g2 = readTexArg(s, g1[1]); if(!g2) break;
     s = s.slice(0,start)+'{'+convertFracs(g1[0])+'} over {'+convertFracs(g2[0])+'}'+s.slice(g2[1]);
   }
   return s;
 }
-function convertSqrts(s){ // \sqrt{A} → sqrt {A}, 중첩 중괄호 안전
-  const re = /\\sqrt\s*\{/;
+function convertSqrts(s){ // \sqrt{A}·\sqrt2 → sqrt {A}, \sqrt[n]{A} → root {n} of {A}
+  const re = /\\sqrt(?![a-zA-Z])\s*/;
   for(let guard=0; guard<200; guard++){
     const m = s.match(re);
     if(!m) break;
-    const i = m.index + m[0].length - 1;  // '{' 위치
-    const g = readBraceGroup(s, i); if(!g) break;
-    s = s.slice(0, m.index)+'sqrt {'+g[0]+'}'+s.slice(g[1]);
+    let i = m.index + m[0].length, idx = null;
+    if(s[i]==='['){
+      const close = s.indexOf(']', i);
+      if(close < 0) break;
+      idx = s.slice(i+1, close).trim(); i = close+1;
+    }
+    const g = readTexArg(s, i); if(!g) break;
+    const body = convertSqrts(g[0]);
+    s = s.slice(0, m.index)+(idx ? 'root {'+idx+'} of {'+body+'}' : 'sqrt {'+body+'}')+s.slice(g[1]);
   }
   return s;
+}
+const HWP_MATRIX = {matrix:'matrix', pmatrix:'pmatrix', bmatrix:'bmatrix', vmatrix:'dmatrix', Vmatrix:'dmatrix'};
+function convertEnvs(s){ // 행렬 → 한글 pmatrix{a & b # c & d} (열 구분 &는 보호 문자로 잠시 대피)
+  return s.replace(/\\begin\{(\w+\*?)\}([\s\S]*?)\\end\{\1\}/g, (m, env, body)=>{
+    if(env==='cases') return m;
+    if(HWP_MATRIX[env]) return ' '+HWP_MATRIX[env]+'{ '+body.replace(/\\\\/g,' # ').replace(/&/g,'\u0001')+' } ';
+    if(/^(aligned|align\*?|gathered|gather\*?|split|eqnarray\*?)$/.test(env))   // 여러 줄 정렬식 → 한 열 행렬로 줄만 쌓기
+      return ' matrix{ '+body.replace(/\\\\/g,' # ').replace(/&/g,' ')+' } ';
+    EQ_DIAG.unknown.add('\\begin{'+env+'}');
+    return body;
+  });
+}
+function convertLeftRight(s){ // \left( … \right) → left ( … right ) — 한글이 괄호를 내용 높이에 맞춰 늘림
+  const PAIR = /\\(left|right)\s*(\\[{}]|\\[lr]vert|\\[lr]angle|[()\[\]|.])/g;
+  const toks = s.match(PAIR) || [];
+  const nl = toks.filter(t=>/^\\left/.test(t)).length, nr = toks.length - nl;
+  const ok = nl===nr && toks.every(t=>/[()\[\]|]$/.test(t));
+  return s.replace(PAIR, (m, side, d)=>{
+    if(!ok || d==='.') return d==='.' ? ' ' : d.replace(/^\\([{}])$/, '\\$1');
+    return ' '+side+' '+d+' ';
+  });
 }
 function latexToHwpEq(tex){
   const unkBefore = EQ_DIAG.unknown.size;
   let s = String(tex);
-  s = s.replace(/\\left\s*/g,'').replace(/\\right\s*/g,'');
   s = s.replace(/\\([()\[\]])/g, (m,c)=> c==='(' ? '(' : c===')' ? ')' : ' ');  // \( \) \[ \] 구분자 정리
+  s = convertLeftRight(s);
+  s = s.replace(/\\%/g,'%');
+  s = convertEnvs(s);
   s = convertFracs(s);
   s = convertSqrts(s);
   s = s.replace(/\\begin\{cases\}/g, ' cases{ ').replace(/\\end\{cases\}/g, ' } ');
   s = s.replace(/\\\\/g, ' # ');          // 행 구분 (cases 등)
-  s = s.replace(/&/g, ' ');
+  s = s.replace(/&/g, ' ').replace(/\u0001/g, ' & ');      // 행렬 열 구분만 & 로 복원
   s = s.replace(/\\\{/g, ' lbrace ').replace(/\\\}/g, ' rbrace ');
   s = s.replace(/\\[,;!:]/g, ' ').replace(/\\q?quad/g, '  ');
   const MAP = {times:'times',cdot:'cdot',div:'divide',pm:'+-',mp:'-+',
@@ -4843,7 +4898,10 @@ function latexToHwpEq(tex){
     overline:'bar',bar:'bar',vec:'vec',triangle:'triangle',angle:'angle',
     circ:'circ',degree:'circ',equiv:'equiv',approx:'approx',sim:'sim',
     cdots:'cdots',ldots:'ldots',dots:'cdots',sqrt:'sqrt',
-    displaystyle:'',textstyle:'',scriptstyle:'',scriptscriptstyle:'',limits:'',nolimits:''};
+    displaystyle:'',textstyle:'',scriptstyle:'',scriptscriptstyle:'',limits:'',nolimits:'',
+    mathbb:'rm',mathsf:'rm',mathcal:'rm',boldsymbol:'rm',overrightarrow:'vec',hat:'hat',tilde:'tilde',
+    prime:"'",perp:'bot',parallel:'parallel',exp:'exp',partial:'partial',
+    lvert:'|',rvert:'|',vert:'|',mid:'|',lfloor:'[',rfloor:']',iff:'lrarrow',implies:'rarrow'};
   // 수식 안에 남은 한글(단어·조사)은 rm{}으로 묶어 바로 세우고 폭이 겹치지 않게 조판
   s = s.replace(/([가-힣]+)/g, ' rm {$1} ');
   // 중괄호 없는 첨자는 LaTeX 규칙(한 글자·한 명령)대로 {}로 묶는다.
@@ -4910,17 +4968,26 @@ function eqMeasure(s){
       h = Math.max(h, 1100 + Math.round(m.h*0.45));
     } else if(/[A-Za-z]/.test(ch)){
       const word = s.slice(i).match(/^[A-Za-z]+/)[0];
-      if(word==='cases'){
-        i += 5; while(s[i]===' ') i++;
+      if(word==='cases' || /^[pbd]?matrix$/.test(word)){
+        i += word.length; while(s[i]===' ') i++;
         if(s[i]==='{'){
           const g = readBraceGroup(s,i);
           if(g){
-            const rows = splitTopLevel(g[0], '#').map(eqMeasure);
-            w += Math.max(...rows.map(m=>m.w)) + 900;
+            const rows = splitTopLevel(g[0], '#').map(r=>{       // 행렬은 열(&)마다 간격을 더해 폭을 잡는다
+              const cells = splitTopLevel(r, '&').map(eqMeasure);
+              return { w: cells.reduce((t,m)=>t+m.w,0) + 600*(cells.length-1), h: Math.max(...cells.map(m=>m.h)) };
+            });
+            w += Math.max(...rows.map(m=>m.w)) + (word==='cases' ? 900 : 700);
             h = Math.max(h, rows.reduce((t,m)=>t+m.h,0) + 250);
             i = g[1];
           }
         }
+        continue;
+      }
+      if(word==='left'||word==='right'||word==='of'){ i += word.length; while(s[i]===' ') i++; continue; }   // 크기 조절 표시·root의 of: 폭 없음
+      if(word==='root'){                                     // root {n} of {x}: 근호 + 작은 지수
+        w += 950; i += 4; while(s[i]===' ') i++;
+        if(s[i]==='{'){ const g = readBraceGroup(s,i); if(g){ w += Math.round(eqMeasure(g[0]).w*0.6); i = g[1]; } }
         continue;
       }
       if(word==='sqrt'){ w += 950; i += 4; continue; }
