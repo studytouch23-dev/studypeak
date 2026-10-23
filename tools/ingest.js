@@ -87,8 +87,6 @@ if(EACH){
 
       if(MAX){
         // Max 모드: 크롭 이미지를 파일로 내보내 이 컴퓨터의 Claude Code가 변환 (API 과금 없음)
-        const qPrompt = await page.evaluate(() => aiPrompt());
-        const sPrompt = await page.evaluate(() => aiSolImgPrompt());
         const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'sp-max-'));
         const metas = await page.evaluate(() => state.bulkDrafts.map((d,i)=>({
           i, num:d.num, needQ: !!d.img && !(d.text||'').trim(), needS: !!d.solImg && !(d.sol||'').trim() })));
@@ -100,6 +98,7 @@ if(EACH){
               const f = path.join(tmp, `q${m.i}.png`);
               fs.writeFileSync(f, Buffer.from(b64, 'base64'));
               process.stdout.write(`  🤖 Max 변환 중… 문항 ${m.num || m.i+1}   \r`);
+              const qPrompt = await page.evaluate(i => aiPrompt(state.bulkDrafts[i].pdfText), m.i);   // PDF 글자층 힌트 포함
               const r = runClaude(CLAUDE_BIN, qPrompt, { img: f, timeoutMs: 300000 });
               await page.evaluate(async ([i, r]) => { await applyAiDraftResult(state.bulkDrafts[i], r); rerenderBulk(); }, [m.i, r]);
             }
@@ -107,6 +106,7 @@ if(EACH){
               const b64 = await page.evaluate(i => state.bulkDrafts[i].solImg.split(',')[1], m.i);
               const f = path.join(tmp, `s${m.i}.png`);
               fs.writeFileSync(f, Buffer.from(b64, 'base64'));
+              const sPrompt = await page.evaluate(i => aiSolImgPrompt(state.bulkDrafts[i].solText), m.i);
               const r = runClaude(CLAUDE_BIN, sPrompt, { img: f, timeoutMs: 300000 });
               await page.evaluate(([i, r]) => { applyAiSolResult(state.bulkDrafts[i], r); rerenderBulk(); }, [m.i, r]);
             }
