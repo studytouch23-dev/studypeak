@@ -67,8 +67,11 @@ BinData/imageN.jpg        이미지 (registerHwpxBin)
 | 한글 스크립트 | LaTeX | 주의 |
 |---|---|---|
 | `{A} over {B}` | `\dfrac{A}{B}` | 중괄호 중첩 → 균형 파서 필수 (`convHwpOver`) |
-| `sqrt {A}` | `\sqrt{A}` | |
-| `LEFT ( RIGHT )` | 괄호만 남김 | LEFT/RIGHT는 장식 토큰 |
+| `sqrt {A}` | `\sqrt{A}` | 중괄호 없는 `\sqrt2`·`\frac12`도 `readTexArg`가 한 토큰을 인수로 잡음 |
+| `root {n} of {A}` | `\sqrt[n]{A}` | n제곱근. `of`는 eqMeasure에서 폭 0 |
+| `left ( … right )` | `\left( … \right)` | 내보내기: 짝이 맞고 ( [ \| 일 때만 보존(괄호가 내용 높이로 늘어남). `\left.`·`\{` 등은 괄호만 남김. 가져오기는 괄호만 남김 |
+| `pmatrix{a & b # c & d}` | `\begin{pmatrix}…\end{pmatrix}` | matrix/pmatrix/bmatrix, vmatrix↔`dmatrix`. 열 구분 `&`는 변환 중 `\u0001`로 대피 후 복원 |
+| `matrix{a=1 # b=2}` | `\begin{aligned}`(gathered/align/split) | 여러 줄 정렬식은 한 열 행렬로 줄만 쌓음(정렬 기호 & 제거) |
 | `TIMES, DIVIDE, BULLET` | `\times \div \cdot` | |
 | `LEQ/le, GEQ/ge, !=` | `\le \ge \ne` | 소문자 `le`도 실파일에 등장 |
 | `cases{a # b}` | `\begin{cases}a\\b\end{cases}` | `#`=행 구분 |

@@ -11,6 +11,7 @@
  *
  * 옵션: --grade 고2 · --diff 1~5|혼합 · --type "객관식(5지선다)"|단답형|혼합
  *       --extra "추가 요청" · --timeout <분>(기본 10) · --stub 테스트용(개발 전용)
+ *       --no-verify 독립 검산 생략 (기본: 만든 문제를 정답을 숨긴 채 다시 풀어 대조, 다르면 #검산불일치)
  * 환경변수: SP_EMAIL, SP_PASSWORD(랩의 자동화용 비밀번호), CLAUDE_BIN(기본 'claude')
  */
 const { openLab, loginCloud, waitSynced, runClaude } = require('./_common.js');
@@ -18,6 +19,7 @@ const { openLab, loginCloud, waitSynced, runClaude } = require('./_common.js');
 const argv = process.argv.slice(2);
 function opt(name, def){ const i = argv.indexOf('--'+name); return i >= 0 ? argv[i+1] : def; }
 const STUB = argv.includes('--stub');
+const VERIFY = !argv.includes('--no-verify');
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 const SUBJECT = opt('subject'), CHAPTER = opt('chapter'), SECTION = opt('section');
 const LIKE_ID = opt('like-id');
@@ -100,13 +102,39 @@ if(!SUBJECT && !LIKE_ID){
     console.error(text.slice(0, 400));
     await lab.close(); process.exit(1);
   }
-  console.log(`✂ ${n}문항으로 분할됨 — 저장 중…`);
+  console.log(`✂ ${n}문항으로 분할됨`);
+
+  // 독립 검산: 정답을 숨긴 채 새 호출이 처음부터 다시 풀어 생성된 정답과 대조 (만든 AI ≠ 검사하는 AI)
+  if(VERIFY){
+    const tally = { match:0, mismatch:0, unknown:0, fail:0 };
+    for(let i = 0; i < n; i++){
+      process.stdout.write(`  🧮 독립 검산 중… ${i+1}/${n}   \r`);
+      try{
+        const vp = await page.evaluate(i => { const d = state.bulkDrafts[i]; return aiVerifyPrompt(d.text, d.choices); }, i);
+        const r = runClaude(CLAUDE_BIN, vp, { timeoutMs: 300000 });
+        const out = await page.evaluate(([i, r]) => {
+          const d = state.bulkDrafts[i], o = verifyOutcome(d.ans, d.choices, r);
+          d.verifyFail = o === 'mismatch'; d.verifyAns = String(r.answer||'');
+          return o;
+        }, [i, r]);
+        tally[out]++;
+      }catch(e){ tally.fail++; }
+    }
+    await page.evaluate(() => rerenderBulk());
+    console.log(`\n  검산 — 일치 ${tally.match} · 불일치 ${tally.mismatch}`
+      + (tally.unknown ? ` · 비교 불가 ${tally.unknown}` : '') + (tally.fail ? ` · 실패 ${tally.fail}` : '')
+      + (tally.mismatch ? ' (불일치 문항은 #검산불일치 태그로 저장)' : ''));
+  }
+  console.log('💾 저장 중…');
   await page.click('button[onclick="saveBulk()"]');
   await page.waitForFunction(() => state.bulkDrafts.length === 0, null, { timeout: 120000 });
   await waitSynced(page);
 
   console.log(`✅ ${n}문항 등록·클라우드 동기화 완료 (미검수 — 웹의 [🔎 AI 검수]로 마무리 권장)`);
-  if(STUB) console.log(`[stub] 클라우드 업로드 행: ${await page.evaluate(() => window.__rows.problems.size)}`);
+  if(STUB){
+    console.log(`[stub] 클라우드 업로드 행: ${await page.evaluate(() => window.__rows.problems.size)}`);
+    console.log(`[stub] 태그: ${await page.evaluate(() => JSON.stringify([...window.__rows.problems.values()].map(r => (r.data && r.data.tags) || [])))}`);
+  }
   await lab.close();
   process.exit(0);
 })().catch(e => { console.error('실행 실패:', e.message||e); process.exit(2); });
