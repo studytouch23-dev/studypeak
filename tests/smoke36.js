@@ -20,8 +20,12 @@ const genText = [
   '[답] ③',
   '[해설] $a_{3}-a_{1}=2d=6$ 이므로 $d=3$.'
 ].join('\n');
+// 검산 프롬프트("정답은 일부러 알려주지 않습니다")엔 재풀이 답을: 1번은 맞게(④), 2번은 다르게(②, 생성 정답 ③)
 fs.writeFileSync(fakeClaude, '#!/usr/bin/env node\n'
-  + 'console.log(JSON.stringify({ result: '+JSON.stringify(genText)+' }));\n');
+  + 'const p = process.argv[process.argv.indexOf("-p")+1] || "";\n'
+  + 'let out = '+JSON.stringify(genText)+';\n'
+  + 'if(p.includes("정답은 일부러 알려주지 않습니다")) out = JSON.stringify(p.includes("첫째항이 $2$") ? {answer:"④",work:"a5=14",wellPosed:true} : {answer:"②",work:"d=2",wellPosed:true});\n'
+  + 'console.log(JSON.stringify({ result: out }));\n');
 fs.chmodSync(fakeClaude, 0o755);
 
 function runGen(args){
@@ -45,6 +49,14 @@ check('범위 표시', out.includes('수학Ⅰ > 수열 > 등차수열'));
 check('2문항 분할', /✂ 2문항으로 분할됨/.test(out));
 check('등록·동기화 완료', /✅ 2문항 등록·클라우드 동기화 완료/.test(out));
 check('클라우드 업로드 행 2', /\[stub\] 클라우드 업로드 행: 2/.test(out));
+check('독립 검산: 일치 1 · 불일치 1', /검산 — 일치 1 · 불일치 1/.test(out), (out.match(/검산 — [^\n]+/)||[])[0]);
+const tags = JSON.parse((out.match(/\[stub\] 태그: (.+)/)||[,'[]'])[1]);
+check('불일치 문항만 #검산불일치', tags.filter(t=>t.includes('검산불일치')).length === 1, JSON.stringify(tags));
+
+// ── --no-verify: 검산 생략 ──
+({ out, code } = runGen(['--stub', '--no-verify', '--subject','수학Ⅰ', '--chapter','수열', '--count','2']));
+check('--no-verify 정상 종료', code === 0, code);
+check('--no-verify 면 검산 없음', !/독립 검산|검산 —/.test(out));
 
 // ── 잘못된 과목 → 안내 후 종료 코드 2 ──
 ({ out, code } = runGen(['--stub', '--subject','없는과목', '--count','1']));

@@ -31,7 +31,11 @@ node run-all.js      # 전체 실행 (크로미움 경로가 다르면 PW_CHROMI
 | smoke33 | 클라우드 동기화(Supabase 스텁): 세션 복원·자동 푸시·증분 풀·삭제 전파·전체 올리기 |
 | smoke34 | tools/ingest.js: 생성 PDF로 업로드→영역→AI변환→저장→클라우드 전 구간 (API 스텁 + --max 가짜 claude) |
 | smoke35 | 오류 기록함: 변환 결과 검증(역슬래시·미지원 환경)·자동 수집·보고서·전역 오류 후킹 |
-| smoke36 | tools/generate.js: Claude Code(Max) 문제 생성→분할→저장→클라우드 (가짜 claude), 없는 과목 거부 |
+| smoke36 | tools/generate.js: Claude Code(Max) 문제 생성→분할→독립 검산(#검산불일치)→저장→클라우드 (가짜 claude), --no-verify, 없는 과목 거부 |
+| smoke37 | 한글 수식 변환 강화: \frac12·\sqrt[n]·\left\right·행렬·aligned·\mathbb 등 + eqMeasure + 역변환 + 실제 HWPX |
+| smoke38 | OCR 힌트: 크롭 영역별 PDF 글자층 추출 → 변환 프롬프트 [참고 텍스트], 깨진 글꼴·스캔은 제외 |
+| smoke39 | 전사/분류 분리 + 렌더 검증(KaTeX·한글 변환) 자동 재판독, 경고 문항 #검수주의 |
+| smoke40 | 독립 검산: 정답 비교 규칙(원문자·분수·소수) + [🧮 독립 검산] 일괄 + 생성 드래프트 태그 |
 
 실제 사용자 파일(PDF·HWPX)이 필요한 테스트(영역 에디터 플로우 등)는 저장소에 넣지 않는다 —
 세션 scratchpad에서 사용자 업로드 파일로 작성·실행한다(mathlab-dev 스킬 참조).
