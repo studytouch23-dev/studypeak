@@ -88,7 +88,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   check('분류: 텍스트만 1회 묶음 호출', cl.length === 1 && !cl[0].hasImg, JSON.stringify(cl));
   check('분류: 유효한 소단원·난이도 반영', f.d[0].sub==='수학Ⅰ' && f.d[0].sect==='등차수열' && f.d[0].diff===4, JSON.stringify(f.d[0]));
   check('분류: 분류표에 없는 이름은 버림', f.d[1].sub === '' && f.d[1].diff === 0, JSON.stringify(f.d[1]));
-  check('미리보기에 경고 표시', f.preview.includes('⚠ 수식 확인 필요') && f.preview.includes('판독불가'));
+  check('미리보기에 경고 표시', f.preview.includes('⚠ 확인 필요') && f.preview.includes('판독불가'));
   check('상태줄에 경고 개수', f.status.includes('수식 확인 필요 1개'), f.status);
 
   // ── 4) 저장: 경고 문항만 #검수주의 ──

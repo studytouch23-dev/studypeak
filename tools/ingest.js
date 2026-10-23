@@ -120,9 +120,14 @@ if(EACH){
               const b64 = await page.evaluate(i => state.bulkDrafts[i].solImg.split(',')[1], m.i);
               const f = path.join(tmp, `s${m.i}.png`);
               fs.writeFileSync(f, Buffer.from(b64, 'base64'));
-              const { r, iss } = await readChecked(([i, iss]) => aiSolImgPrompt(state.bulkDrafts[i].solText, iss),
+              // 찾을 문제(번호·본문)를 알려 줘서 여러 해설이 섞인 조각에서도 이 문제의 해설만 옮기게
+              const { r, iss } = await readChecked(([i, iss]) => aiSolImgPrompt(state.bulkDrafts[i].solText, iss, solCtxOf(state.bulkDrafts[i])),
                 r => solutionIssues(r), m.i, f);
-              await page.evaluate(([i, r, iss]) => { const d = state.bulkDrafts[i]; applyAiSolResult(d, r); d.solIssues = iss; rerenderBulk(); }, [m.i, r, iss]);
+              await page.evaluate(([i, r, iss]) => {
+                const d = state.bulkDrafts[i];
+                d.solIssues = applyAiSolResult(d, r) ? iss : [SOL_NOT_FOUND(d.num)];   // 다른 문제의 해설이면 붙이지 않음
+                rerenderBulk();
+              }, [m.i, r, iss]);
             }
             mOk++;
           }catch(e){ mFail++; console.error(`\n  ⚠ 문항 ${m.num || m.i+1} 변환 실패: `+(e.message||e).split('\n')[0]); }

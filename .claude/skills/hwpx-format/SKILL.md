@@ -68,6 +68,7 @@ BinData/imageN.jpg        이미지 (registerHwpxBin)
 |---|---|---|
 | `{A} over {B}` | `\dfrac{A}{B}` | 중괄호 중첩 → 균형 파서 필수 (`convHwpOver`) |
 | `sqrt {A}` | `\sqrt{A}` | 중괄호 없는 `\sqrt2`·`\frac12`도 `readTexArg`가 한 토큰을 인수로 잡음 |
+| `~` (보통 간격)·`` ` `` (좁은 간격) | `\ `·`\enspace`·`\quad`(~~)·`\qquad`(~~~~) / `\,`·`\;`·`\thinspace` | 한글 수식은 일반 공백을 무시. `\ `는 `&` 처리 전에 바꿔야 `\&`(리터럴 앰퍼샌드)가 공백으로 사라지지 않고 미지원으로 보고됨 |
 | `root {n} of {A}` | `\sqrt[n]{A}` | n제곱근. `of`는 eqMeasure에서 폭 0 |
 | `left ( … right )` | `\left( … \right)` | 내보내기: 짝이 맞고 ( [ \| 일 때만 보존(괄호가 내용 높이로 늘어남). `\left.`·`\{` 등은 괄호만 남김. 가져오기는 괄호만 남김 |
 | `pmatrix{a & b # c & d}` | `\begin{pmatrix}…\end{pmatrix}` | matrix/pmatrix/bmatrix, vmatrix↔`dmatrix`. 열 구분 `&`는 변환 중 `\u0001`로 대피 후 복원 |
