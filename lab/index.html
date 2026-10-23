@@ -1923,7 +1923,7 @@ function collectAnchors(items, pgW, pgH){
       return end <= it.x + 1 && it.x - end < 10;
     });
     if(blocked) continue;
-    out.push({num:String(parseInt(s,10)), x:it.x, y:it.y, dot:s.endsWith('.')});
+    out.push({num:String(parseInt(s,10)), x:it.x, y:it.y, w:it.w||0, h:it.h||0, dot:s.endsWith('.')});
   }
   return out;
 }
@@ -1970,7 +1970,9 @@ function detectRegionsByAnchors(pg, pageIdx){
       const x0 = Math.max(0, a.x - 8);
       const x1 = twoCol ? (ci===0 ? mid - 4 : pg.w*0.975) : pg.w*0.975;
       if(x1-x0 < 20 || topPdf-botPdf < 12) continue;
-      out.push({ page:pageIdx, x:x0, y:pg.h-topPdf, w:x1-x0, h:topPdf-botPdf, num:a.num });
+      const cx0 = twoCol && ci===1 ? mid + 2 : pg.w*0.02;
+      out.push({ page:pageIdx, x:x0, y:pg.h-topPdf, w:x1-x0, h:topPdf-botPdf, num:a.num,
+        _fit:{ col:ci, ax:a.x, aw:a.w||8, ah:a.h||10, base:pg.h-a.y, cx0, cx1:x1 } });    // 잉크 맞춤(fitRegionsToInk)용
     }
   }
   return out;
@@ -2047,7 +2049,7 @@ async function openPdfEditor(res, opts){
     return { ...pg, idx:i, isAns: pg.isQuickAns || pg.ansLabels>=4, mode, selected: mode!=='skip', thumb:null };
   });
   PDFED.regions = []; PDFED.cur = 0; PDFED.nextNum = 1;
-  PDFED.selectedRegion = null; PDFED.pixCache.clear();
+  PDFED.selectedRegion = null; PDFED.pixCache.clear(); if(PDFED.inkCache) PDFED.inkCache.clear();
   $('#pdfed-title').textContent = 'PDF 분석 — '+res.fileName;
   $('#pdfed-step1').style.display='block';
   $('#pdfed-step2').style.display='none';
@@ -2127,8 +2129,102 @@ async function pdfedPixelCanvas(pg){
   if(PDFED.pixCache.size>6) PDFED.pixCache.delete(PDFED.pixCache.keys().next().value);
   return c;
 }
+/* ── 영역을 실제 잉크에 맞춤 (앵커 영역): 첫 줄의 분수·지수처럼 번호보다 위로 솟은 글자까지 위로 확장,
+   아래는 문제 내용이 끝나는 곳(풀이 여백 직전)까지만. 페이지 길이의 세로줄(단 구분선)·단 너비의 가로줄은 무시 ── */
+async function pdfedInkCanvas(pg){
+  PDFED.inkCache = PDFED.inkCache || new Map();
+  if(PDFED.inkCache.has(pg.idx)) return PDFED.inkCache.get(pg.idx);
+  const vp = pg.page.getViewport({scale:2});
+  const c = document.createElement('canvas');
+  c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+  await pg.page.render({canvasContext:c.getContext('2d'), viewport:vp}).promise;
+  PDFED.inkCache.set(pg.idx, c);
+  if(PDFED.inkCache.size>4) PDFED.inkCache.delete(PDFED.inkCache.keys().next().value);
+  return c;
+}
+function fitRegionsToInk(canvas, pg, regs){
+  const W = canvas.width, H = canvas.height, S = W / pg.w;
+  const img = canvas.getContext('2d').getImageData(0, 0, W, H).data;
+  const dark = (x,y)=>{ const i=(y*W+x)*4; return (0.299*img[i]+0.587*img[i+1]+0.114*img[i+2]) < 170; };
+  // 페이지 높이의 40% 이상 이어지는 세로 잉크 열 = 단 구분선·테두리 → 잉크로 치지 않음
+  const rule = new Uint8Array(W);
+  const ry0 = Math.floor(H*0.06), ry1 = Math.floor(H*0.94), need = (ry1-ry0)/2*0.4;
+  for(let x=0; x<W; x++){ let c=0; for(let y=ry0; y<ry1; y+=2) if(dark(x,y)) c++; if(c > need) rule[x]=1; }
+  for(let x=1; x<W-1; x++) if(rule[x] && !rule[x-1]) rule[x-1]=2;      // 안티에일리어싱 가장자리
+  for(let x=W-2; x>0; x--) if(rule[x]===1 && !rule[x+1]) rule[x+1]=2;
+  const byCol = new Map();
+  for(const r of regs){ if(!r._fit) continue; const k = r._fit.col; if(!byCol.has(k)) byCol.set(k, []); byCol.get(k).push(r); }
+  for(const list of byCol.values()){
+    list.sort((a,b)=>a._fit.base - b._fit.base);
+    const X0 = Math.max(0, Math.floor(list[0]._fit.cx0*S)), X1 = Math.min(W, Math.ceil(list[0]._fit.cx1*S));
+    const memo = new Int8Array(H).fill(-1);
+    const rowInk = y=>{                                     // 단 너비 대부분을 덮는 가로줄(머리말 선 등)은 제외
+      if(y<0 || y>=H) return false;
+      if(memo[y] >= 0) return memo[y]===1;
+      let c = 0;
+      for(let x=X0; x<X1; x++) if(!rule[x] && dark(x,y)) c++;
+      const v = c>0 && c < (X1-X0)*0.85;
+      memo[y] = v ? 1 : 0; return v;
+    };
+    const GAP_T = Math.round(4*S), GAP_B = Math.round(40*S), PAD = Math.round(3*S);
+    const colTop = Math.floor(H*0.03), colBot = Math.floor(H*0.945);
+    const fit = list.map(r=>({ r, base: Math.round(r._fit.base*S) }));
+    // 위쪽: 번호 글자 윗선에서 출발해, '번호보다 오른쪽에만' 있는 잉크(첫 줄의 분수 분자·지수·근호 윗선)를
+    // 4pt 미만 틈으로 이어지는 동안 위로 포함. 번호 위치(왼쪽)에 잉크가 있는 줄 = 앞 문제의 글 → 멈춤. 최대 26pt
+    fit.forEach((f, k)=>{
+      const F = f.r._fit;
+      const lim = Math.max(k ? fit[k-1].base + Math.round(4*S) : colTop, f.base - Math.round(26*S));
+      const leftEnd = Math.min(X1, Math.ceil((F.ax + F.aw + 1)*S));
+      const leftInk = y=>{ for(let x=X0; x<leftEnd; x++) if(!rule[x] && dark(x,y)) return true; return false; };
+      const numTop = f.base - Math.round(Math.max(7, F.ah*0.8)*S);
+      let top = numTop, gap = 0;
+      for(let yy=numTop-1; yy>=lim; yy--){
+        if(!rowInk(yy)){ if(++gap > GAP_T) break; continue; }
+        if(leftInk(yy)) break;
+        top = yy; gap = 0;
+      }
+      f.top = top;
+    });
+    // 아래쪽: 다음 문제 맨 윗줄 직전까지에서 마지막 잉크 줄(풀이 여백은 잘라냄).
+    // 단의 마지막 문제는 40pt 이상 빈 띠 뒤(꼬리말·쪽번호)를 제외
+    fit.forEach((f, k)=>{
+      const isLast = k+1 >= fit.length;
+      const lim = isLast ? colBot : fit[k+1].top - 1;
+      let last = f.base, gap = 0;
+      for(let yy=f.base; yy<lim; yy++){
+        if(rowInk(yy)){ last = yy; gap = 0; }
+        else if(isLast && ++gap > GAP_B) break;
+      }
+      f.bot = last;
+    });
+    for(const f of fit){
+      if(f.bot - f.top < Math.round(8*S)) continue;           // 잉크를 못 찾으면 기존 사각형 유지
+      let minX = X1, maxX = X0;
+      for(let y=f.top; y<=f.bot; y+=1){
+        if(!rowInk(y)) continue;
+        for(let x=X0; x<minX; x++) if(!rule[x] && dark(x,y)){ minX = x; break; }
+        for(let x=X1-1; x>maxX; x--) if(!rule[x] && dark(x,y)){ maxX = x; break; }
+      }
+      if(maxX <= minX) continue;
+      const left = Math.max(X0, Math.min(minX, Math.floor(f.r._fit.ax*S)) - PAD);
+      const right = Math.min(X1, maxX + PAD);
+      const top = Math.max(colTop, f.top - PAD), bot = Math.min(H, f.bot + PAD);
+      Object.assign(f.r, { x:left/S, y:top/S, w:(right-left)/S, h:(bot-top)/S, fitted:true });
+    }
+    for(let k=1; k<fit.length; k++){                          // 여백(PAD)끼리도 겹치지 않게
+      const a = fit[k-1].r, b = fit[k].r, aEnd = a.y + a.h;
+      if(aEnd > b.y){ const m = (aEnd + b.y)/2; a.h = m - a.y; b.h = (b.y + b.h) - m; b.y = m; }
+    }
+  }
+  regs.forEach(r=>{ delete r._fit; });
+  return regs;
+}
 async function pdfedDetectPage(pg, rerender){
   let regs = detectRegionsByAnchors(pg, pg.idx);
+  if(regs.length){
+    try{ fitRegionsToInk(await pdfedInkCanvas(pg), pg, regs); }
+    catch(e){ regs.forEach(r=>{ delete r._fit; }); }        // 렌더 실패 시 번호 기준 사각형 그대로
+  }
   if(!regs.length){
     const c = await pdfedPixelCanvas(pg);
     regs = detectRegionsByPixels(c, pg.w, pg.h, pg.idx, PDFED.nextNum);
@@ -2259,6 +2355,7 @@ function pdfedClearPage(){
     const r = PDFED.regions[mode.idx]; if(!r) return;
     const dx = (p.x-mode.sx)/s, dy = (p.y-mode.sy)/s;
     const o = mode.orig, MIN = 14;
+    r.fitted = false; r.exact = true;                       // 손으로 맞춘 영역은 완료 시 그대로 자름
     if(mode.type==='move'){
       r.x = Math.min(Math.max(0, o.x+dx), pg.w-o.w);
       r.y = Math.min(Math.max(0, o.y+dy), pg.h-o.h);
@@ -2301,6 +2398,15 @@ function refineRectOnCanvas(img, X, Y, W, H, pgW, pgH){ // img: 페이지 전체
     let sx=x0, sy=y0, ex=x0+w, ey=y0+h;
     if(side==='l') ex=x0+3; else if(side==='r') sx=x0+w-3;
     else if(side==='t') ey=y0+3; else sy=y0+h-3;
+    if(side==='l' || side==='r'){                      // 세로 띠가 거의 전부 잉크 = 단 구분선·테두리 → 따라가지 않음
+      let rows=0, ink=0;
+      for(let y=Math.max(0,sy|0); y<Math.min(pgH,ey); y+=2){
+        rows++;
+        for(let x=Math.max(0,sx|0); x<Math.min(pgW,ex); x++) if(dark(x,y)){ ink++; break; }
+      }
+      if(rows > 30 && ink/rows > 0.85) return false;
+      return ink > 0;
+    }
     for(let y=Math.max(0,sy|0); y<Math.min(pgH,ey); y+=2)
       for(let x=Math.max(0,sx|0); x<Math.min(pgW,ex); x+=2) if(dark(x,y)) return true;
     return false;
@@ -2482,7 +2588,9 @@ async function pdfedFinish(){
       const pageImg = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
       for(const r of regs){
         // 잉크 경계 보정: 경계에 걸린 조건 박스·선택지를 따라 확장, 빈 여백은 잘라냄
-        const rr = refineRectOnCanvas(pageImg, r.x*scale, r.y*scale, r.w*scale, r.h*scale, c.width, c.height);
+        const rr = (r.fitted || r.exact)                     // 화면에 보이는 영역 그대로 (이미 잉크에 맞춤)
+          ? { x:r.x*scale, y:r.y*scale, w:r.w*scale, h:r.h*scale }
+          : refineRectOnCanvas(pageImg, r.x*scale, r.y*scale, r.w*scale, r.h*scale, c.width, c.height);
         const c2 = document.createElement('canvas');
         c2.width = Math.ceil(rr.w); c2.height = Math.ceil(rr.h);
         c2.getContext('2d').drawImage(c, rr.x, rr.y, rr.w, rr.h, 0, 0, c2.width, c2.height);
