@@ -5830,7 +5830,7 @@ async function sbInit(){ // 시작 시: 전에 로그인한 적 있으면 조용
       SB.user = session ? session.user : null;
       if(SB.user) localStorage.setItem('sp-lab-cloud','1');
       sbUI();
-      if(SB.user && ev === 'SIGNED_IN') sbPull().catch(()=>{});
+      if(SB.user && ev === 'SIGNED_IN') sbPull(true).catch(()=>{});      // 새 기기·새 로그인은 처음부터 전부
     });
     const { data } = await c.auth.getSession();
     if(data && data.session){ SB.user = data.session.user; sbUI(); sbPull().catch(()=>{}); }
@@ -5877,7 +5877,7 @@ async function sbFlush(){
           if(it.del) rows.push({ id: it.id, data: {}, updated_at: Date.now(), deleted: true });
           else{
             const rec = await DB.get(table, it.id).catch(()=>null);
-            if(rec) rows.push({ id: it.id, data: rec, updated_at: rec.updatedAt||rec.createdAt||Date.now(), deleted: false });
+            if(rec) rows.push({ id: it.id, data: rec, updated_at: Date.now(), deleted: false });   // updated_at = 올린 시각(증분 기준)
           }
         }
         if(rows.length){
@@ -5895,12 +5895,13 @@ async function sbFlush(){
     sbScheduleFlush();
   }finally{ SB.busy = false; }
 }
-/* 내려받기: updated_at 증분, 최신 수정본 우선. full=true면 처음부터 전부 */
+/* 내려받기: updated_at(=올린 시각) 증분. 어느 쪽이 최신인지는 문항 자체의 수정 시각(data.updatedAt)으로 판단.
+   full=true면 처음부터 전부 */
 async function sbPull(full){
   if(!SB.user) return 0;
   const c = await sbLoad();
   const since = full ? 0 : +(localStorage.getItem('sp-lab-cloudsince')||0);
-  let maxT = since, applied = 0;
+  let maxT = since, applied = 0, cloudProblems = 0;
   for(const table of ['problems','worksheets']){
     let from = 0;
     for(;;){
@@ -5915,10 +5916,12 @@ async function sbPull(full){
         maxT = Math.max(maxT, +row.updated_at||0);
         if(table === 'problems'){
           const local = state.problems.find(p=>p.id===row.id);
+          const rt = +((row.data && (row.data.updatedAt||row.data.createdAt)) || 0);
+          if(!row.deleted) cloudProblems++;
           if(row.deleted){
             if(local){ await DB.del('problems', row.id); state.problems = state.problems.filter(p=>p.id!==row.id);
               state.cart = state.cart.filter(x=>x!==row.id); applied++; }
-          }else if(row.data && row.data.id && (!local || (+row.updated_at||0) > (local.updatedAt||0))){
+          }else if(row.data && row.data.id && (!local || rt > (local.updatedAt||local.createdAt||0))){
             const stored = await saveProblem(row.data);
             if(local) Object.assign(local, lightenProblem(stored));
             else state.problems.push(lightenProblem(stored));
@@ -5928,7 +5931,8 @@ async function sbPull(full){
           const local = (state.worksheets||[]).find(w=>w.id===row.id);
           if(row.deleted){
             if(local){ await DB.del('worksheets', row.id); state.worksheets = state.worksheets.filter(w=>w.id!==row.id); applied++; }
-          }else if(row.data && row.data.id && (!local || (+row.updated_at||0) > (local.createdAt||0))){
+          }else if(row.data && row.data.id && (!local
+              || +(row.data.updatedAt||row.data.createdAt||0) > +(local.updatedAt||local.createdAt||0))){
             await DB.put('worksheets', row.data);
             state.worksheets = state.worksheets.filter(w=>w.id!==row.id);
             state.worksheets.push(row.data);
@@ -5943,7 +5947,11 @@ async function sbPull(full){
   localStorage.setItem('sp-lab-cloudsince', String(maxT));
   if(applied){ persistCart(); refreshCounts(); if($('#view-db').classList.contains('active')) renderDB(); renderWorksheetList(); }
   const el = $('#sb-sync-status');
-  if(el) el.textContent = applied ? `⬇ 클라우드에서 ${applied}건 가져왔습니다.` : '☁️ 최신 상태입니다.';
+  if(el) el.textContent = applied ? `⬇ 클라우드에서 ${applied}건 가져왔습니다.`
+    : (full && !cloudProblems) ? '☁️ 클라우드에 저장된 문제가 아직 없습니다 — 문제를 만든 컴퓨터(브라우저)에서 로그인한 뒤 [⬆ 전체 올리기]를 한 번 눌러 주세요.'
+    : full ? `☁️ 최신 상태입니다 — 클라우드 문제 ${cloudProblems}개가 이 기기와 같습니다.`
+    : '☁️ 최신 상태입니다.';
+  SB.lastCloudCount = full ? cloudProblems : SB.lastCloudCount;
   return applied;
 }
 async function sbPushAll(){ // 최초 이전: 이 기기의 전체를 업로드
@@ -5957,7 +5965,8 @@ async function sbPushAll(){ // 최초 이전: 이 기기의 전체를 업로드
     await DB.each('problems', rec=>recs.push(rec));
     for(let i=0; i<recs.length; i+=SB_CHUNK){
       if(AI_BATCH.cancel){ stopped = true; break; }
-      const rows = recs.slice(i, i+SB_CHUNK).map(r=>({ id:r.id, data:r, updated_at:r.updatedAt||r.createdAt||Date.now(), deleted:false }));
+      const now = Date.now();
+      const rows = recs.slice(i, i+SB_CHUNK).map(r=>({ id:r.id, data:r, updated_at:now, deleted:false }));
       const { error } = await c.from('problems').upsert(rows);
       if(error) throw error;
       n += rows.length;
@@ -5967,7 +5976,7 @@ async function sbPushAll(){ // 최초 이전: 이 기기의 전체를 업로드
       const wss = await DB.getAll('worksheets');
       for(let i=0; i<wss.length; i+=SB_CHUNK){
         const { error } = await c.from('worksheets').upsert(
-          wss.slice(i,i+SB_CHUNK).map(w=>({ id:w.id, data:w, updated_at:w.createdAt||Date.now(), deleted:false })));
+          wss.slice(i,i+SB_CHUNK).map(w=>({ id:w.id, data:w, updated_at:Date.now(), deleted:false })));
         if(error) throw error;
       }
       logJob('클라우드 동기화', '전체 올리기', `문제 ${n}개`);
@@ -5993,7 +6002,9 @@ async function sbPullAll(){
   try{
     const n = await sbPull(true);
     logJob('클라우드 동기화', '전체 내려받기', n+'건');
-    toast(`✅ 내려받기 완료 — ${n}건 반영`);
+    toast(SB.lastCloudCount === 0
+      ? '☁️ 클라우드가 비어 있습니다 — 문제를 만든 컴퓨터에서 [⬆ 전체 올리기]를 먼저 눌러 주세요.'
+      : `✅ 내려받기 완료 — 클라우드 문제 ${SB.lastCloudCount}개 중 ${n}건 새로 반영`);
   }catch(e){ toast('⚠ 내려받기 실패: '+(e.message||e)); }
   finally{ aiBatchDone(); }
 }
