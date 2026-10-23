@@ -27,8 +27,8 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   await page.goto('http://127.0.0.1:9121/lab/', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(500);
 
-  // ── 1) AI 변환 프롬프트가 소단원 분류표를 포함 ──
-  const pr = await page.evaluate(() => aiPrompt());
+  // ── 1) 단원 분류 프롬프트가 소단원 분류표를 포함 (전사와 분리된 별도 호출) ──
+  const pr = await page.evaluate(() => aiClassifyPrompt([{ i:0, text:'첫째항이 2인 등차수열' }]));
   check('프롬프트에 section 필드', pr.includes('"section"'));
   check('분류표에 소단원 포함', pr.includes('등차수열') && pr.includes(' > ') && pr.includes('·'), pr.length+'자');
 

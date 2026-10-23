@@ -90,7 +90,21 @@ if(EACH){
         const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'sp-max-'));
         const metas = await page.evaluate(() => state.bulkDrafts.map((d,i)=>({
           i, num:d.num, needQ: !!d.img && !(d.text||'').trim(), needS: !!d.solImg && !(d.sol||'').trim() })));
-        let mOk = 0, mFail = 0;
+        let mOk = 0, mFail = 0, mRetry = 0;
+        // 읽기 → 렌더 검증(페이지의 transcriptionIssues) → 문제 있으면 같은 이미지로 1회 재판독, 나은 쪽 채택
+        const readChecked = async (promptFn, issuesFn, i, f) => {
+          let r = runClaude(CLAUDE_BIN, await page.evaluate(promptFn, [i, null]), { img: f, timeoutMs: 300000 });
+          let iss = await page.evaluate(issuesFn, r);
+          if(iss.length){
+            mRetry++;
+            try{
+              const r2 = runClaude(CLAUDE_BIN, await page.evaluate(promptFn, [i, iss]), { img: f, timeoutMs: 300000 });
+              const i2 = await page.evaluate(issuesFn, r2);
+              if(i2.length < iss.length){ r = r2; iss = i2; }
+            }catch(e){ /* 재판독 실패 — 첫 결과 유지 */ }
+          }
+          return { r, iss };
+        };
         for(const m of metas){
           try{
             if(m.needQ){
@@ -98,23 +112,41 @@ if(EACH){
               const f = path.join(tmp, `q${m.i}.png`);
               fs.writeFileSync(f, Buffer.from(b64, 'base64'));
               process.stdout.write(`  🤖 Max 변환 중… 문항 ${m.num || m.i+1}   \r`);
-              const qPrompt = await page.evaluate(i => aiPrompt(state.bulkDrafts[i].pdfText), m.i);   // PDF 글자층 힌트 포함
-              const r = runClaude(CLAUDE_BIN, qPrompt, { img: f, timeoutMs: 300000 });
-              await page.evaluate(async ([i, r]) => { await applyAiDraftResult(state.bulkDrafts[i], r); rerenderBulk(); }, [m.i, r]);
+              const { r, iss } = await readChecked(([i, iss]) => aiPrompt(state.bulkDrafts[i].pdfText, iss),   // PDF 글자층 힌트 포함
+                r => transcriptionIssues(r), m.i, f);
+              await page.evaluate(async ([i, r, iss]) => { const d = state.bulkDrafts[i]; await applyAiDraftResult(d, r); d.aiIssues = iss; rerenderBulk(); }, [m.i, r, iss]);
             }
             if(m.needS){
               const b64 = await page.evaluate(i => state.bulkDrafts[i].solImg.split(',')[1], m.i);
               const f = path.join(tmp, `s${m.i}.png`);
               fs.writeFileSync(f, Buffer.from(b64, 'base64'));
-              const sPrompt = await page.evaluate(i => aiSolImgPrompt(state.bulkDrafts[i].solText), m.i);
-              const r = runClaude(CLAUDE_BIN, sPrompt, { img: f, timeoutMs: 300000 });
-              await page.evaluate(([i, r]) => { applyAiSolResult(state.bulkDrafts[i], r); rerenderBulk(); }, [m.i, r]);
+              const { r, iss } = await readChecked(([i, iss]) => aiSolImgPrompt(state.bulkDrafts[i].solText, iss),
+                r => solutionIssues(r), m.i, f);
+              await page.evaluate(([i, r, iss]) => { const d = state.bulkDrafts[i]; applyAiSolResult(d, r); d.solIssues = iss; rerenderBulk(); }, [m.i, r, iss]);
             }
             mOk++;
           }catch(e){ mFail++; console.error(`\n  ⚠ 문항 ${m.num || m.i+1} 변환 실패: `+(e.message||e).split('\n')[0]); }
         }
         fs.rmSync(tmp, { recursive: true, force: true });
-        console.log(`\n  Max 변환 — 성공 ${mOk} · 실패 ${mFail}`);
+        // 단원 분류: 텍스트만 8문항씩 묶어 따로 (전사와 분리 — 각 호출이 한 가지 일만)
+        const cls = await page.evaluate(() => state.bulkDrafts.map((d,i)=>({ i, text: classifyTextOf(d.text, d.choices), ok: d.aiDone && !d.aiSect && !!(d.text||'').trim() }))
+          .filter(x=>x.ok).map(({i,text})=>({i,text})));
+        let cOk = 0;
+        for(let k = 0; k < cls.length; k += 8){
+          const chunk = cls.slice(k, k+8);
+          try{
+            const r = runClaude(CLAUDE_BIN, await page.evaluate(ch => aiClassifyPrompt(ch), chunk), { timeoutMs: 300000 });
+            cOk += await page.evaluate(([chunk, items]) => {
+              let n = 0;
+              for(const c of (Array.isArray(items) ? items : []))
+                if(chunk.some(t=>t.i === +c.i) && applyAiClassifyResult(state.bulkDrafts[+c.i], c)) n++;
+              rerenderBulk(); return n;
+            }, [chunk, r.items]);
+          }catch(e){ console.error('  ⚠ 단원 분류 실패: '+(e.message||e).split('\n')[0]); }
+        }
+        const warn = await page.evaluate(() => state.bulkDrafts.filter(d=>(d.aiIssues&&d.aiIssues.length)||(d.solIssues&&d.solIssues.length)).length);
+        console.log(`\n  Max 변환 — 성공 ${mOk} · 실패 ${mFail} · 재판독 ${mRetry} · 단원 분류 ${cOk}/${cls.length}`
+          + (warn ? ` · ⚠ 수식 확인 필요 ${warn}개(#검수주의로 저장)` : ''));
       }else{
         await page.waitForFunction(() => !state._aiBusy, null, { timeout: TIMEOUT_MIN*60000 });
         console.log('  '+(await page.evaluate(() => document.querySelector('#bulk-status').textContent)).split('.')[0].trim());

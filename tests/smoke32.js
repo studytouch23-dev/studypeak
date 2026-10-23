@@ -38,7 +38,10 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     document.querySelector('#bulk-preview-card').style.display='block';
     rerenderBulk();
     window.__n = 0;
-    window.fetch = async () => {
+    window.fetch = async (url, opts) => {
+      // 단원 분류(텍스트만 묶음 호출)는 전사 호출 수에서 제외
+      if(!JSON.parse(opts.body).messages[0].content.some(c=>c.type==='image'))
+        return new Response(JSON.stringify({content:[{type:'text',text:'{"items":[]}'}]}), {status:200});
       window.__n++;
       if(window.__n===2) aiBatchCancel();                 // 2번째 문항 변환 "중"에 중지 버튼 누른 상황
       await new Promise(r=>setTimeout(r, 60));
