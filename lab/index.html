@@ -1900,6 +1900,12 @@ async function parseHWPX(file){
   }
   return out.join('\n');
 }
+/* 해설지 단서 점수: [출제의도]·[풀이]·[해설] 머리표 개수 + '정답'·'해설' 표제가 함께 있으면 2 (2 이상이면 해설 페이지) */
+function pdfSolCues(items, text){
+  const t = text != null ? text : items.map(it=>it.str.trim()).join('');
+  const head = re=>items.some(it=>re.test(String(it.str).trim()));
+  return (t.match(/출제\s*의도|\[풀이\]|\[해설\]/g)||[]).length + (head(/^정\s*답$/) && head(/^해\s*설$/) ? 2 : 0);
+}
 async function parsePDF(file){
   if(!window.pdfjsLib) throw new Error('PDF 구성요소가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.');
   if(!pdfjsLib.GlobalWorkerOptions.workerSrc)
@@ -1921,7 +1927,8 @@ async function parsePDF(file){
       if(!/^\d{1,3}\.?$/.test(s)) pg.bodyLen += s.length;
     }
     pg.isQuickAns = pg.text.includes('빠른정답') || pg.text.includes('빠른 정답');
-    pg.ansLabels = items.filter(it=>/^(정답|해설)$/.test(it.str.trim())).length;
+    pg.ansLabels = items.filter(it=>/^(정\s*답|해\s*설)$/.test(it.str.trim())).length;
+    pg.solCues = pdfSolCues(items, pg.text);
     anchorTotal += pg.anchors.length; bodyTotal += pg.bodyLen;
     pages.push(pg);
   }
@@ -1947,7 +1954,7 @@ function collectAnchors(items, pgW, pgH){
   for(const it of items){
     const s = it.str.trim();
     if(!/^\d{1,3}\.?$/.test(s)) continue;                   // 001·002 같은 세 자리 문항 번호도 인정
-    if(it.y < pgH*0.06 || it.y > pgH*0.94) continue;        // 꼬리말·머리말(쪽번호) 제외
+    if(it.y < pgH*0.06 || it.y > pgH*0.965) continue;       // 꼬리말·머리말(쪽번호) 제외 (위쪽은 단 맨 윗줄 번호까지 인정)
     // 같은 줄에서 왼쪽에 바짝 붙은 글자가 있으면 문장 속 숫자다 (단 사이 여백 10pt 이상은 허용)
     const blocked = items.some(t=>{
       if(t===it || !t.str.trim()) return false;
@@ -2007,7 +2014,7 @@ function detectRegionsByAnchors(pg, pageIdx, opts){
     const fitBase = { col:ci, cx0:col.x0, cx1:col.x1 };
     // 해설: 단 맨 위 ~ 첫 번호 사이 = 앞 해설의 이어지는 부분 (같은 번호로)
     if(opts.cont && lastNum){
-      const topY = pg.h*0.06;
+      const topY = pg.h*0.015;                             // 단 맨 윗줄부터 (머리말은 fitRegionsToInk가 건너뜀)
       const endY = colAnchors.length ? pg.h - Math.min(pg.h, colAnchors[0].y + 14) : pg.h*0.945;
       if(endY - topY > 18)
         out.push({ page:pageIdx, x:col.x0, y:topY, w:col.x1-col.x0, h:endY-topY, num:lastNum, cont:true,
@@ -2168,7 +2175,7 @@ async function openPdfEditor(res, opts){
   const solFrom = {};                               // 파일별: '정답 및 해설' 표제가 나온 뒤 페이지는 해설로
   PDFED.pages = res.pages.map((pg,i)=>{
     const src = pg.srcName || '';
-    if(/정답\s*및\s*해설|정답과\s*해설|정답\s*·\s*해설/.test(pg.text||'')) solFrom[src] = true;
+    if(/정답\s*및\s*해설|정답과\s*해설|정답\s*·\s*해설/.test(pg.text||'') || (pg.solCues||0) >= 2) solFrom[src] = true;
     // 페이지 모드: 문제(prob) / 해설(sol) / 제외(skip). 클릭으로 순환.
     const solish = opts.solDefault || pg.fileSol || solFrom[src];
     const mode = pg.isQuickAns ? 'skip'             // 빠른정답 표는 영역 분할 불가 → 제외
@@ -2295,7 +2302,7 @@ function fitRegionsToInk(canvas, pg, regs){
       memo[y] = v ? 1 : 0; return v;
     };
     const GAP_T = Math.round(4*S), GAP_B = Math.round(40*S), PAD = Math.round(3*S);
-    const colTop = Math.floor(H*0.03), colBot = Math.floor(H*0.945);
+    const colTop = Math.floor(H*0.03), colBot = Math.floor(H*0.945), contTop = Math.floor(H*0.015);
     const fit = list.map(r=>({ r, base: Math.round(r._fit.base*S) }));
     // 위쪽: 번호 글자 윗선에서 출발해, '번호보다 오른쪽에만' 있는 잉크(첫 줄의 분수 분자·지수·근호 윗선)를
     // 4pt 미만 틈으로 이어지는 동안 위로 포함. 번호 위치(왼쪽)에 잉크가 있는 줄 = 앞 문제의 글 → 멈춤. 최대 26pt
@@ -2303,8 +2310,17 @@ function fitRegionsToInk(canvas, pg, regs){
       const F = f.r._fit;
       if(F.cont){                                           // 이어지는 해설: 단 맨 위에서 아래로 첫 잉크 줄
         const lim2 = k+1 < fit.length ? fit[k+1].base - Math.round(14*S) : colBot;
-        let y = Math.max(f.base, colTop);
+        let y = Math.max(f.base, contTop);
+        // 머리말 건너뛰기 ① 위 10% 안의 단 너비 가로줄(머리말 밑줄) 아래부터
+        const ruleRow = yy=>{ let c = 0; for(let x=X0; x<X1; x++) if(!rule[x] && dark(x,yy)) c++; return c >= (X1-X0)*0.85; };
+        for(let yy=y; yy<Math.min(lim2, Math.floor(H*0.10)); yy++) if(ruleRow(yy)) y = yy+1;
         while(y < lim2 && !rowInk(y)) y++;
+        // ② 맨 위 6% 안에서 끝나는 짧은 글 덩어리 뒤가 10pt 넘게 비면 = 머리말 → 그 아래 첫 줄부터
+        if(y < H*0.06){
+          let e = y, gap = 0;
+          for(let yy=y; yy<lim2; yy++){ if(rowInk(yy)){ e = yy; gap = 0; } else if(++gap > Math.round(10*S)) break; }
+          if(e < H*0.06 && gap > Math.round(10*S)){ y = e+1; while(y < lim2 && !rowInk(y)) y++; }
+        }
         if(y >= lim2) f.drop = true;
         f.top = y; return;
       }
@@ -2344,7 +2360,7 @@ function fitRegionsToInk(canvas, pg, regs){
       if(maxX <= minX) continue;
       const left = Math.max(X0, (f.r._fit.cont ? minX : Math.min(minX, Math.floor(f.r._fit.ax*S))) - PAD);
       const right = Math.min(X1, maxX + PAD);
-      const top = Math.max(colTop, f.top - PAD), bot = Math.min(H, f.bot + PAD);
+      const top = Math.max(f.r._fit.cont ? contTop : colTop, f.top - PAD), bot = Math.min(H, f.bot + PAD);
       Object.assign(f.r, { x:left/S, y:top/S, w:(right-left)/S, h:(bot-top)/S, fitted:true });
     }
     const live = fit.filter(f=>!f.r._drop);
@@ -2418,7 +2434,7 @@ function pdfedDrawOverlays(){
     const i = PDFED.regions.indexOf(r);
     return `<div class="reg-box ${r.kind==='sol'?'solr':''} ${PDFED.selectedRegion===i?'sel':''}" data-r="${i}"
       style="left:${r.x*dispScale}px;top:${r.y*dispScale}px;width:${r.w*dispScale}px;height:${r.h*dispScale}px">
-      <span class="rno">${r.kind==='sol'?'해설 ':''}${esc(r.num)}</span></div>`;
+      <span class="rno">${r.kind==='sol'?'해설 ':''}${esc(r.num)}${r.cont?' 이어짐':''}</span></div>`;
   }).join('');
 }
 function pdfedRegList(){
@@ -2735,7 +2751,9 @@ async function pdfedFinish(){
     const byPage = new Map();
     for(const r of PDFED.regions){ if(!byPage.has(r.page)) byPage.set(r.page,[]); byPage.get(r.page).push(r); }
     const drafts = [], solPieces = [];
-    for(const [pageIdx, regs] of byPage){
+    const pieces = [];                                     // 읽기 순서(페이지 → 단 → 위에서 아래) 조각들
+    for(const pageIdx of [...byPage.keys()].sort((a,b)=>a-b)){
+      const regs = byPage.get(pageIdx);
       const pg = PDFED.pages[pageIdx];
       const scale = 2;
       const vp = pg.page.getViewport({scale});
@@ -2751,11 +2769,31 @@ async function pdfedFinish(){
         const c2 = document.createElement('canvas');
         c2.width = Math.ceil(rr.w); c2.height = Math.ceil(rr.h);
         c2.getContext('2d').drawImage(c, rr.x, rr.y, rr.w, rr.h, 0, 0, c2.width, c2.height);
-        const img = c2.toDataURL('image/jpeg', 0.87);
         const hint = pdfTextInRect(pg, rr.x/scale, rr.y/scale, rr.w/scale, rr.h/scale);
-        if(r.kind==='sol') solPieces.push({ num:String(+r.num||r.num), img, hint });
-        else drafts.push({ text:'', num:r.num, sol:'', ans:'', img, pdfText: hint });
+        pieces.push({ r, canvas: c2, hint });
       }
+    }
+    // 단·페이지를 넘어 이어지는 조각(r.cont)은 같은 번호의 앞 조각 아래에 붙여 한 장으로
+    const merged = [], lastByNum = new Map();
+    for(const pc of pieces){
+      const key = (pc.r.kind==='sol' ? 's' : 'p') + String(+pc.r.num||pc.r.num);
+      const prev = lastByNum.get(key);
+      if(pc.r.cont && prev){ prev.parts.push(pc); continue; }
+      const m = { r: pc.r, parts: [pc] }; merged.push(m); lastByNum.set(key, m);
+    }
+    for(const m of merged){
+      let cv = m.parts[0].canvas;
+      if(m.parts.length > 1){
+        const GAP = 14, W = Math.max(...m.parts.map(p=>p.canvas.width));
+        const H = m.parts.reduce((a,p)=>a + p.canvas.height, 0) + GAP*(m.parts.length-1);
+        cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+        const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+        let y = 0; for(const p of m.parts){ g.drawImage(p.canvas, 0, y); y += p.canvas.height + GAP; }
+      }
+      const img = cv.toDataURL('image/jpeg', 0.87);
+      const hint = m.parts.map(p=>p.hint).filter(Boolean).join('\n');
+      if(m.r.kind==='sol') solPieces.push({ num:String(+m.r.num||m.r.num), img, hint, parts: m.parts.length });
+      else drafts.push({ text:'', num:m.r.num, sol:'', ans:'', img, pdfText: hint });
     }
     drafts.sort((a,b)=>((+a.num)||999)-((+b.num)||999));
     if(PDFED.target === 'db'){                             // 저장된 문제에 해설 붙이기 모드 — 업로드 화면의 초안은 건드리지 않음
