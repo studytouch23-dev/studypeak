@@ -31,6 +31,19 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
       raw: { noScript: !/script|onclick/i.test(raw.svg), w: raw.w, h: raw.h, sized: raw.svg.includes(`width="${raw.w}" height="${raw.h}"`) && raw.w === 700 }, badRaw };
   });
   check('단면 입체 guides: x=1·x=e 직선과 글자', r.guides);
+  const ty = await page.evaluate(() => {
+    const base = { kind:'space', size:[490,210], proj:{ x:[1,-0.13], y:[0.55,0.62], z:[0,0.95] }, axes:{ x:[-0.3,4], y:[-0.5,2.6] },
+      solids:[{ type:'crossSection', f:'sqrt(1+(ln(x))^2)', g:0, from:1, to:'e', shape:'semicircle', guides:true, fromLabel:'x=1', toLabel:'x=e' }] };
+    const fsOf = sv => Math.max(...[...sv.matchAll(/font-size="(\d+)"/g)].map(m => +m[1]));
+    const a = figSpecToSvg(base), b = figSpecToSvg({ ...base, fontScale:1.4 });
+    const dashed = (a.svg.match(/stroke-dasharray/g)||[]).length;
+    return { fsA: fsOf(a.svg), fsB: fsOf(b.svg), W: a.w, ratio: a.w/a.h, dashed };
+  });
+  check('넓은 그림도 글자가 폭에 비례 (원본 26번 수준 ≈ 폭의 3%)', ty.fsA / ty.W > 0.028, `${ty.fsA}/${ty.W}`);
+  check('fontScale 로 글자 크기 조절', ty.fsB > ty.fsA * 1.3, `${ty.fsA} → ${ty.fsB}`);
+  check('그림이 여백 속에 작게 들어가지 않게 그림 비율에 맞춤(원본 비율 ±33% 안)', ty.ratio > 490/210*0.75 - 0.01 && ty.ratio < 490/210*1.34, ty.ratio.toFixed(2));
+  check('앞 단면(x=1)의 가려진 반쪽은 점선', ty.dashed >= 3, ty.dashed);
+
   check('_ 로 시작하는 보조점 이름은 그리지 않음 (입체·도형)', r.helperHidden && r.geoHidden);
   check('직접 그린 SVG: script·이벤트 제거, 원본 비율로 크기 맞춤', r.raw.noScript && r.raw.sized && r.raw.w/r.raw.h === 2, JSON.stringify(r.raw));
   check('SVG 형식이 아니면 점검에서 알려 줌', r.badRaw.length === 1, JSON.stringify(r.badRaw));

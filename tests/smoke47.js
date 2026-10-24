@@ -71,7 +71,7 @@ const TRI = { kind:'geometry', points:{ A:[0,4], B:[0,0], C:[3,0] },
     return { same: pa === pb, ratio: a.w / a.h };
   });
   check('ydown(원본 픽셀 좌표) = 수학 좌표 뒤집기와 같은 그림', yd.same);
-  check('원본 크기를 주면 원본 비율', Math.abs(yd.ratio - 300/240) < 0.01, yd.ratio.toFixed(3));
+  check('원본 크기를 주면 원본 비율 근처(±25~33%)에서 그림 비율에 맞춤 — 세로로 긴 삼각형은 덜 넓게(여백 속에 작게 안 들어가게)', yd.ratio >= 1.25*0.75 - 0.01 && yd.ratio < 1.25, yd.ratio.toFixed(3));
 
   // ── 2) 함수 그래프: 눈금·투영 점선·함수 이름 바로 세우기 ──
   const gr = await page.evaluate(async () => {
