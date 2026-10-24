@@ -25,6 +25,13 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
       const msg = JSON.parse(opts.body).messages[0].content;
       const t = msg.find(c => c.type === 'text').text, img = msg.some(c => c.type === 'image');
       if(t.includes('분류표')) return reply({ items:[] });             // 단원 분류 호출(이 테스트 대상 아님)
+      if(t.includes('[후보 문제]')){                                    // 엇갈린 짝 재확인: 해설과 같은 키워드의 후보
+        window.__calls.push({ kind:'verify', img, t });
+        const body = t.split('\n[해설]')[1] || '', solPart = body.split('\n[후보 문제]\n')[0], cands = body.split('\n[후보 문제]\n')[1] || '';
+        const sk = (solPart.match(/KW\d+/)||[])[0];
+        const ln = cands.split('\n').find(l => /^C\d+:/.test(l) && l.includes(sk+' '));
+        return reply({ pick: ln ? +ln.match(/^C(\d+)/)[1] : null });
+      }
       if(t.includes('[문제 목록]')){
         window.__calls.push({ kind:'match', img, t });
         if(window.__matchBroken) return reply('죄송합니다, 짝지을 수 없습니다');
@@ -66,14 +73,14 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     r.again = window.__calls.length;
     return r;
   });
-  check('조각 2개 읽기(이미지) + 짝짓기 1회(텍스트만)', JSON.stringify(up.calls) === JSON.stringify(['piece+img','piece+img','match']), JSON.stringify(up.calls));
-  check('짝짓기 프롬프트: 문제 번호·본문 + 해설 표기 번호', up.matchPrompt.includes('P0 (번호 25): KW25') && up.matchPrompt.includes('S0 (해설 표기 번호 31)') && up.matchPrompt.includes('S2 [정답 ④]: KW25'), up.matchPrompt.slice(-260).replace(/\n/g,'⏎'));
+  check('조각 2개 읽기(이미지) + 짝짓기 1회(텍스트만) + 번호가 다른 짝 3개 재확인', JSON.stringify(up.calls) === JSON.stringify(['piece+img','piece+img','match','verify','verify','verify']), JSON.stringify(up.calls));
+  check('짝짓기 프롬프트: 문제 번호·본문 + 해설 표기 번호(못 읽으면 영역 번호)', up.matchPrompt.includes('P0 (번호 25): KW25') && up.matchPrompt.includes('S0 (해설 표기 번호 31)') && up.matchPrompt.includes('S2 (해설 표기 번호 99) [정답 ④]: KW25'), up.matchPrompt.slice(-260).replace(/\n/g,'⏎'));
   check('25번 ← 번호 없던 해설', up.sol[0].includes('KW25'), up.sol[0]);
   check('26번 ← 번호가 31로 잘못 읽힌 해설', up.sol[1].includes('KW26') && up.ans[1] === '③', up.sol[1]);
   check('27번 ← 번호가 2로 잘못 읽힌 해설', up.sol[2].includes('KW27'), up.sol[2]);
   check('짝지은 문제는 이미지 대신 텍스트 해설', !up.solImg[0] && !up.solImg[1] && !up.solImg[2]);
   check('28번: 번호로만 붙었던 엉뚱한 해설 이미지 → 경고', up.iss28.some(x => x.includes('28번') && x.includes('찾지 못함')), JSON.stringify(up.iss28));
-  check('상태줄: 내용으로 짝지음', up.status.includes('해설 3개 (내용으로 짝지음)'), up.status);
+  check('상태줄: 짝 3개, 번호가 달라 내용으로 짝지은 3개를 알려 줌', up.status.includes('해설 3개') && up.status.includes('내용으로 짝지음 3개'), up.status);
   check('다시 눌러도 재호출 없음', up.again === 0, up.again);
 
   // ── ② 짝짓기 실패 → 번호로만 ──
@@ -122,7 +129,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   check('뒤바뀐 해설 제자리로(25번)', db.s25.includes('KW25'), db.s25);
   check('뒤바뀐 해설 제자리로(26번)', db.s26.includes('KW26'), db.s26);
   check('해설 없는 27번 → #해설없음', db.t27.includes('해설없음'), JSON.stringify(db.t27));
-  check('텍스트 해설만 있으면 짝짓기 1회만', JSON.stringify(db.calls) === JSON.stringify(['match']), JSON.stringify(db.calls));
+  check('텍스트 해설만: 짝짓기 1회 + 번호와 내용이 엇갈린 2개만 재확인', JSON.stringify(db.calls) === JSON.stringify(['match','verify','verify']), JSON.stringify(db.calls));
   check('새 해설 PDF 조각에서 27번 해설을 찾아 붙임', db.s27.includes('KW27 새로 올린'), db.s27);
   check('붙인 뒤 #해설없음 해제', !db.t27b.includes('해설없음'), JSON.stringify(db.t27b));
   check('이미 맞는 해설은 그대로', db.s25b.includes('KW25'), db.s25b);
