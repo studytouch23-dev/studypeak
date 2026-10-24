@@ -1129,6 +1129,16 @@ async function saveProblem(p){
   return toStore;
 }
 
+/* 그림 설계도: p.figSpecs[k] 는 p.images[k] 를 그린 설계도(없으면 null). 작은 JSON이라 라이트 레코드·동기화·백업에 그대로 포함 */
+function figSpecOf(p, k){ const a = p && p.figSpecs; return (Array.isArray(a) && a[k] && typeof a[k] === 'object') ? a[k] : null; }
+function setFigSpec(p, k, spec){
+  const a = Array.isArray(p.figSpecs) ? p.figSpecs.slice() : [];
+  while(a.length <= k) a.push(null);
+  a[k] = spec || null;
+  while(a.length && !a[a.length-1]) a.pop();
+  if(a.length) p.figSpecs = a; else delete p.figSpecs;
+}
+
 /* ═══════════════ 상태 ═══════════════ */
 function lsJson(key, dflt){ // localStorage JSON 안전 파싱 — 한 키가 깨져도 앱 전체가 죽지 않게
   try{ const v = JSON.parse(localStorage.getItem(key)); return v==null ? dflt : v; }catch(e){ return dflt; }
@@ -1723,10 +1733,11 @@ function rerenderBulk(){
         ${d.choices&&d.choices.length?`<div class="hint">${d.choices.map(c=>esc(c)).join(' &nbsp; ')}</div>`:''}
         ${d.img?`<div class="pimgs figcmp">
             ${d.imgOrig?`<figure><img src="${d.imgOrig}" style="max-height:170px;opacity:.75" alt="문항 ${esc(d.num||'')} 원본 그림"><figcaption>원본</figcaption></figure>`:''}
-            <figure><img src="${d.img}" style="max-height:${d.imgOrig?230:170}px" alt="문항 ${esc(d.num||'')} 이미지">${d.imgOrig?'<figcaption>🪄 다시 그린 그림 (이 그림이 저장됩니다)</figcaption>':''}</figure></div>
-          ${d.aiDone?`<div class="row" style="margin-top:.35rem">${d._redrawing?'<span class="hint">🪄 AI가 그림을 다시 그리는 중… (수십 초)</span>'
-            :`<button class="btn sm" onclick="redrawDraftFig(${i})">🪄 ${d.imgOrig?'한 번 더 다시 그리기':'그림 다시 그리기'}</button>`
-             +(d.imgOrig?`<button class="btn ghost sm" onclick="revertDraftFig(${i})">↶ 원본 그림 쓰기</button>`:'')}</div>`:''}`:''}
+            <figure><img src="${d.img}" style="max-height:${d.imgOrig?230:170}px" alt="문항 ${esc(d.num||'')} 이미지">${d.imgOrig?'<figcaption>🪄 다시 그린 그림 (이 그림이 저장됩니다)'+(d.figSpec?' · 📐 설계도 있음':'')+'</figcaption>':(d.figSpec?'<figcaption>📐 설계도로 그린 그림</figcaption>':'')}</figure></div>
+          ${(d.aiDone||d.figSpec)?`<div class="row" style="margin-top:.35rem">${d._redrawing?'<span class="hint">🪄 AI가 그림을 다시 그리는 중… (수십 초)</span>'
+            :(d.aiDone?`<button class="btn sm" onclick="redrawDraftFig(${i})">🪄 ${d.imgOrig?'한 번 더 다시 그리기':'그림 다시 그리기'}</button>`
+             +(d.imgOrig?`<button class="btn ghost sm" onclick="revertDraftFig(${i})">↶ 원본 그림 쓰기</button>`:''):'')
+             +(d.figSpec?`<button class="btn ghost sm" onclick="editDraftFigSpec(${i})">📐 설계도 고치기</button>`:'')}</div>`:''}`:''}
         ${d.sol||d.ans||d.solImg?`<div class="pmeta">${d.ans?`<span class="tag">정답 ${esc(d.ans.slice(0,12))} ✓</span>`:''}${d.sol?`<span class="tag">해설 매칭 ✓</span>`:''}${d.solImg&&!d.sol?`<span class="tag" style="background:#e4f2e8;color:var(--ok)">해설 이미지 — AI 변환 대기</span>`:''}</div>`:''}</div>
       <button class="btn danger sm" onclick="state.bulkDrafts.splice(${i},1);rerenderBulk()">삭제</button></div>`).join('');
   if(!state._aiBusy) $('#bulk-status').textContent = state.bulkDrafts.length+'개 문제';
@@ -1761,6 +1772,7 @@ async function saveBulk(){
               ...(d.verifyFail ? ['검산불일치'] : []) ],                                                  // 독립 재풀이 불일치
       origNo: d.num||'', reviewed: false,
       solImg: (!d.sol && d.solImg) ? d.solImg : '',          // AI 변환 전 해설 크롭도 버리지 않고 보관
+      ...(d.img && d.figSpec ? { figSpecs: [d.figSpec] } : {}), // 그림 설계도(그래프·도형) — images 와 같은 순서
       createdAt: Date.now()+n, updatedAt: Date.now()+n
     };
     await saveProblem(p); state.problems.push(lightenProblem(p)); n++;
@@ -1962,41 +1974,135 @@ function bestAnchorSeq(list){ // 읽기 순서에서 +1~+4씩 이어지는 최�
   const out=[]; for(let i=bi;i>=0;i=prev[i]) out.push(list[i]);
   return out.reverse();
 }
-function detectRegionsByAnchors(pg, pageIdx){
+function detectRegionsByAnchors(pg, pageIdx, opts){
+  // opts.cols: 단 경계 [{x0,x1}](pt, 렌더 잉크로 찾음) · opts.carry: 앞 단/앞 페이지의 마지막 번호(해설 이어짐)
+  opts = opts || {};
   const out = [];
   let anchors = pg.anchors;
+  out.lastNum = opts.carry || null;                         // 배열 + lastNum(마지막 번호) 속성
   if(!anchors.length) return out;
   // "1." 처럼 마침표가 붙은 번호가 2개 이상이면 맨숫자 앵커(쪽번호·표 숫자)는 노이즈로 간주
   const dotted = anchors.filter(a=>a.dot);
   if(dotted.length>=2) anchors = dotted;
-  const mid = pg.w/2;
-  const rightXs = anchors.filter(a=>a.x >= mid).map(a=>a.x);
-  const twoCol = anchors.some(a=>a.x < mid*0.8) && rightXs.length>0
-    && Math.min(...rightXs) < pg.w*0.62;                  // 진짜 2단이면 오른단 번호는 가운데 부근에서 시작
-  let cols = twoCol ? [anchors.filter(a=>a.x<mid), anchors.filter(a=>a.x>=mid)] : [anchors.slice()];
-  cols = cols.map(c=>c.sort((a,b)=>b.y-a.y));             // PDF 좌표(아래 0) → 위에서 아래로
-  // 번호 수열 정합 + 같은 번호 중복 제거
-  const kept = new Set(bestAnchorSeq([].concat(...cols)));
+  let cols = (opts.cols && opts.cols.length) ? opts.cols.map(c=>({...c})) : null;
+  if(!cols){                                               // 렌더가 없을 때: 번호 위치로 2단 판단(예전 방식)
+    const mid = pg.w/2, rightXs = anchors.filter(a=>a.x >= mid).map(a=>a.x);
+    const twoCol = anchors.some(a=>a.x < mid*0.8) && rightXs.length>0 && Math.min(...rightXs) < pg.w*0.62;
+    cols = twoCol ? [{x0:pg.w*0.02, x1:mid-4}, {x0:mid+2, x1:pg.w*0.975}] : [{x0:pg.w*0.02, x1:pg.w*0.975}];
+  }
+  const colOf = a=>{ const i = cols.findIndex(c=>a.x >= c.x0-12 && a.x < c.x1); return i<0 ? (a.x < cols[0].x0 ? 0 : cols.length-1) : i; };
+  let byCol = cols.map(()=>[]);
+  anchors.forEach(a=>byCol[colOf(a)].push(a));
+  byCol = byCol.map(c=>c.sort((a,b)=>b.y-a.y));             // PDF 좌표(아래 0) → 위에서 아래로
+  // 번호 수열 정합(읽기 순서: 왼쪽 단 위→아래, 다음 단…) + 같은 번호 중복 제거
+  const kept = new Set(bestAnchorSeq([].concat(...byCol)));
   const seenNum = new Set();
-  cols = cols.map(c=>c.filter(a=>{
+  byCol = byCol.map(c=>c.filter(a=>{
     if(!kept.has(a) || seenNum.has(a.num)) return false;
     seenNum.add(a.num); return true;
   }));
+  let lastNum = opts.carry || null;
   for(let ci=0; ci<cols.length; ci++){
-    const colAnchors = cols[ci];
+    const col = cols[ci], colAnchors = byCol[ci];
+    const fitBase = { col:ci, cx0:col.x0, cx1:col.x1 };
+    // 해설: 단 맨 위 ~ 첫 번호 사이 = 앞 해설의 이어지는 부분 (같은 번호로)
+    if(opts.cont && lastNum){
+      const topY = pg.h*0.06;
+      const endY = colAnchors.length ? pg.h - Math.min(pg.h, colAnchors[0].y + 14) : pg.h*0.945;
+      if(endY - topY > 18)
+        out.push({ page:pageIdx, x:col.x0, y:topY, w:col.x1-col.x0, h:endY-topY, num:lastNum, cont:true,
+          _fit:{ ...fitBase, cont:true, ax:col.x0, aw:0, ah:10, base:topY } });
+    }
     for(let k=0;k<colAnchors.length;k++){
       const a = colAnchors[k];
       const topPdf = Math.min(pg.h, a.y + 14);
       const botPdf = (k+1<colAnchors.length) ? colAnchors[k+1].y + 16 : pg.h*0.055;
-      const x0 = Math.max(0, a.x - 8);
-      const x1 = twoCol ? (ci===0 ? mid - 4 : pg.w*0.975) : pg.w*0.975;
+      const x0 = Math.max(col.x0 - 2, a.x - 8), x1 = col.x1;
       if(x1-x0 < 20 || topPdf-botPdf < 12) continue;
-      const cx0 = twoCol && ci===1 ? mid + 2 : pg.w*0.02;
       out.push({ page:pageIdx, x:x0, y:pg.h-topPdf, w:x1-x0, h:topPdf-botPdf, num:a.num,
-        _fit:{ col:ci, ax:a.x, aw:a.w||8, ah:a.h||10, base:pg.h-a.y, cx0, cx1:x1 } });    // 잉크 맞춤(fitRegionsToInk)용
+        _fit:{ ...fitBase, ax:a.x, aw:a.w||8, ah:a.h||10, base:pg.h-a.y } });    // 잉크 맞춤(fitRegionsToInk)용
+    }
+    if(colAnchors.length) lastNum = colAnchors[colAnchors.length-1].num;
+  }
+  out.lastNum = lastNum;
+  return out;
+}
+/* ── 단(컬럼) 찾기: 렌더한 페이지에서 위아래로 비어 있는 세로 골(단 사이 여백)을 찾는다.
+   단 구분선(페이지 길이 세로줄)은 여백으로 친다. 1단·2단·3단 모두. 못 찾으면 null ── */
+function detectColumns(canvas, pg){
+  const W = canvas.width, H = canvas.height, S = W / pg.w;
+  const img = canvas.getContext('2d').getImageData(0, 0, W, H).data;
+  const dark = (x,y)=>{ const i=(y*W+x)*4; return (0.299*img[i]+0.587*img[i+1]+0.114*img[i+2]) < 170; };
+  const ry0 = Math.floor(H*0.06), ry1 = Math.floor(H*0.94), need = (ry1-ry0)/2*0.4;
+  const rule = new Uint8Array(W);
+  for(let x=0; x<W; x++){ let c=0; for(let y=ry0; y<ry1; y+=2) if(dark(x,y)) c++; if(c > need) rule[x]=1; }
+  const y0 = Math.floor(H*0.12), y1 = Math.floor(H*0.94), rows = (y1-y0)/2;
+  const cnt = new Float32Array(W);
+  for(let x=0; x<W; x++){
+    if(rule[x] || (x>0 && rule[x-1]) || (x<W-1 && rule[x+1])) continue;   // 구분선 = 여백
+    let c=0; for(let y=y0; y<y1; y+=2) if(dark(x,y)) c++;
+    cnt[x] = c;
+  }
+  const gutters = [], minW = W*0.012, tol = Math.max(1, rows*0.004);
+  let run = -1;
+  for(let x=Math.floor(W*0.1); x<=Math.floor(W*0.9); x++){
+    const blank = x < Math.floor(W*0.9) && cnt[x] <= tol;
+    if(blank){ if(run<0) run = x; }
+    else if(run >= 0){ if(x-run >= minW) gutters.push([run, x]); run = -1; }
+  }
+  // 양쪽에 글이 있는 골만 단 사이 여백 (짧은 줄 뒤의 오른쪽 빈 여백은 아님)
+  const inkIn = (a,b)=>{ for(let x=Math.max(0,a); x<Math.min(W,b); x++) if(cnt[x] > tol) return true; return false; };
+  const real = gutters.filter(([a,b])=> inkIn(Math.floor(W*0.03), a) && inkIn(b, Math.ceil(W*0.97)));
+  // 골 사이(또는 페이지 끝까지)가 단 하나 너비도 안 되면, 둘 중 넓은 골만 진짜 단 사이 여백
+  // (번호 "6." 과 본문 사이 같은 좁은 틈은 단 안의 띄어쓰기)
+  const minCol = W*0.12;
+  for(let changed = true; changed; ){
+    changed = false;
+    for(let i=0; i<real.length; i++){
+      const leftEdge = i ? real[i-1][1] : Math.floor(W*0.02), rightEdge = i+1 < real.length ? real[i+1][0] : Math.ceil(W*0.98);
+      if(real[i][0] - leftEdge < minCol && i){                   // 앞 골과 너무 가까움
+        const drop = (real[i][1]-real[i][0]) < (real[i-1][1]-real[i-1][0]) ? i : i-1;
+        real.splice(drop, 1); changed = true; break;
+      }
+      if((i===0 && real[i][0] - leftEdge < minCol) || (i===real.length-1 && rightEdge - real[i][1] < minCol)){   // 페이지 끝 쪽 좁은 띠
+        real.splice(i, 1); changed = true; break;
+      }
     }
   }
-  return out;
+  if(!real.length) return null;
+  const edges = [Math.floor(W*0.02)];
+  real.forEach(([a,b])=>{ const m = Math.round((a+b)/2); edges.push(m, m); });   // 단 경계 = 골의 가운데 (가장자리 글자가 잘리지 않게)
+  edges.push(Math.ceil(W*0.98));
+  let cols = [];
+  for(let i=0; i<edges.length; i+=2){
+    const c = { x0: edges[i]/S, x1: edges[i+1]/S };
+    if(cols.length && (edges[i+1]-edges[i]) < W*0.12) cols[cols.length-1].x1 = c.x1;   // 너무 좁은 띠는 앞 단에 합침
+    else cols.push(c);
+  }
+  if(cols.length > 1 && (cols[0].x1 - cols[0].x0)*S < W*0.12){ cols[1].x0 = cols[0].x0; cols.shift(); }
+  // 검증: 진짜 단이면 ① 문항 번호가 단 왼쪽 끝에 붙어 있거나 ② (번호 없이 이어지는 해설이라면) 글이 빽빽하다.
+  // 문장 속 띄어쓰기·선택지 간격으로 생긴 가짜 골은 이 조건을 못 맞추므로 왼쪽 단에 합친다.
+  let anchors = pg.anchors || [];
+  if(anchors.filter(a=>a.dot).length >= 2) anchors = anchors.filter(a=>a.dot);
+  const coverage = c=>{
+    const X0 = Math.floor(c.x0*S), X1 = Math.ceil(c.x1*S);
+    let rowsInk = 0, rowsAll = 0;
+    for(let y=y0; y<y1; y+=2){
+      rowsAll++;
+      for(let x=X0; x<X1; x+=2) if(!rule[x] && dark(x,y)){ rowsInk++; break; }
+    }
+    return rowsAll ? rowsInk/rowsAll : 0;
+  };
+  for(let i=1; i<cols.length; ){
+    const c = cols[i], w = c.x1 - c.x0;
+    const inCol = anchors.filter(a=>a.x >= c.x0-12 && a.x < c.x1);
+    const ok = inCol.length
+      ? Math.min(...inCol.map(a=>a.x)) - c.x0 < w*0.25         // 번호가 단 왼쪽 끝에
+      : coverage(c) >= 0.4;                                    // 번호 없는 단은 글이 빽빽해야
+    if(ok) i++;
+    else { cols[i-1].x1 = c.x1; cols.splice(i, 1); }
+  }
+  return cols.length >= 2 ? cols : null;
 }
 /* ── 픽셀 여백 투영 분할: 번호가 없는 PDF용 (단 감지 + 가로 여백으로 경계) ── */
 function detectRegionsByPixels(canvas, pgW, pgH, pageIdx, startNum){
@@ -2136,7 +2242,7 @@ async function pdfedToRegions(){
   $('#pdfed-step2').style.display='block';
   PDFED.cur = 0;
   // 전체 선택 페이지에 자동 인식 (앵커 우선, 없으면 픽셀 분할)
-  PDFED.regions = []; PDFED.nextNum = 1;
+  PDFED.regions = []; PDFED.nextNum = 1; PDFED.lastNumByPage = {};
   for(const pg of sel) await pdfedDetectPage(pg, false);
   pdfedRenumber();
   await pdfedShowPage();
@@ -2195,6 +2301,13 @@ function fitRegionsToInk(canvas, pg, regs){
     // 4pt 미만 틈으로 이어지는 동안 위로 포함. 번호 위치(왼쪽)에 잉크가 있는 줄 = 앞 문제의 글 → 멈춤. 최대 26pt
     fit.forEach((f, k)=>{
       const F = f.r._fit;
+      if(F.cont){                                           // 이어지는 해설: 단 맨 위에서 아래로 첫 잉크 줄
+        const lim2 = k+1 < fit.length ? fit[k+1].base - Math.round(14*S) : colBot;
+        let y = Math.max(f.base, colTop);
+        while(y < lim2 && !rowInk(y)) y++;
+        if(y >= lim2) f.drop = true;
+        f.top = y; return;
+      }
       const lim = Math.max(k ? fit[k-1].base + Math.round(4*S) : colTop, f.base - Math.round(26*S));
       const leftEnd = Math.min(X1, Math.ceil((F.ax + F.aw + 1)*S));
       const leftInk = y=>{ for(let x=X0; x<leftEnd; x++) if(!rule[x] && dark(x,y)) return true; return false; };
@@ -2220,7 +2333,8 @@ function fitRegionsToInk(canvas, pg, regs){
       f.bot = last;
     });
     for(const f of fit){
-      if(f.bot - f.top < Math.round(8*S)) continue;           // 잉크를 못 찾으면 기존 사각형 유지
+      if(f.drop){ f.r._drop = true; continue; }
+      if(f.bot - f.top < Math.round(8*S)){ if(f.r._fit.cont) f.r._drop = true; continue; }   // 잉크를 못 찾으면 기존 사각형 유지
       let minX = X1, maxX = X0;
       for(let y=f.top; y<=f.bot; y+=1){
         if(!rowInk(y)) continue;
@@ -2228,24 +2342,41 @@ function fitRegionsToInk(canvas, pg, regs){
         for(let x=X1-1; x>maxX; x--) if(!rule[x] && dark(x,y)){ maxX = x; break; }
       }
       if(maxX <= minX) continue;
-      const left = Math.max(X0, Math.min(minX, Math.floor(f.r._fit.ax*S)) - PAD);
+      const left = Math.max(X0, (f.r._fit.cont ? minX : Math.min(minX, Math.floor(f.r._fit.ax*S))) - PAD);
       const right = Math.min(X1, maxX + PAD);
       const top = Math.max(colTop, f.top - PAD), bot = Math.min(H, f.bot + PAD);
       Object.assign(f.r, { x:left/S, y:top/S, w:(right-left)/S, h:(bot-top)/S, fitted:true });
     }
-    for(let k=1; k<fit.length; k++){                          // 여백(PAD)끼리도 겹치지 않게
-      const a = fit[k-1].r, b = fit[k].r, aEnd = a.y + a.h;
+    const live = fit.filter(f=>!f.r._drop);
+    for(let k=1; k<live.length; k++){                         // 여백(PAD)끼리도 겹치지 않게
+      const a = live[k-1].r, b = live[k].r, aEnd = a.y + a.h;
       if(aEnd > b.y){ const m = (aEnd + b.y)/2; a.h = m - a.y; b.h = (b.y + b.h) - m; b.y = m; }
     }
   }
-  regs.forEach(r=>{ delete r._fit; });
-  return regs;
+  const kept = regs.filter(r=>!r._drop);
+  kept.forEach(r=>{ delete r._fit; });
+  return kept;
 }
 async function pdfedDetectPage(pg, rerender){
-  let regs = detectRegionsByAnchors(pg, pg.idx);
+  const isSol = pg.mode === 'sol';
+  PDFED.lastNumByPage = PDFED.lastNumByPage || {};
+  let carry = null;                                          // 앞쪽 해설 페이지의 마지막 번호 → 이 페이지 첫 단 위쪽은 그 해설의 이어짐
+  if(isSol){
+    const prev = pdfedSelPages().filter(p=>p.idx < pg.idx && p.mode==='sol').pop();
+    if(prev && PDFED.lastNumByPage[prev.idx]) carry = PDFED.lastNumByPage[prev.idx];
+  }
+  let canvas = null;
+  try{ canvas = await pdfedInkCanvas(pg); }catch(e){}
+  let cols = null;
+  if(canvas){ try{ cols = detectColumns(canvas, pg); }catch(e){} }
+  const det = detectRegionsByAnchors(pg, pg.idx, { cols, cont: isSol && !!canvas, carry });
+  let regs = det;
+  if(isSol) PDFED.lastNumByPage[pg.idx] = det.lastNum;
   if(regs.length){
-    try{ fitRegionsToInk(await pdfedInkCanvas(pg), pg, regs); }
-    catch(e){ regs.forEach(r=>{ delete r._fit; }); }        // 렌더 실패 시 번호 기준 사각형 그대로
+    if(canvas){
+      try{ regs = fitRegionsToInk(canvas, pg, regs); }
+      catch(e){ regs = regs.filter(r=>!r.cont); regs.forEach(r=>{ delete r._fit; }); }   // 실패 시 번호 기준 사각형 그대로
+    } else { regs = regs.filter(r=>!r.cont); regs.forEach(r=>{ delete r._fit; }); }
   }
   if(!regs.length){
     const c = await pdfedPixelCanvas(pg);
@@ -3269,6 +3400,8 @@ function openDetail(id){
     <div class="row" style="margin-bottom:.8rem"><button class="btn ghost sm" onclick="openImgCrop('${p.id}')">✂ 그림만 잘라내기</button>
       <button class="btn ghost sm" onclick="openImgEditor('${p.id}')">🖌 그림 편집</button>
       <span class="hint">편집: 지우개(필기 제거)·선명하게·기울기 보정·끊어진 선 메우기·도형/글자</span></div>`:''}
+    <div class="row" style="margin-bottom:.8rem"><button class="btn ghost sm" onclick="openFigSpecForProblem('${p.id}', -1)">📐 그래프·도형 새로 그리기</button>
+      <span class="hint">식·좌표로 정확한 그림을 만들어 이 문제에 추가</span></div>
     <div class="row">
       <button class="btn gold" onclick="saveDetail('${p.id}')">수정 저장</button>
       <button class="btn ghost" onclick="closeModal()">닫기</button>
@@ -3282,7 +3415,9 @@ function openDetail(id){
   $('#modal-bg').classList.add('show');
   if(hasImg(p)) imagesOf(p).then(imgs=>{
     const el = $('#detail-imgs');
-    if(el) el.innerHTML = imgs.map(d=>`<img src="${d}" style="max-height:200px" alt="문제 그림">`).join('') || '<span class="hint">그림 없음</span>';
+    if(el) el.innerHTML = imgs.map((d,k)=> figSpecOf(p, k)
+      ? `<figure style="margin:0;display:inline-block;text-align:center"><img src="${d}" style="max-height:200px" alt="문제 그림"><figcaption><button class="btn ghost sm" onclick="openFigSpecForProblem('${p.id}', ${k})">📐 설계도 고치기</button></figcaption></figure>`
+      : `<img src="${d}" style="max-height:200px" alt="문제 그림">`).join('') || '<span class="hint">그림 없음</span>';
   });
   solImgOf(p).then(d=>{ const el = $('#e-solimg'); if(el && d){ el.src = d; el.style.display='block'; } });
 }
@@ -3373,7 +3508,38 @@ function buildGenPrompt(){
     +`- 객관식은 ① ② ③ ④ ⑤ 선택지를 본문 다음 줄에\n`
     +`- 조건 상자가 필요하면 상자 내용 앞뒤 줄에 [박스] / [/박스]\n`
     +`- 각 문항 마지막에 "[답] 정답" 한 줄, 그 다음 "[해설] 풀이 과정" (해설도 수식은 $...$)\n`
-    +`- 문항 사이에는 빈 줄 하나. 인사말·설명·제목 등 다른 텍스트는 절대 쓰지 말 것`;
+    +`- 문항 사이에는 빈 줄 하나. 인사말·설명·제목 등 다른 텍스트는 절대 쓰지 말 것\n`
+    +`- 그래프·도형 그림이 필요한 문항은 본문의 그림 자리에 한 줄로 [그림설계]{설계도 JSON}[/그림설계] 를 넣을 것.\n`
+    +`  프로그램이 설계도대로 정확히 그려 줍니다. 그림을 말로 설명하지 말고, 설계도의 식·좌표·길이·라벨은 그 문항의 숫자와 꼭 맞출 것(답이 드러나는 값은 쓰지 말 것).\n`
+    +`  JSON 은 한 줄로, 줄바꿈 없이. 형식:\n  · 함수 그래프 ${FIG_GRAPH_GUIDE.replace(/\n/g,'\n  ')}\n  · 평면 도형 ${FIG_GEO_GUIDE.replace(/\n/g,'\n  ')}`;
+}
+/* 생성 결과의 [그림설계]{JSON}[/그림설계] → 설계도대로 그린 그림(d.img·d.figSpec) + 본문엔 [그림] 자리 표시.
+   설계도가 틀리면 [그림] 자리만 남기고 경고(#검수주의) */
+const FIG_BLOCK_RE = /\[그림설계\]\s*(\{[\s\S]*?\})\s*\[\/그림설계\]/g;
+async function applyFigSpecBlocks(drafts){
+  let made = 0, bad = 0;
+  for(const d of (drafts||[])){
+    if(!FIG_BLOCK_RE.test(d.text||'')) { FIG_BLOCK_RE.lastIndex = 0; continue; }
+    FIG_BLOCK_RE.lastIndex = 0;
+    const specs = [];
+    d.text = String(d.text).replace(FIG_BLOCK_RE, (m, js)=>{
+      let sp = null;
+      try{ sp = JSON.parse(js); }catch(e){ try{ sp = tolerantJsonParse(js); }catch(e2){} }
+      specs.push(sp);
+      return '[그림]';
+    }).replace(/^[ \t]*\[그림\][ \t]*(?=\S)/gm, '[그림]\n').replace(/(\S)[ \t]*\[그림\][ \t]*$/gm, '$1\n[그림]');   // [그림]은 한 줄 단독
+    const sp = specs[0];
+    try{
+      if(!sp) throw new Error('설계도 JSON 형식 오류');
+      const iss = figSpecIssues(sp);
+      d.img = await figSpecToPng(sp); d.figSpec = sp; made++;
+      if(iss.length) (d.aiIssues = d.aiIssues || []).push('그림 설계도 확인: '+iss.slice(0,2).join(' · '));
+    }catch(e){
+      bad++; (d.aiIssues = d.aiIssues || []).push('그림 설계도를 그리지 못했습니다: '+(e.message||e)+' — 상세 화면에서 [📐 그래프·도형 새로 그리기]로 추가하세요');
+    }
+    if(specs.length > 1) (d.aiIssues = d.aiIssues || []).push(`그림 설계도 ${specs.length}개 중 첫 번째만 그렸습니다`);
+  }
+  return { made, bad };
 }
 async function copyGenPrompt(){
   const txt = buildGenPrompt();
@@ -3386,7 +3552,7 @@ async function copyGenPrompt(){
   $('#gen-status').textContent = '✅ 복사됨 — claude.ai 프로젝트에 붙여넣어 생성한 뒤, 결과를 아래 "② 생성 결과 붙여넣기" 칸에 넣고 [분할 실행]을 누르세요.';
   logJob('문제 생성 프롬프트', [$('#g-subject').value,$('#g-chapter').value].filter(Boolean).join(' > '), $('#g-count').value+'문항 요청');
 }
-function genResultToBulk(){ // 생성 결과 → 일괄 등록 분할로 전달 (+ 생성 조건의 단원을 자동 태깅)
+async function genResultToBulk(){ // 생성 결과 → 일괄 등록 분할로 전달 (+ 생성 조건의 단원을 자동 태깅, 그림 설계도 → 그림)
   const t = $('#g-result').value.trim();
   if(!t){ toast('생성 결과를 먼저 붙여넣으세요.'); return; }
   $('#bulk-text').value = t;
@@ -3402,6 +3568,12 @@ function genResultToBulk(){ // 생성 결과 → 일괄 등록 분할로 전달 
     });
     rerenderBulk();
   }
+  const fig = await applyFigSpecBlocks(state.bulkDrafts);
+  if(fig.made || fig.bad){
+    rerenderBulk();
+    $('#bulk-status').textContent = state.bulkDrafts.length+'개 문제 · 📐 설계도로 그림 '+fig.made+'개를 그렸습니다'+(fig.bad?` · 그리지 못한 그림 ${fig.bad}개(경고 표시)`:'');
+  }
+  return fig;
 }
 
 /* ═══ AI 변환 (이미지 문항 → 텍스트·수식, 사용자 API 키) ═══ */
@@ -4048,24 +4220,490 @@ function sanitizeSvg(svg){ // script·이벤트핸들러·외부참조 제거 �
     .replace(/<(image|foreignObject|iframe)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,'')
     .replace(/<(image|foreignObject|iframe)\b[^>]*\/?>/gi,'');
 }
-function aiRedrawPrompt(){
-  return '이 이미지는 수학 문제의 그림(도형·그래프·표)입니다. 흐림·잡티 없이 벡터로 깨끗하게 다시 그리세요. 아래 JSON 하나만 출력합니다. 설명·코드블록 금지.\n'
-    +'{"svg":"<svg viewBox=\'0 0 W H\' xmlns=\'http://www.w3.org/2000/svg\'>...</svg>"}\n'
-    +'- SVG 속성값은 반드시 작은따옴표(\')로 감싸고, 문자열 안에 줄바꿈을 넣지 마세요.\n'
-    +'- viewBox 비율은 원본 그대로. 배경 흰색, 선은 검정 #000 (stroke-width 2~3), 축 화살표 포함.\n'
-    +'- 원본의 모든 선·곡선·점·화살표·숫자·라벨을 빠짐없이, 위치 비율을 최대한 똑같이.\n'
-    +'- 글자는 <text>로: 점 이름(A,B,O)과 숫자는 serif, 변수(x,y)는 italic serif. 한글 라벨도 그대로.\n'
-    +'- script, 외부 링크, image 태그는 절대 사용 금지.';
+/* 그림 설계도 형식 안내 — 그림 다시 그리기(AI가 원본을 읽음)와 문제 생성(AI가 새로 설계)이 함께 쓴다 */
+const FIG_GRAPH_GUIDE = '{"kind":"graph","x":[xmin,xmax],"y":[ymin,ymax],'
+  +'"curves":[{"f":"x^2/2+2","from":-3,"to":3,"label":"y=½x²+2","lx":-2.6,"ly":5.2,"dash":false}],'
+  +'"vlines":[{"x":2,"label":"x=2","dash":false}],"hlines":[{"y":1,"label":"y=1","dash":true}],'
+  +'"fills":[{"upper":"x^2/2+2","lower":"-x^2/4-1","from":0,"to":2}],'
+  +'"segments":[{"p":[[0,0],[2,4]],"dash":true}],'
+  +'"points":[{"x":0,"y":0,"label":"O","pos":"bl"},{"x":2,"y":4,"label":"P","proj":true}],'
+  +'"xticks":[{"v":2,"label":"2"}],"yticks":[{"v":4,"label":"4"}],"xlabel":"x","ylabel":"y"}\n'
+  +'- f·upper·lower 는 x의 식: 숫자, x, + - * / ^ ( ), sqrt abs sin cos tan ln log exp, pi, e 만. 곱셈은 * (예: 2*x, x*(x-1)).\n'
+  +'- 라벨은 유니코드(½ ² ³ √ π)로. lx,ly 는 라벨을 놓을 좌표. 점선은 dash:true. pos 는 라벨 방향(tl,tr,bl,br). proj:true 는 점에서 두 축으로 내린 점선.\n'
+  +'- 색칠한 부분은 fills(위 곡선 식, 아래 곡선 식, x 구간). xticks·yticks 는 축 위에 적힌 눈금 숫자만.\n';
+const FIG_GEO_GUIDE = '{"kind":"geometry","points":{"A":[0,4],"B":[-3,0],"C":[3,0],"H":[0,0]},'
+  +'"polygons":[{"p":["A","B","C"],"fill":false}],"segments":[{"p":["A","H"],"dash":true},{"p":["B","H"],"label":"3","ticks":1},{"p":["H","C"],"ticks":1}],'
+  +'"circles":[{"c":"H","through":"A","dash":false}],"arcs":[{"c":"B","r":1.5,"from":0,"to":53,"sector":false}],'
+  +'"angles":[{"p":["A","H","C"],"right":true},{"p":["H","B","A"],"label":"θ"}],'
+  +'"texts":[{"x":1,"y":2,"text":"S"}],"axes":false}\n'
+  +'- points: 점 이름 → [x,y] (y는 위로 +). 라벨 방향을 정하려면 [x,y,"tl"] (t,b,l,r,tl,tr,bl,br; 생략하면 도형 바깥쪽 자동).\n'
+  +'- segments·polygons 의 p 는 점 이름 목록. label 은 변 옆 글자(길이 등), ticks:1|2 는 같은 길이 표시. 색칠은 fill:true.\n'
+  +'- circles: c 중심, r 반지름 또는 through 지나는 점. arcs: from·to 는 각도(도, 0=오른쪽 90=위, 반시계) 또는 점 이름, sector:true 면 부채꼴.\n'
+  +'- angles: p=[A,B,C] 는 꼭짓점 B의 각(∠ABC), label 은 각 이름·크기, right:true 는 직각 표시, n:2 는 두 겹 호.\n'
+  +'- 좌표평면 위 도형이면 axes:true (원점 O 자동).\n';
+function aiRedrawPrompt(w, h){
+  const W = Math.round(w||600), H = Math.round(h||400);
+  return '이 이미지는 수학 문제의 그림입니다(원본 크기 '+W+'×'+H+'px). 그림을 따라 그리지 말고 "읽어서" 프로그램이 정확히 다시 그릴 수 있는 설계도로 바꾸세요. 종류에 맞는 방식 하나로 JSON 하나만 출력하세요. 설명·코드블록 금지.\n\n'
+    +'(가) 좌표평면의 함수 그래프(곡선·직선·축·색칠한 넓이·점):\n'+FIG_GRAPH_GUIDE
+    +'- x·y 범위: 원본 그림이 보여 주는 범위와 같게. 축(x=0, y=0)이 그림의 어디를 지나는지 비율까지 맞추세요. 문제의 조건(식)을 그대로 쓰세요.\n\n'
+    +'(나) 점·선분·다각형·원·호·각으로 이루어진 평면 도형(삼각형·사각형·원·부채꼴·좌표 위 도형):\n'+FIG_GEO_GUIDE
+    +'- 점 좌표: 원본 그림에서 각 점의 픽셀 위치(왼쪽 위 0,0 ~ 오른쪽 아래 '+W+','+H+')를 읽어 그대로 쓰고 "ydown":true 를 넣으세요. 길이·각이 문제에 주어져 정확한 좌표를 계산할 수 있으면 수학 좌표(y 위로 +)로 쓰고 ydown 은 빼세요.\n'
+    +'- 그림에 적힌 글자(점 이름·길이·각)를 빠짐없이.\n\n'
+    +'(다) 표·수직선·벤 다이어그램 등 그 밖의 평면 그림이면 SVG로 따라 그리기:\n'
+    +'{"kind":"svg","svg":"<svg viewBox=\'0 0 '+W+' '+H+'\' xmlns=\'http://www.w3.org/2000/svg\'>...</svg>"}\n'
+    +'- viewBox 는 반드시 0 0 '+W+' '+H+' (원본 픽셀 좌표 그대로) — 원본에서 각 점·선의 위치를 읽어 그 좌표에 그리세요. 비율을 바꾸지 마세요.\n'
+    +'- 곡선·원호는 <path> 의 C(베지어)·A(원호)로 매끄럽게. 선은 검정 #000(stroke-width 2), 배경 흰색.\n'
+    +'- 글자는 <text>: 점 이름·숫자는 serif, 변수(x,y)는 italic serif. SVG 속성값은 작은따옴표(\'), 문자열 안 줄바꿈 금지. script·외부 링크·image 금지.\n\n'
+    +'(라) 입체도형(원기둥·회전체·겨냥도), 사진처럼 복잡한 그림, 또는 다시 그리면 원본보다 나빠질 것 같으면:\n'
+    +'{"kind":"keep","reason":"짧은 이유"}';
 }
-/* 공용: 그림 이미지(dataURL) → Claude가 SVG로 다시 그림 → 흰 배경 PNG(dataURL)
-   그림 편집기·분할 확인 화면(문항별·전체)이 함께 쓴다 */
-async function aiRedrawFigure(dataURL, fallbackW, fallbackH){
+/* ── 안전한 수식 계산기: AI가 읽어 준 그래프 식(x의 함수)을 직접 계산 (eval 사용 안 함) ── */
+function compileMathExpr(src){
+  let s = String(src||'').replace(/\s+/g,'').replace(/π/g,'pi').replace(/[−–]/g,'-').replace(/[×·]/g,'*').replace(/÷/g,'/')
+    .replace(/²/g,'^2').replace(/³/g,'^3').replace(/√/g,'sqrt').replace(/\*\*/g,'^')
+    .replace(/½/g,'(1/2)').replace(/¼/g,'(1/4)').replace(/¾/g,'(3/4)').replace(/⅓/g,'(1/3)').replace(/⅔/g,'(2/3)');
+  if(!s) throw new Error('빈 식');
+  const FN = { sin:Math.sin, cos:Math.cos, tan:Math.tan, ln:Math.log, log:Math.log10, exp:Math.exp, sqrt:Math.sqrt, abs:Math.abs };
+  const CONST = { pi:Math.PI, e:Math.E };
+  const toks = []; let i = 0;
+  while(i < s.length){
+    const c = s[i];
+    const num = s.slice(i).match(/^\d+(\.\d+)?|^\.\d+/);
+    if(num){ toks.push({t:'n', v:+num[0]}); i += num[0].length; continue; }
+    if(/[a-z]/i.test(c)){
+      const w = s.slice(i).match(/^[a-z]+/i)[0].toLowerCase(); let rest = w;
+      while(rest){                                         // "xsin" → x, sin 처럼 붙은 이름 나누기
+        const f = Object.keys(FN).concat(Object.keys(CONST), ['x']).filter(k=>rest.startsWith(k)).sort((a,b)=>b.length-a.length)[0];
+        if(!f) throw new Error('모르는 이름: '+rest);
+        toks.push(FN[f] ? {t:'f', v:f} : f==='x' ? {t:'x'} : {t:'n', v:CONST[f]});
+        rest = rest.slice(f.length);
+      }
+      i += w.length; continue;
+    }
+    if('+-*/^()|'.includes(c)){ toks.push({t:c}); i++; continue; }
+    throw new Error('쓸 수 없는 기호: '+c);
+  }
+  // 곱셈 생략 채우기: 2x, 2(x+1), )(, x(, 2sin(x) …
+  const T = [];
+  toks.forEach((tk, k)=>{
+    const prev = T[T.length-1];
+    if(prev && (prev.t==='n' || prev.t==='x' || prev.t===')') && (tk.t==='n' || tk.t==='x' || tk.t==='(' || tk.t==='f')) T.push({t:'*'});
+    T.push(tk);
+  });
+  let p = 0;
+  const peek = ()=>T[p], eat = t=>{ if(!T[p] || T[p].t!==t) throw new Error('식 형식 오류'); p++; };
+  function expr(){ let f = term(); while(peek() && (peek().t==='+'||peek().t==='-')){ const op = T[p++].t, a = f, b = term(); f = op==='+' ? x=>a(x)+b(x) : x=>a(x)-b(x); } return f; }
+  function term(){ let f = unary(); while(peek() && (peek().t==='*'||peek().t==='/')){ const op = T[p++].t, a = f, b = unary(); f = op==='*' ? x=>a(x)*b(x) : x=>a(x)/b(x); } return f; }
+  function unary(){ if(peek() && peek().t==='-'){ p++; const a = unary(); return x=>-a(x); } if(peek() && peek().t==='+'){ p++; return unary(); } return power(); }
+  function power(){ const a = atom(); if(peek() && peek().t==='^'){ p++; const b = unary(); return x=>Math.pow(a(x), b(x)); } return a; }
+  function atom(){
+    const tk = T[p++];
+    if(!tk) throw new Error('식이 끝남');
+    if(tk.t==='n'){ const v = tk.v; return ()=>v; }
+    if(tk.t==='x') return x=>x;
+    if(tk.t==='('){ const a = expr(); eat(')'); return a; }
+    if(tk.t==='|'){ const a = expr(); eat('|'); return x=>Math.abs(a(x)); }
+    if(tk.t==='f'){ const fn = FN[tk.v]; const a = (peek() && peek().t==='(') ? (p++, (()=>{ const e = expr(); eat(')'); return e; })()) : power(); return x=>fn(a(x)); }
+    throw new Error('식 형식 오류');
+  }
+  const f = expr();
+  if(p !== T.length) throw new Error('식 형식 오류');
+  return f;
+}
+/* ═══ 그림 설계도(figSpec) → SVG — "그림을 베끼지 않고 식·좌표로 그린다" ═══
+   kind:'graph'    좌표평면의 함수 그래프: 범위·식(곡선)·직선·색칠·점·눈금
+   kind:'geometry' 평면 도형: 점 좌표 → 선분·다각형·원·호·각 표시·직각 표시·같은 길이 표시
+   같은 엔진을 화면(SVG)·HTML 교재(SVG)·한글(PNG 변환)·tools/graph.js(맥 Claude Code)가 함께 쓴다.
+   spec.size=[w,h] 는 원본 그림의 크기(비율 기준) — 다시 그려도 같은 비율 */
+const FIG_SERIF = "'Times New Roman','Nanum Myeongjo','Batang',serif";
+const FIG_FRAC = { '½':['1','2'], '¼':['1','4'], '¾':['3','4'], '⅓':['1','3'], '⅔':['2','3'] }, FIG_SUP = { '²':'2', '³':'3' };
+const FIG_FILL = '#e3e3e3';
+function figEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function figCharW(ch){ // 글자 폭 추정(em, Times 기준) — 분수·위첨자·정렬 배치용
+  if(/[0-9]/.test(ch)) return 0.5;
+  if(/[ijlft]/.test(ch)) return 0.3;
+  if(/[mw]/.test(ch)) return 0.7;
+  if(/[a-z]/.test(ch)) return 0.47;
+  if(/[IJ]/.test(ch)) return 0.38;
+  if(/[MW]/.test(ch)) return 0.85;
+  if(/[A-Z]/.test(ch)) return 0.66;
+  if(/[=+−<>≤≥×]/.test(ch)) return 0.56;
+  if(/[()[\]]/.test(ch)) return 0.33;
+  if(/[,.:;'′° ]/.test(ch)) return 0.25;
+  if(/[/|]/.test(ch)) return 0.28;
+  if(/[가-힣]/.test(ch)) return 0.95;
+  return 0.55;
+}
+/* 글자 폭: 브라우저에선 실제 글꼴로 잼(SVG 그림과 같은 글꼴 해석), 아니면 추정표 */
+let FIG_CTX = null;
+function figTextW(ch, size, italic){
+  try{
+    if(!FIG_CTX) FIG_CTX = document.createElement('canvas').getContext('2d');
+    FIG_CTX.font = (italic ? 'italic ' : '') + size + 'px ' + FIG_SERIF;
+    const w = FIG_CTX.measureText(ch).width;
+    if(w > 0) return w;
+  }catch(e){}
+  return figCharW(ch)*size;
+}
+/* 교과서식 라벨: 변수·점 이름은 기울임, 숫자·기호·π·함수 이름(ln, sin…)은 바로, ½ 같은 분수는 위아래로, ²·³ 은 위첨자 */
+function figLabelPieces(t, FS){
+  const str = String(t).replace(/-/g,'−'), chars = [...str], SF = Math.round(FS*0.62);
+  const upright = new Array(chars.length).fill(false);
+  const re = /(sin|cos|tan|ln|log|exp|lim|max|min)/g; let m;
+  const flat = chars.join('');                                 // 위 함수 이름은 모두 1글자 단위 문자라 인덱스가 같다
+  while((m = re.exec(flat))) for(let k=m.index; k<m.index+m[0].length; k++) upright[k] = true;
+  return chars.map((ch, i)=>{
+    if(FIG_FRAC[ch]) return { ch, kind:'frac', w: Math.max(figTextW(FIG_FRAC[ch][0], SF), figTextW(FIG_FRAC[ch][1], SF)) + FS*0.16 };
+    if(FIG_SUP[ch]) return { ch, kind:'sup', w: figTextW(FIG_SUP[ch], SF) + 1 };
+    const op = /[=+−<>≤≥]/.test(ch), it = /[a-zA-Zα-ωθ]/.test(ch) && ch!=='π' && !upright[i];
+    return { ch, kind: it ? 'it' : 'up', op, w: figTextW(ch, FS, it) + (op ? FS*0.12 : 0) };
+  });
+}
+function figLabelWidth(t, FS){ return figLabelPieces(t, FS).reduce((a,p)=>a+p.w, 0); }
+function figLabelSvg(t, x, y, align, FS){ // (x,y)=기준선 위치, align: left|right|center
+  if(t==null || t==='') return '';
+  const ps = figLabelPieces(t, FS), total = ps.reduce((a,p)=>a+p.w, 0);
+  let cx = align==='right' ? x - total : align==='center' ? x - total/2 : x;
+  const f = n=>+n.toFixed(1), SF = Math.round(FS*0.62);
+  let out = '';
+  for(const p of ps){
+    if(p.kind==='frac'){
+      const [a, b] = FIG_FRAC[p.ch], mid = cx + p.w/2;
+      out += `<text x="${f(mid)}" y="${f(y - FS*0.42)}" font-size="${SF}" text-anchor="middle">${a}</text>`
+          +  `<text x="${f(mid)}" y="${f(y + FS*0.3)}" font-size="${SF}" text-anchor="middle">${b}</text>`
+          +  `<rect x="${f(cx + FS*0.04)}" y="${f(y - FS*0.33)}" width="${f(p.w - FS*0.08)}" height="${f(Math.max(1, FS*0.05))}"/>`;
+    } else if(p.kind==='sup'){
+      out += `<text x="${f(cx)}" y="${f(y - FS*0.42)}" font-size="${SF}">${FIG_SUP[p.ch]}</text>`;
+    } else if(p.ch !== ' '){
+      out += `<text x="${f(cx + (p.op ? FS*0.06 : 0))}" y="${f(y)}" font-size="${FS}"${p.kind==='it'?' font-style="italic"':''}>${figEsc(p.ch)}</text>`;
+    }
+    cx += p.w;
+  }
+  return out;
+}
+const figNum = v=>typeof v==='number' && isFinite(v);
+/* 원본 크기(비율) → 출력 크기: 선·글자 굵기가 한글 문서에 넣었을 때 알맞도록 폭 700~1400 */
+function figOutSize(spec, origW, origH, natAspect){
+  const sz = Array.isArray(spec.size) && figNum(spec.size[0]) && figNum(spec.size[1]) && spec.size[0]>0 && spec.size[1]>0 ? spec.size : null;
+  const ow = origW || (sz && sz[0]) || 0, oh = origH || (sz && sz[1]) || 0;
+  if(ow && oh){ const W = Math.round(Math.max(700, Math.min(1400, ow*2))); return { W, H: Math.round(W*oh/ow) }; }
+  const W = 800, a = Math.max(0.45, Math.min(2.2, natAspect || 4/3));
+  return { W, H: Math.round(W/a) };
+}
+/* 설계도 점검: 사람이 읽을 수 있는 문제 목록(빈 배열이면 정상) — 편집기·tools/graph.js check 가 쓴다 */
+function figSpecIssues(spec){
+  const out = [];
+  if(!spec || typeof spec !== 'object') return ['설계도가 JSON 객체가 아닙니다'];
+  const tryF = (src, where)=>{ try{ compileMathExpr(src); }catch(e){ out.push(`${where} 식 "${src}": ${e.message}`); } };
+  if(spec.kind === 'graph'){
+    const X = spec.x, Y = spec.y;
+    if(!Array.isArray(X) || !Array.isArray(Y) || !figNum(X[0]) || !figNum(X[1]) || !figNum(Y[0]) || !figNum(Y[1]) || X[0]>=X[1] || Y[0]>=Y[1])
+      out.push('x·y 범위가 올바르지 않습니다 (예: "x":[-3,4], "y":[-2,6])');
+    (spec.curves||[]).forEach((c,i)=>tryF(c.f, `곡선 ${i+1}`));
+    (spec.fills||[]).forEach((f,i)=>{ tryF(f.upper, `색칠 ${i+1} 위`); tryF(f.lower, `색칠 ${i+1} 아래`);
+      if(!figNum(f.from) || !figNum(f.to)) out.push(`색칠 ${i+1}: from·to(구간)가 숫자가 아닙니다`); });
+    const n = (spec.curves||[]).length + (spec.vlines||[]).length + (spec.hlines||[]).length + (spec.segments||[]).length + (spec.points||[]).length;
+    if(!n) out.push('그릴 곡선·직선·점이 하나도 없습니다');
+  } else if(spec.kind === 'geometry'){
+    const P = spec.points || {};
+    if(typeof P !== 'object' || Array.isArray(P)) out.push('points 는 {"A":[0,0], ...} 형식이어야 합니다');
+    const ok = r=> (typeof r === 'string' && figGeoPt(P[r])) || (Array.isArray(r) && figNum(r[0]) && figNum(r[1]));
+    for(const [k, v] of Object.entries(P)) if(!figGeoPt(v)) out.push(`점 ${k}: 좌표가 올바르지 않습니다`);
+    const chk = (arr, name, key)=>(arr||[]).forEach((s,i)=>{
+      const ps = Array.isArray(s) ? s : (s && s[key]);
+      if(!Array.isArray(ps)) { out.push(`${name} ${i+1}: 점 목록(p)이 없습니다`); return; }
+      ps.forEach(r=>{ if(!ok(r)) out.push(`${name} ${i+1}: 없는 점 "${Array.isArray(r)?r.join(','):r}"`); });
+    });
+    chk(spec.segments, '선분', 'p'); chk(spec.polygons, '다각형', 'p'); chk(spec.angles, '각', 'p');
+    (spec.circles||[]).concat(spec.arcs||[]).forEach((c,i)=>{
+      if(!ok(c.c)) out.push(`원·호 ${i+1}: 중심 "${c.c}"이 없습니다`);
+      if(!figNum(c.r) && !ok(c.through)) out.push(`원·호 ${i+1}: 반지름 r 또는 지나는 점 through 가 필요합니다`);
+    });
+    if(!Object.keys(P).length && !(spec.circles||[]).length) out.push('점이 하나도 없습니다');
+  } else out.push('kind 는 "graph"(함수 그래프) 또는 "geometry"(평면 도형)여야 합니다');
+  return out;
+}
+function figGeoPt(v){ // 점 값: [x,y] | [x,y,"pos"] | {x,y,pos,label,dot,hide}
+  if(Array.isArray(v) && figNum(v[0]) && figNum(v[1])) return { x:v[0], y:v[1], pos: typeof v[2]==='string' ? v[2] : '' };
+  if(v && typeof v === 'object' && figNum(v.x) && figNum(v.y)) return { x:v.x, y:v.y, pos:v.pos||'', label:v.label, dot:v.dot, hide:v.hide };
+  return null;
+}
+const FIG_DIRS = { t:[0,-1], b:[0,1], l:[-1,0], r:[1,0], tl:[-0.75,-0.75], tr:[0.75,-0.75], bl:[-0.75,0.75], br:[0.75,0.75] };
+/* 메인: 설계도 → { svg, w, h } (흰 배경, 검은 선). 그릴 게 없거나 형식이 틀리면 오류 */
+function figSpecToSvg(spec, origW, origH){
+  if(!spec || typeof spec !== 'object') throw new Error('설계도가 비었습니다');
+  if(spec.kind === 'geometry') return figGeometrySvg(spec, origW, origH);
+  if(spec.kind && spec.kind !== 'graph') throw new Error('알 수 없는 그림 종류: '+spec.kind);
+  return figGraphSvg(spec, origW, origH);
+}
+function figWrap(W, H, body, FS, defs){
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FIG_SERIF}" fill="#000">`
+    + (defs ? `<defs>${defs}</defs>` : '')
+    + `<rect width="${W}" height="${H}" fill="#fff"/>` + body + '</svg>';
+}
+function figArrowHead(x1, y1, x2, y2, s){
+  const a = Math.atan2(y2-y1, x2-x1), f = n=>+n.toFixed(1);
+  return `<path d="M${f(x2)} ${f(y2)}L${f(x2 - s*Math.cos(a-0.4))} ${f(y2 - s*Math.sin(a-0.4))}L${f(x2 - s*Math.cos(a+0.4))} ${f(y2 - s*Math.sin(a+0.4))}Z"/>`;
+}
+function figGraphSvg(spec, origW, origH){
+  const X = spec.x, Y = spec.y;
+  if(!Array.isArray(X) || !Array.isArray(Y) || !figNum(X[0]) || !figNum(X[1]) || !figNum(Y[0]) || !figNum(Y[1]) || X[0]>=X[1] || Y[0]>=Y[1])
+    throw new Error('그래프 범위를 읽지 못했습니다');
+  const { W, H } = figOutSize(spec, origW, origH, Math.max(0.6, Math.min(1.6, (X[1]-X[0])/(Y[1]-Y[0]))));
+  const m = Math.round(W*0.035);
+  const px = x=>m + (x-X[0])/(X[1]-X[0])*(W-2*m), py = y=>H-m - (y-Y[0])/(Y[1]-Y[0])*(H-2*m);
+  const FS = Math.max(15, Math.round(W*0.03)), LW = +Math.max(2, W/420).toFixed(2);
+  const f = n=>+n.toFixed(1), uid = 'g'+Math.random().toString(36).slice(2,8);
+  const fnOf = src=>{ try{ return compileMathExpr(src); }catch(e){ return null; } };
+  const dashA = `stroke-dasharray="${f(LW*4)} ${f(LW*3)}"`;
+  let body = '', drawn = 0;
+  const defs = `<clipPath id="${uid}a"><rect x="${m}" y="${m}" width="${W-2*m}" height="${H-2*m}"/></clipPath>`
+             + `<clipPath id="${uid}b"><rect x="${f(m*0.5)}" y="${f(m*0.5)}" width="${W-m}" height="${H-m}"/></clipPath>`;
+  // 색칠한 넓이 (위 곡선 → 아래 곡선)
+  let fills = '';
+  for(const fl of (spec.fills||[])){
+    const up = fnOf(fl.upper), lo = fnOf(fl.lower);
+    if(!up || !lo || !figNum(fl.from) || !figNum(fl.to)) continue;
+    const N = 240, pts = [];
+    for(let k=0;k<=N;k++){ const x = fl.from + (fl.to-fl.from)*k/N, y = up(x); if(isFinite(y)) pts.push(f(px(x))+' '+f(py(y))); }
+    for(let k=N;k>=0;k--){ const x = fl.from + (fl.to-fl.from)*k/N, y = lo(x); if(isFinite(y)) pts.push(f(px(x))+' '+f(py(y))); }
+    if(pts.length < 4) continue;
+    fills += `<path d="M${pts.join('L')}Z" fill="${FIG_FILL}"/>`; drawn++;
+  }
+  if(fills) body += `<g clip-path="url(#${uid}a)">${fills}</g>`;
+  // 축 + 화살표
+  const ax0 = Y[0] <= 0 && 0 <= Y[1], ay0 = X[0] <= 0 && 0 <= X[1], AW = f(LW*0.75);
+  if(ax0){ body += `<line x1="${f(m*0.4)}" y1="${f(py(0))}" x2="${f(W-m*0.4)}" y2="${f(py(0))}" stroke="#000" stroke-width="${AW}"/>` + figArrowHead(m*0.4, py(0), W-m*0.4, py(0), FS*0.45)
+    + figLabelSvg(spec.xlabel||'x', W - m*0.4, py(0) + FS*1.05, 'right', FS); }
+  if(ay0){ body += `<line x1="${f(px(0))}" y1="${f(H-m*0.4)}" x2="${f(px(0))}" y2="${f(m*0.4)}" stroke="#000" stroke-width="${AW}"/>` + figArrowHead(px(0), H-m*0.4, px(0), m*0.4, FS*0.45)
+    + figLabelSvg(spec.ylabel||'y', px(0) + FS*0.35, m*0.4 + FS*0.6, 'left', FS); }
+  // 눈금: 축 위 짧은 선 + 숫자 (그림에 적힌 것만)
+  const tickOf = t=> typeof t === 'number' ? { v:t, label:String(t) } : (t && figNum(t.v) ? { v:t.v, label: t.label!=null ? String(t.label) : String(t.v) } : null);
+  if(ax0) for(const t of (spec.xticks||[]).map(tickOf).filter(Boolean)){
+    body += `<line x1="${f(px(t.v))}" y1="${f(py(0)-FS*0.2)}" x2="${f(px(t.v))}" y2="${f(py(0)+FS*0.2)}" stroke="#000" stroke-width="${AW}"/>`
+      + figLabelSvg(t.label, px(t.v), py(0) + FS*1.15, 'center', FS);
+  }
+  if(ay0) for(const t of (spec.yticks||[]).map(tickOf).filter(Boolean)){
+    body += `<line x1="${f(px(0)-FS*0.2)}" y1="${f(py(t.v))}" x2="${f(px(0)+FS*0.2)}" y2="${f(py(t.v))}" stroke="#000" stroke-width="${AW}"/>`
+      + figLabelSvg(t.label, px(0) - FS*0.3, py(t.v) + FS*0.35, 'right', FS);
+  }
+  // 세로·가로 직선, 선분
+  const line = (x1,y1,x2,y2,dash)=>`<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" stroke="#000" stroke-width="${f(LW*0.8)}"${dash?' '+dashA:''}/>`;
+  for(const v of (spec.vlines||[])){ if(!figNum(v.x)) continue; body += line(px(v.x), m*0.6, px(v.x), H-m*0.6, v.dash) + figLabelSvg(v.label, px(v.x) + FS*0.25, H - m*0.6 - FS*0.25, 'left', FS); drawn++; }
+  for(const h of (spec.hlines||[])){ if(!figNum(h.y)) continue; body += line(m*0.6, py(h.y), W-m*0.6, py(h.y), h.dash) + figLabelSvg(h.label, W - m*0.6, py(h.y) - FS*0.35, 'right', FS); drawn++; }
+  for(const s of (spec.segments||[])){
+    const ps = Array.isArray(s) ? s : (s && s.p);
+    if(!Array.isArray(ps) || ps.length < 2 || !ps.every(q=>Array.isArray(q) && figNum(q[0]) && figNum(q[1]))) continue;
+    for(let k=1;k<ps.length;k++) body += line(px(ps[k-1][0]), py(ps[k-1][1]), px(ps[k][0]), py(ps[k][1]), s.dash);
+    drawn++;
+  }
+  // 곡선: 800개 점, 범위를 크게 벗어나거나 끊기는 곳은 선을 끊음
+  let curves = '';
+  for(const c of (spec.curves||[])){
+    const fn = fnOf(c.f); if(!fn) continue;
+    const a = figNum(c.from) ? Math.max(c.from, X[0]) : X[0], b = figNum(c.to) ? Math.min(c.to, X[1]) : X[1];
+    if(!(a < b)) continue;
+    let d = '', pen = false; const span = Y[1]-Y[0];
+    for(let k=0;k<=800;k++){
+      const x = a + (b-a)*k/800, y = fn(x);
+      if(!isFinite(y) || y < Y[0]-span*2 || y > Y[1]+span*2){ pen = false; continue; }
+      d += (pen ? 'L' : 'M') + f(px(x)) + ' ' + f(py(y)); pen = true;
+    }
+    if(!d) continue;
+    curves += `<path d="${d}" fill="none" stroke="#000" stroke-width="${LW}" stroke-linejoin="round"${c.dash?' '+dashA:''}/>`; drawn++;
+    if(c.label){
+      let lx = figNum(c.lx) ? px(c.lx) : px(b) - FS*0.3, ly = figNum(c.ly) ? py(c.ly) : py(fn(b)||0);
+      lx = Math.min(Math.max(lx, m*0.3), W - m*0.3); ly = Math.min(Math.max(ly, FS), H - FS*0.3);
+      body += figLabelSvg(c.label, Math.min(lx, W - figLabelWidth(c.label, FS) - 4), ly, 'left', FS);
+    }
+  }
+  if(curves) body += `<g clip-path="url(#${uid}b)">${curves}</g>`;
+  // 점 + 라벨 (proj: 점에서 두 축으로 점선)
+  for(const pt of (spec.points||[])){
+    if(!figNum(pt.x) || !figNum(pt.y)) continue;
+    const X0 = px(pt.x), Y0 = py(pt.y);
+    if(pt.proj){
+      if(ax0) body += line(X0, Y0, X0, py(0), true);
+      if(ay0) body += line(X0, Y0, px(0), Y0, true);
+    }
+    if(!(pt.label==='O' && ax0 && ay0 && pt.x===0 && pt.y===0) && pt.dot !== false) body += `<circle cx="${f(X0)}" cy="${f(Y0)}" r="${f(LW*1.6)}"/>`;
+    const pos = String(pt.pos||'tr'), dx = pos.includes('l') ? -FS*0.3 : FS*0.3, dy = pos.includes('b') ? FS*1.0 : -FS*0.35;
+    body += figLabelSvg(pt.label, X0 + dx, Y0 + dy, pos.includes('l') ? 'right' : 'left', FS);
+    drawn++;
+  }
+  if(!drawn) throw new Error('그래프에서 그릴 곡선·직선을 읽지 못했습니다');
+  return { svg: figWrap(W, H, body, FS, defs), w: W, h: H };
+}
+function figGeometrySvg(spec, origW, origH){
+  const P = (spec.points && typeof spec.points === 'object' && !Array.isArray(spec.points)) ? spec.points : {};
+  const flip = spec.ydown ? -1 : 1;                       // ydown: 원본 픽셀 좌표(아래로 +) 그대로 써도 됨
+  const pts = {};
+  for(const [k, v] of Object.entries(P)){ const q = figGeoPt(v); if(q) pts[k] = { ...q, y: q.y*flip, name:k }; }
+  const ref = r=> typeof r === 'string' ? pts[r] : (Array.isArray(r) && figNum(r[0]) && figNum(r[1]) ? { x:r[0], y:r[1]*flip } : null);
+  const listOf = s=> Array.isArray(s) ? s : (s && Array.isArray(s.p) ? s.p : []);
+  const radOf = c=>{ const C = ref(c.c); if(!C) return 0; if(figNum(c.r)) return Math.abs(c.r); const T = ref(c.through); return T ? Math.hypot(T.x-C.x, T.y-C.y) : 0; };
+  // 경계 상자: 점 + 원 + 글자 위치 (+ 축이면 원점)
+  const xs = [], ys = [];
+  const add = (x,y)=>{ xs.push(x); ys.push(y); };
+  Object.values(pts).forEach(q=>add(q.x, q.y));
+  (spec.circles||[]).concat((spec.arcs||[])).forEach(c=>{ const C = ref(c.c), r = radOf(c); if(C && r){ add(C.x-r, C.y-r); add(C.x+r, C.y+r); } });
+  (spec.texts||[]).forEach(t=>{ if(figNum(t.x) && figNum(t.y)) add(t.x, t.y*flip); });
+  if(spec.axes) add(0, 0);
+  if(!xs.length) throw new Error('도형의 점을 읽지 못했습니다');
+  let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const span = Math.max(x1-x0, y1-y0) || 1;
+  if(x1-x0 < span*0.05){ x0 -= span*0.05; x1 += span*0.05; }
+  if(y1-y0 < span*0.05){ y0 -= span*0.05; y1 += span*0.05; }
+  const { W, H } = figOutSize(spec, origW, origH, (x1-x0)/(y1-y0));
+  const FS = Math.max(15, Math.round(Math.min(W, H*1.4)*0.034)), LW = +Math.max(2, W/420).toFixed(2);
+  const m = FS*2.2 + (spec.axes ? FS*0.8 : 0);
+  const s = Math.min((W-2*m)/(x1-x0), (H-2*m)/(y1-y0));      // 가로·세로 같은 배율 (원은 원으로, 직각은 직각으로)
+  const ox = (W - (x1-x0)*s)/2, oy = (H - (y1-y0)*s)/2;
+  const X = x=>ox + (x-x0)*s, Y = y=>H - oy - (y-y0)*s;
+  const f = n=>+n.toFixed(1), dashA = `stroke-dasharray="${f(LW*4)} ${f(LW*3)}"`;
+  const stroke = (dash, w, fill)=>`fill="${fill||'none'}" stroke="#000" stroke-width="${f(w||LW)}" stroke-linejoin="round"${dash?' '+dashA:''}`;
+  const cen = (()=>{ const v = Object.values(pts); return v.length ? { x: v.reduce((a,q)=>a+q.x,0)/v.length, y: v.reduce((a,q)=>a+q.y,0)/v.length } : { x:(x0+x1)/2, y:(y0+y1)/2 }; })();
+  let body = '', drawn = 0;
+  const used = new Set();
+  // 색칠(아래층) → 축 → 선(위층): 색칠이 축·글자를 가리지 않게
+  let under = '';
+  for(const pg of (spec.polygons||[])){
+    const ps = listOf(pg).map(ref); if(ps.length < 3 || ps.some(q=>!q)) continue;
+    listOf(pg).forEach(r=>typeof r==='string' && used.add(r));
+    const d = `M${ps.map(q=>f(X(q.x))+' '+f(Y(q.y))).join('L')}Z`;
+    if(pg.fill) under += `<path d="${d}" fill="${typeof pg.fill === 'string' && /^#[0-9a-f]{3,6}$/i.test(pg.fill) ? pg.fill : FIG_FILL}"/>`;
+    body += `<path d="${d}" ${stroke(pg.dash)}/>`; drawn++;
+  }
+  // 원·호(부채꼴) — 호의 from·to 는 보이는 그림 기준 각도(0=오른쪽, 90=위, 반시계) 또는 점 이름
+  for(const c of (spec.circles||[])){
+    const C = ref(c.c), r = radOf(c); if(!C || !r) continue;
+    if(typeof c.c === 'string') used.add(c.c);
+    if(c.fill) under += `<circle cx="${f(X(C.x))}" cy="${f(Y(C.y))}" r="${f(r*s)}" fill="${FIG_FILL}"/>`;
+    body += `<circle cx="${f(X(C.x))}" cy="${f(Y(C.y))}" r="${f(r*s)}" ${stroke(c.dash)}/>`; drawn++;
+  }
+  const angOf = (C, v)=>{ if(figNum(v)) return v; const T = ref(v); return T ? Math.atan2(T.y-C.y, T.x-C.x)*180/Math.PI : null; };
+  for(const a of (spec.arcs||[])){
+    const C = ref(a.c), r = radOf(a); if(!C || !r) continue;
+    let t1 = angOf(C, a.from), t2 = angOf(C, a.to); if(t1==null || t2==null) continue;
+    while(t2 <= t1) t2 += 360;
+    const P1 = { x: C.x + r*Math.cos(t1*Math.PI/180), y: C.y + r*Math.sin(t1*Math.PI/180) };
+    const P2 = { x: C.x + r*Math.cos(t2*Math.PI/180), y: C.y + r*Math.sin(t2*Math.PI/180) };
+    const large = (t2 - t1) > 180 ? 1 : 0, R = f(r*s);
+    const arcD = `M${f(X(P1.x))} ${f(Y(P1.y))}A${R} ${R} 0 ${large} 0 ${f(X(P2.x))} ${f(Y(P2.y))}`;
+    if(a.sector && a.fill) under += `<path d="M${f(X(C.x))} ${f(Y(C.y))}L${arcD.slice(1)}Z" fill="${FIG_FILL}"/>`;
+    body += a.sector ? `<path d="M${f(X(C.x))} ${f(Y(C.y))}L${arcD.slice(1)}Z" ${stroke(a.dash)}/>` : `<path d="${arcD}" ${stroke(a.dash)}/>`;
+    drawn++;
+  }
+  // 선분 (+ 길이 라벨, 같은 길이 표시)
+  for(const sg of (spec.segments||[])){
+    const names = listOf(sg), ps = names.map(ref); if(ps.length < 2 || ps.some(q=>!q)) continue;
+    names.forEach(r=>typeof r==='string' && used.add(r));
+    body += `<path d="M${ps.map(q=>f(X(q.x))+' '+f(Y(q.y))).join('L')}" ${stroke(sg.dash)}/>`; drawn++;
+    const A = ps[0], B = ps[ps.length-1];
+    const ax = X(A.x), ay = Y(A.y), bx = X(B.x), by = Y(B.y), L = Math.hypot(bx-ax, by-ay) || 1;
+    let nx = -(by-ay)/L, ny = (bx-ax)/L;                       // 법선: 도형 중심의 반대쪽으로
+    const mx = (ax+bx)/2, my = (ay+by)/2;
+    if((X(cen.x)-mx)*nx + (Y(cen.y)-my)*ny > 0){ nx = -nx; ny = -ny; }
+    const n = Math.min(3, Math.max(0, +sg.ticks||0));
+    for(let k=0;k<n;k++){
+      const off = (k - (n-1)/2)*FS*0.28, tx = mx + (bx-ax)/L*off, ty = my + (by-ay)/L*off;
+      body += `<line x1="${f(tx - nx*FS*0.32)}" y1="${f(ty - ny*FS*0.32)}" x2="${f(tx + nx*FS*0.32)}" y2="${f(ty + ny*FS*0.32)}" ${stroke(false, LW*0.8)}/>`;
+    }
+    if(sg.label!=null && sg.label!=='') body += figLabelSvg(sg.label, mx + nx*FS*0.85, my + ny*FS*0.85 + FS*0.35, 'center', FS);
+  }
+  // 각 표시: p=[A,B,C] → 꼭짓점 B, BA와 BC 사이(작은 쪽). right:true 는 직각 표시
+  for(const an of (spec.angles||[])){
+    const [A, B, C] = listOf(an).map(ref); if(!A || !B || !C) continue;
+    const u1 = Math.atan2(Y(A.y)-Y(B.y), X(A.x)-X(B.x)), u2 = Math.atan2(Y(C.y)-Y(B.y), X(C.x)-X(B.x));
+    let d = u2 - u1; while(d > Math.PI) d -= 2*Math.PI; while(d < -Math.PI) d += 2*Math.PI;
+    const bx = X(B.x), by = Y(B.y), r = figNum(an.r) ? an.r*s : FS*(an.right ? 0.7 : 1.05);
+    const mid = u1 + d/2;
+    if(an.right){
+      const e1 = [Math.cos(u1)*r, Math.sin(u1)*r], e2 = [Math.cos(u2)*r, Math.sin(u2)*r];
+      body += `<path d="M${f(bx+e1[0])} ${f(by+e1[1])}L${f(bx+e1[0]+e2[0])} ${f(by+e1[1]+e2[1])}L${f(bx+e2[0])} ${f(by+e2[1])}" ${stroke(false, LW*0.8)}/>`;
+    } else {
+      const n = Math.min(3, Math.max(1, +an.n||1));
+      for(let k=0;k<n;k++){
+        const rr = r + k*FS*0.22, sweep = d > 0 ? 1 : 0;
+        body += `<path d="M${f(bx+Math.cos(u1)*rr)} ${f(by+Math.sin(u1)*rr)}A${f(rr)} ${f(rr)} 0 0 ${sweep} ${f(bx+Math.cos(u2)*rr)} ${f(by+Math.sin(u2)*rr)}" ${stroke(false, LW*0.8)}/>`;
+      }
+    }
+    if(an.label!=null && an.label!==''){
+      const lr = r + FS*(an.right ? 0.9 : 0.75);
+      body += figLabelSvg(an.label, bx + Math.cos(mid)*lr, by + Math.sin(mid)*lr + FS*0.35, 'center', FS);
+    }
+    drawn++;
+  }
+  // 점: 선·도형에 쓰이지 않은 점은 점(●)으로, 이름은 도형 바깥쪽에 자동 배치(또는 pos)
+  for(const q of Object.values(pts)){
+    const qx = X(q.x), qy = Y(q.y);
+    if(q.dot === true || (q.dot !== false && !used.has(q.name))) body += `<circle cx="${f(qx)}" cy="${f(qy)}" r="${f(LW*1.6)}"/>`;
+    if(q.hide) continue;
+    const lab = q.label != null ? String(q.label) : q.name;
+    let dir = FIG_DIRS[q.pos];
+    if(!dir){ const vx = qx - X(cen.x), vy = qy - Y(cen.y), L = Math.hypot(vx, vy); dir = L > 1 ? [vx/L, vy/L] : [0.75, -0.75]; }
+    const lw = figLabelWidth(lab, FS);
+    body += figLabelSvg(lab, qx + dir[0]*(FS*0.55 + lw/2), qy + dir[1]*FS*0.8 + FS*0.35, 'center', FS);
+    drawn++;
+  }
+  for(const t of (spec.texts||[])){
+    const at = t.at ? ref(t.at) : (figNum(t.x) && figNum(t.y) ? { x:t.x, y:t.y*flip } : null);
+    if(!at || t.text==null) continue;
+    const dir = FIG_DIRS[t.pos] || [0,0];
+    body += figLabelSvg(String(t.text), X(at.x) + dir[0]*FS*0.9, Y(at.y) + dir[1]*FS*0.9 + FS*0.35, 'center', FS);
+    drawn++;
+  }
+  // 축 (좌표평면 위 도형)
+  let axes = '';
+  if(spec.axes){
+    const ax1 = Math.min(X(x0) - FS, X(0) - FS), ax2 = Math.max(X(x1) + FS*1.2, X(0) + FS);
+    const ay1 = Math.max(Y(y0) + FS, Y(0) + FS), ay2 = Math.min(Y(y1) - FS*1.2, Y(0) - FS);
+    axes += `<line x1="${f(ax1)}" y1="${f(Y(0))}" x2="${f(ax2)}" y2="${f(Y(0))}" ${stroke(false, LW*0.75)}/>` + figArrowHead(ax1, Y(0), ax2, Y(0), FS*0.45)
+         +  `<line x1="${f(X(0))}" y1="${f(ay1)}" x2="${f(X(0))}" y2="${f(ay2)}" ${stroke(false, LW*0.75)}/>` + figArrowHead(X(0), ay1, X(0), ay2, FS*0.45)
+         +  figLabelSvg('x', ax2, Y(0) + FS*1.05, 'right', FS) + figLabelSvg('y', X(0) + FS*0.35, ay2 + FS*0.6, 'left', FS);
+    if(!pts.O) axes += figLabelSvg('O', X(0) - FS*0.25, Y(0) + FS*1.0, 'right', FS);
+  }
+  if(!drawn) throw new Error('도형에서 그릴 것을 찾지 못했습니다');
+  return { svg: figWrap(W, H, under + axes + body, FS), w: W, h: H };
+}
+/* SVG 문자열 → 흰 배경 PNG(dataURL). scale 로 해상도 조절 */
+function figLoadSvg(svg){
+  return new Promise((res, rej)=>{
+    const img = new Image();
+    img.onload = ()=>res(img);
+    img.onerror = ()=>rej(new Error('SVG 렌더링 실패 — 다시 시도해 보세요'));
+    img.src = 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+  });
+}
+async function svgToPng(svg, w, h, scale){
+  const k = scale || 1, img = await figLoadSvg(svg);
+  const cv = document.createElement('canvas'); cv.width = Math.round(w*k); cv.height = Math.round(h*k);
+  const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+  g.drawImage(img, 0, 0, cv.width, cv.height);
+  return cv.toDataURL('image/png');
+}
+async function figSpecToPng(spec, origW, origH){ const r = figSpecToSvg(spec, origW, origH); return svgToPng(r.svg, r.w, r.h); }
+function figSvgDataUri(spec){ return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(figSpecToSvg(spec).svg); }
+/* 공용: 그림 이미지(dataURL) → AI가 읽고 다시 그림 → { img: 흰 배경 PNG(dataURL), spec: 설계도|null }
+   함수 그래프·평면 도형은 설계도(수치·좌표)로 읽어 직접 정확히 그림 — 설계도는 문제와 함께 저장돼 나중에 고칠 수 있다.
+   그 밖의 평면 그림은 원본 좌표 그대로의 SVG, 입체·복잡한 그림은 원본 유지(e.keep).
+   그림 편집기·분할 확인 화면이 함께 쓴다 */
+async function aiRedrawFigureSpec(dataURL, fallbackW, fallbackH){
   const m = String(dataURL).match(/^data:(image\/\w+);base64,(.+)$/);
   if(!m) throw new Error('이미지 형식 오류');
+  const OW = fallbackW || 600, OH = fallbackH || 400;
   const r = await aiJsonCall([
       { type:'image', source:{ type:'base64', media_type:m[1], data:m[2] } },
-      { type:'text', text: aiRedrawPrompt() }
+      { type:'text', text: aiRedrawPrompt(OW, OH) }
     ], 8000);
+  if(r && r.kind === 'keep'){
+    const e = new Error('입체·복잡한 그림이라 다시 그리면 원본보다 나빠질 수 있어 원본을 그대로 둡니다'+(r.reason?` (${String(r.reason).slice(0,60)})`:''));
+    e.keep = true; throw e;
+  }
+  if(r && (r.kind === 'graph' || r.kind === 'geometry')){
+    const spec = { ...r, size: [Math.round(OW), Math.round(OH)] };
+    return { img: await figSpecToPng(spec), spec };
+  }
   // 길이 제한에 잘린 응답은 tolerantJsonParse가 복구해 버리므로 닫는 태그로 완결성 확인
   if(!/<\/svg\s*>\s*$/i.test(String(r.svg||'').trim()))
     throw new Error('그림이 복잡해 AI 응답이 중간에 잘렸습니다 — 다시 시도해 보세요');
@@ -4075,20 +4713,19 @@ async function aiRedrawFigure(dataURL, fallbackW, fallbackH){
   // 크기: viewBox 우선 (width/height 없는 SVG는 크롬이 300×150으로 보고·drawImage가 빈 그림이 됨)
   const vb = svg.match(/viewBox\s*=\s*['"]\s*[\d.-]+[\s,]+[\d.-]+[\s,]+([\d.]+)[\s,]+([\d.]+)/);
   let vw = vb ? +vb[1] : 0, vh = vb ? +vb[2] : 0;
-  if(!vw || !vh){ vw = fallbackW || 600; vh = fallbackH || 400; }
+  if(!vw || !vh){ vw = OW; vh = OH; }
   if(!/<svg[^>]*\swidth\s*=/i.test(svg))
     svg = svg.replace(/<svg/i, `<svg width="${vw}" height="${vh}"`);
-  const img = new Image();
-  await new Promise((res,rej)=>{
-    img.onload = res;
-    img.onerror = ()=>rej(new Error('SVG 렌더링 실패 — 다시 시도해 보세요'));
-    img.src = 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
-  });
-  const W = Math.round(Math.max(700, Math.min(1600, vw*2))), H = Math.round(W*vh/vw);
+  const img = await figLoadSvg(svg);
+  // 결과 그림의 비율은 원본과 같게 — AI가 다른 비율로 그렸으면 늘리지 않고 가운데 맞춤
+  const W = Math.round(Math.max(700, Math.min(1600, OW*2))), H = Math.round(W*OH/OW);
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-  const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0,0,W,H); g.drawImage(img, 0, 0, W, H);
-  return cv.toDataURL('image/png');
+  const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0,0,W,H);
+  const k = Math.min(W/vw, H/vh), dw = vw*k, dh = vh*k;
+  g.drawImage(img, (W-dw)/2, (H-dh)/2, dw, dh);
+  return { img: cv.toDataURL('image/png'), spec: null };
 }
+async function aiRedrawFigure(dataURL, fallbackW, fallbackH){ return (await aiRedrawFigureSpec(dataURL, fallbackW, fallbackH)).img; }
 /* 분할 확인 화면: AI 변환으로 잘라낸 그림을 다시 그림 (원본은 d.imgOrig에 보관 → 되돌리기 가능) */
 async function redrawDraftFig(i, batch){
   const d = state.bulkDrafts[i];
@@ -4098,25 +4735,26 @@ async function redrawDraftFig(i, batch){
   try{
     const src = d.imgOrig || d.img;                       // 다시 그릴 때도 항상 원본에서
     const dim = await imgDims(src);
-    const out = await aiRedrawFigure(src, dim.w, dim.h);
-    d.imgOrig = src; d.img = out;
+    const out = await aiRedrawFigureSpec(src, dim.w, dim.h);
+    d.imgOrig = src; d.img = out.img;
+    if(out.spec) d.figSpec = out.spec; else delete d.figSpec;   // 설계도(그래프·도형)는 저장 후에도 고칠 수 있게 보관
     if(!batch) toast('🪄 그림을 다시 그렸습니다 — 원본과 비교해 보고, 다르면 [한 번 더] 또는 [↶ 원본 그림 쓰기]');
     return true;
   }catch(e){
     if(batch) throw e;
-    toast('⚠ 그림 다시 그리기 실패: '+(e.message||e)); return false;
+    toast((e.keep ? '🖼 ' : '⚠ 그림 다시 그리기 실패: ')+(e.message||e)); return false;
   }finally{ d._redrawing = false; rerenderBulk(); }
 }
 function revertDraftFig(i){
   const d = state.bulkDrafts[i];
-  if(d && d.imgOrig){ d.img = d.imgOrig; delete d.imgOrig; rerenderBulk(); toast('원본 그림으로 되돌렸습니다.'); }
+  if(d && d.imgOrig){ d.img = d.imgOrig; delete d.imgOrig; delete d.figSpec; rerenderBulk(); toast('원본 그림으로 되돌렸습니다.'); }
 }
 async function redrawAllDraftFigs(){
   const targets = state.bulkDrafts.map((d,i)=>({d,i})).filter(x=>x.d.img && x.d.aiDone && !x.d.imgOrig);
   if(!targets.length){ toast('다시 그릴 그림이 없습니다 — 먼저 [🤖 AI 텍스트 변환]을 하면 문항에서 그림 부분만 잘라냅니다.'); return; }
   if(!aiSettings().key){ toast('API 키가 없습니다 — [백업·데이터 → AI 변환 설정]에서 먼저 저장하세요.'); return; }
   if(!confirm(`그림 ${targets.length}개를 AI가 깨끗하게 다시 그립니다 (그림당 소액 과금, 그림당 수십 초).\n원본은 보관되므로 문항별로 [↶ 원본 그림 쓰기]로 되돌릴 수 있습니다.\n계속할까요?`)) return;
-  let ok = 0, fail = 0, lastErr = '';
+  let ok = 0, fail = 0, kept = 0, lastErr = '';
   aiBatchStart('🪄 그림 다시 그리는 중');
   state._aiBusy = true;                                  // 진행 상태줄을 미리보기 갱신이 덮지 않게
   try{
@@ -4124,9 +4762,13 @@ async function redrawAllDraftFigs(){
       if(AI_BATCH.cancel) break;
       $('#bulk-status').textContent = `🪄 그림 다시 그리는 중… ${k+1}/${targets.length} (문항 ${targets[k].d.num||''})`;
       try{ await redrawDraftFig(targets[k].i, true); ok++; }
-      catch(e){ fail++; lastErr = e.message||String(e); if(ok===0 && /API 키|401|네트워크|API 오류 4/.test(lastErr)) throw e; }
+      catch(e){
+        if(e.keep){ kept++; continue; }                  // 입체·복잡한 그림: 원본 유지
+        fail++; lastErr = e.message||String(e); if(ok===0 && /API 키|401|네트워크|API 오류 4/.test(lastErr)) throw e;
+      }
     }
     $('#bulk-status').textContent = (AI_BATCH.cancel ? '⏹ 중지됨 — ' : '🪄 ')+`그림 ${ok}개를 다시 그렸습니다`
+      +(kept?` · 입체·복잡한 그림 ${kept}개는 원본 유지`:'')
       +(fail?` · 실패 ${fail}개(원본 유지) · ${lastErr}`:'')+'. 원본과 비교해 확인한 뒤 [전체 저장]하세요.';
   }catch(e){
     $('#bulk-status').textContent = '⚠ 그림 다시 그리기 중단: '+(e.message||e);
@@ -4139,16 +4781,17 @@ async function imgedAiRedraw(){
   const hint = $('#imged-hint');
   try{
     hint.textContent = '🪄 AI가 그림을 다시 그리는 중… (수십 초 걸릴 수 있어요)';
-    const out = await aiRedrawFigure(IMGED.cv.toDataURL('image/png'), IMGED.cv.width, IMGED.cv.height);
+    const out = await aiRedrawFigureSpec(IMGED.cv.toDataURL('image/png'), IMGED.cv.width, IMGED.cv.height);
     imgedPushUndo();
-    await imgedLoad(out);
+    await imgedLoad(out.img);
+    IMGED.spec = out.spec; IMGED.specSnap = out.spec ? IMGED.cv.toDataURL('image/png') : '';   // 이후 손으로 고치면 설계도는 버림
     IMGED.rotStarted = false; IMGED.rotBase = null; const rr = $('#imged-rot'); if(rr) rr.value = 0;
     hint.textContent = '';
     toast('🪄 AI가 벡터로 다시 그렸습니다 — 원본과 비교해 확인하고, 다르면 [↶ 취소] 후 재시도·수정하세요.');
     logJob('AI 그림 복원', IMGED.p ? (stripBoxMarks(IMGED.p.question||'').slice(0,20)||IMGED.p.id) : '', '벡터 재생성');
   }catch(e){
     hint.textContent = '';
-    toast('⚠ AI 그림 복원 실패: '+(e.message||e));
+    toast((e.keep ? '🖼 ' : '⚠ AI 그림 복원 실패: ')+(e.message||e));
   }
 }
 async function imgedUndo(){
@@ -4166,7 +4809,10 @@ async function imgedReset(){ imgedPushUndo(); await imgedLoad(IMGED.orig); toast
 async function imgedSave(){
   const p = IMGED.p;
   const imgs = await imagesOf(p);
-  imgs[IMGED.idx] = IMGED.cv.toDataURL('image/jpeg', 0.92);
+  const png = IMGED.cv.toDataURL('image/png');
+  const fromSpec = IMGED.spec && png === IMGED.specSnap;             // AI 설계도 그림을 손대지 않고 저장
+  imgs[IMGED.idx] = fromSpec ? png : IMGED.cv.toDataURL('image/jpeg', 0.92);
+  setFigSpec(p, IMGED.idx, fromSpec ? IMGED.spec : null);          // 손으로 고친 그림은 설계도와 달라지므로 설계도 해제
   p.images = imgs; p.updatedAt = Date.now();
   const stored = await saveProblem(p);
   p.images = []; p.imgN = stored.imgN;
@@ -4175,7 +4821,159 @@ async function imgedSave(){
   if($('#view-db').classList.contains('active')) renderDB();
   toast('편집한 그림을 저장했습니다.');
 }
-function imgedClose(){ const ov = $('#imged-ov'); if(ov) ov.remove(); IMGED.p=null; IMGED.undoStack=[]; IMGED.redoStack=[]; }
+function imgedClose(){ const ov = $('#imged-ov'); if(ov) ov.remove(); IMGED.p=null; IMGED.spec=null; IMGED.specSnap=''; IMGED.undoStack=[]; IMGED.redoStack=[]; }
+/* ═══ 📐 그림 설계도 편집기: 식·좌표·글자를 고치면 그림이 바로 다시 그려짐 (문제 상세·분할 확인 화면 공용) ═══ */
+const FIG_TEMPLATES = {
+  graph: { kind:'graph', x:[-3, 4], y:[-2, 6],
+    curves:[ { f:'x^2-2*x+1', from:-1, to:3.4, label:'y=x²−2x+1', lx:2.2, ly:5.2 } ],
+    points:[ { x:0, y:0, label:'O', pos:'bl' }, { x:1, y:0, label:'1', pos:'br', dot:false } ], xlabel:'x', ylabel:'y' },
+  geometry: { kind:'geometry', points:{ A:[1, 4], B:[0, 0], C:[5, 0], H:[1, 0] },
+    polygons:[ { p:['A','B','C'] } ], segments:[ { p:['A','H'], dash:true }, { p:['B','C'], label:'5' } ],
+    angles:[ { p:['A','H','C'], right:true }, { p:['A','C','B'], label:'θ' } ] },
+};
+const FIGED = { spec:null, onSave:null, timer:0 };
+function figedPretty(spec){ // 한 줄이 너무 길지 않게: 최상위 키마다 한 줄
+  const keys = Object.keys(spec||{});
+  return '{\n' + keys.map(k=>'  '+JSON.stringify(k)+': '+JSON.stringify(spec[k])).join(',\n') + '\n}';
+}
+function openFigSpecEditor(opts){
+  figedClose();
+  FIGED.onSave = opts.onSave; FIGED.spec = opts.spec || FIG_TEMPLATES.graph;
+  const ov = document.createElement('div');
+  ov.id = 'figed-ov';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(18,22,18,.86);z-index:320;display:flex;align-items:center;justify-content:center;padding:12px';
+  ov.innerHTML = `
+    <div class="card" style="width:min(1150px,98vw);max-height:96vh;overflow:auto;margin:0">
+      <div class="spread" style="margin-bottom:.4rem"><h3 style="margin:0">📐 그림 설계도 ${opts.isNew?'— 새 그림':'고치기'}</h3>
+        <button class="btn ghost sm" onclick="figedClose()">✕</button></div>
+      <p class="hint" style="margin:.1rem 0 .5rem">그림을 손으로 그리지 않고 <b>식·좌표</b>로 그립니다. 왼쪽 숫자·식·글자를 고치면 오른쪽 그림이 바로 바뀝니다.
+        말로 고치려면 아래 칸에 적고 [🤖 AI로 고치기]. 함수 그래프는 <code>"kind":"graph"</code>, 도형은 <code>"kind":"geometry"</code>.</p>
+      <div class="grid2" style="align-items:start">
+        <div>
+          <div class="row" style="margin-bottom:.35rem;flex-wrap:wrap;gap:.3rem">
+            <span class="hint">예시로 시작:</span>
+            <button class="btn ghost sm" onclick="figedTemplate('graph')">📈 함수 그래프</button>
+            <button class="btn ghost sm" onclick="figedTemplate('geometry')">📐 평면 도형</button>
+          </div>
+          <textarea id="figed-json" spellcheck="false" style="width:100%;min-height:330px;font-family:Consolas,Menlo,monospace;font-size:.78rem;line-height:1.45"></textarea>
+          <div class="row" style="margin-top:.4rem;gap:.3rem">
+            <input id="figed-ask" placeholder="예: 곡선을 y=x²−4 로 바꾸고 x=2 에 점선 추가" style="flex:1">
+            <button class="btn sm" id="figed-ask-btn" onclick="figedAskAi()">🤖 AI로 고치기</button>
+          </div>
+          <div id="figed-msg" class="hint" style="margin-top:.35rem;min-height:1.2em"></div>
+        </div>
+        <div>
+          <div id="figed-prev" style="border:1px solid var(--line);border-radius:8px;background:#fff;padding:6px;text-align:center;min-height:200px"></div>
+          <details style="margin-top:.5rem"><summary class="hint" style="cursor:pointer">설계도 쓰는 법 (항목 설명)</summary>
+            <pre class="hint" style="white-space:pre-wrap;font-size:.72rem;max-height:240px;overflow:auto">${esc(FIG_GRAPH_GUIDE+'\n'+FIG_GEO_GUIDE)}</pre></details>
+        </div>
+      </div>
+      <div class="row" style="justify-content:flex-end;margin-top:.6rem">
+        <button class="btn gold" id="figed-save" onclick="figedSave()">💾 이 그림으로 저장</button>
+        <button class="btn ghost" onclick="figedClose()">닫기</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const ta = $('#figed-json');
+  ta.value = figedPretty(FIGED.spec);
+  ta.addEventListener('input', ()=>{ clearTimeout(FIGED.timer); FIGED.timer = setTimeout(figedPreview, 250); });
+  $('#figed-ask').addEventListener('keydown', e=>{ if(e.key==='Enter') figedAskAi(); });
+  figedPreview();
+}
+function figedParse(){ // 텍스트 → { spec } 또는 { err }
+  const raw = $('#figed-json').value.trim();
+  let spec;
+  try{ spec = JSON.parse(raw); }
+  catch(e){ try{ spec = tolerantJsonParse(raw); }catch(e2){ return { err: 'JSON 형식 오류 — 쉼표·따옴표·괄호를 확인하세요 ('+e.message+')' }; } }
+  if(!spec || typeof spec !== 'object' || Array.isArray(spec)) return { err: '설계도는 { } 로 감싼 JSON 이어야 합니다' };
+  return { spec };
+}
+function figedPreview(){
+  const prev = $('#figed-prev'), msg = $('#figed-msg'); if(!prev) return null;
+  const r = figedParse();
+  if(r.err){ msg.style.color = 'var(--danger)'; msg.textContent = '⚠ '+r.err; return null; }
+  try{
+    const out = figSpecToSvg(r.spec);
+    prev.innerHTML = out.svg.replace(/<svg /, '<svg style="max-width:100%;height:auto;max-height:60vh" ');
+    const iss = figSpecIssues(r.spec);
+    msg.style.color = iss.length ? 'var(--danger)' : 'var(--ok)';
+    msg.textContent = iss.length ? '⚠ '+iss.slice(0,3).join(' · ') : '✓ 그림을 그렸습니다';
+    FIGED.spec = r.spec;
+    return r.spec;
+  }catch(e){ msg.style.color = 'var(--danger)'; msg.textContent = '⚠ '+(e.message||e); return null; }
+}
+function figedTemplate(kind){
+  const cur = figedParse();
+  if(cur.spec && JSON.stringify(cur.spec) !== JSON.stringify(FIGED.spec) && !confirm('지금 설계도를 예시로 바꿀까요? (고친 내용은 사라집니다)')) return;
+  $('#figed-json').value = figedPretty(FIG_TEMPLATES[kind]);
+  figedPreview();
+}
+async function figedAskAi(){
+  const ask = $('#figed-ask').value.trim();
+  if(!ask){ toast('어떻게 고칠지 적어 주세요.'); return; }
+  if(!aiSettings().key){ toast('API 키가 없습니다 — [백업·데이터 → AI 변환 설정]에서 먼저 저장하세요.'); return; }
+  const cur = figedParse();
+  if(cur.err){ toast('먼저 설계도 형식 오류를 고쳐 주세요.'); return; }
+  const btn = $('#figed-ask-btn'), msg = $('#figed-msg');
+  btn.disabled = true; msg.style.color = ''; msg.textContent = '🤖 AI가 설계도를 고치는 중…';
+  try{
+    const r = await aiJsonCall([{ type:'text', text:
+      '수학 문제 그림의 설계도(JSON)를 요청대로 고쳐 주세요. 형식은 그대로 유지하고, 고친 설계도 JSON 하나만 출력하세요.\n\n'
+      +'[설계도 형식]\n함수 그래프: '+FIG_GRAPH_GUIDE+'\n평면 도형: '+FIG_GEO_GUIDE
+      +'\n[지금 설계도]\n'+JSON.stringify(cur.spec)+'\n\n[요청]\n'+ask }], 4000);
+    if(!r || typeof r !== 'object' || !r.kind) throw new Error('AI 응답에 설계도가 없습니다');
+    if(cur.spec.size && !r.size) r.size = cur.spec.size;
+    $('#figed-json').value = figedPretty(r);
+    if(figedPreview()) msg.textContent = '🤖 고쳤습니다 — 그림을 확인하고 [💾 이 그림으로 저장]';
+  }catch(e){ msg.style.color = 'var(--danger)'; msg.textContent = '⚠ AI로 고치기 실패: '+(e.message||e); }
+  finally{ btn.disabled = false; }
+}
+async function figedSave(){
+  const spec = figedPreview();
+  if(!spec){ toast('설계도 오류를 먼저 고쳐 주세요.'); return; }
+  const btn = $('#figed-save'); btn.disabled = true;
+  try{
+    const png = await figSpecToPng(spec);
+    const cb = FIGED.onSave;
+    figedClose();
+    if(cb) await cb(spec, png);
+  }catch(e){ toast('⚠ 그림 저장 실패: '+(e.message||e)); btn.disabled = false; }
+}
+function figedClose(){ const ov = $('#figed-ov'); if(ov) ov.remove(); clearTimeout(FIGED.timer); }
+/* 저장된 문제의 k번째 그림 설계도 고치기 (k<0 이면 새 그림 추가) */
+async function openFigSpecForProblem(id, k){
+  const p = state.problems.find(x=>x.id===id); if(!p) return;
+  const spec = k >= 0 ? figSpecOf(p, k) : null;
+  openFigSpecEditor({ spec: spec || FIG_TEMPLATES.graph, isNew: !spec, onSave: async (sp, png)=>{
+    const imgs = (await imagesOf(p)).slice();
+    const idx = k >= 0 ? k : imgs.length;
+    imgs[idx] = png; setFigSpec(p, idx, sp);
+    p.images = imgs; p.updatedAt = Date.now();
+    const stored = await saveProblem(p);
+    p.images = []; p.imgN = stored.imgN;                     // 라이트 레코드 유지
+    openDetail(p.id);
+    if($('#view-db').classList.contains('active')) renderDB();
+    toast(k >= 0 ? '📐 설계도를 고쳐 그림을 다시 그렸습니다.' : '📐 새 그림을 추가했습니다 — 본문의 [그림] 자리에 들어갑니다(없으면 문제 끝).');
+    logJob('그림 설계도', stripBoxMarks(p.question||'').slice(0,20)||p.id, k >= 0 ? '수정' : '추가');
+  }});
+}
+/* tools/graph.js attach 용: 문제 레코드(이미지 포함 전체)에 설계도 그림을 넣고 저장·동기화 대기열에. index: 바꿀 그림 번호(없으면 새로 추가) */
+async function attachFigSpec(rec, spec, index){
+  figSpecToSvg(spec);                                         // 형식 오류면 여기서 중단
+  const imgs = (rec.images||[]).slice();
+  const k = (index==null || index==='new' || +index < 0 || isNaN(+index)) ? imgs.length : Math.min(+index, imgs.length);
+  imgs[k] = await figSpecToPng(spec);
+  const p = { ...rec, images: imgs, updatedAt: Date.now() };
+  setFigSpec(p, k, spec);
+  await saveProblem(p);
+  const light = lightenProblem(p), i = state.problems.findIndex(x=>x.id===p.id);
+  if(i >= 0) state.problems[i] = light; else state.problems.push(light);
+  return { index: k, images: imgs.length };
+}
+function editDraftFigSpec(i){
+  const d = state.bulkDrafts[i]; if(!d || !d.figSpec) return;
+  openFigSpecEditor({ spec: d.figSpec, onSave: async (sp, png)=>{ d.figSpec = sp; d.img = png; rerenderBulk(); toast('📐 설계도대로 다시 그렸습니다.'); } });
+}
 async function openImgEditor(id, idx){
   const p = state.problems.find(x=>x.id===id); if(!p) return;
   const imgs = await imagesOf(p);
@@ -4216,6 +5014,7 @@ async function openImgEditor(id, idx){
   IMGED.cv = $('#imged-cv'); IMGED.ctx = IMGED.cv.getContext('2d');
   IMGED.undoStack = []; IMGED.redoStack = []; IMGED.stamp = null; IMGED.rotStarted = false;
   await imgedLoad(imgs[idx]);
+  IMGED.spec = figSpecOf(p, idx); IMGED.specSnap = IMGED.spec ? IMGED.cv.toDataURL('image/png') : '';
   imgedSetTool('erase');
   $('#imged-bar').addEventListener('click', e=>{ const b = e.target.closest('[data-t]'); if(b) imgedSetTool(b.dataset.t); });
   $('#imged-size').addEventListener('input', e=>{ IMGED.size = +e.target.value; });
@@ -4344,6 +5143,7 @@ async function openImgCrop(id){
       x2.fillStyle='#fff'; x2.fillRect(0,0,c2.width,c2.height);
       x2.drawImage(im, sel.x,sel.y,sel.w,sel.h, 0,0,c2.width,c2.height);
       p.images = [c2.toDataURL('image/jpeg', 0.9), ...imgs.slice(1)];
+      setFigSpec(p, 0, null);                              // 잘라낸 그림은 설계도와 달라짐
       p.updatedAt = Date.now();
       const stored = await saveProblem(p);
       p.images = []; p.imgN = stored.imgN;                 // 라이트 레코드 유지
@@ -5006,7 +5806,10 @@ async function printSheet(){
   const list = cartProblems();
   if(!list.length){ toast('담긴 문제가 없습니다.'); return; }
   const imgsMap = new Map(), solMap = new Map();
-  for(const p of list){ imgsMap.set(p.id, await imagesOf(p)); solMap.set(p.id, await solImgOf(p)); }
+  for(const p of list){
+    const imgs = (await imagesOf(p)).map((d,k)=>{ const sp = figSpecOf(p, k); if(!sp) return d; try{ return figSvgDataUri(sp); }catch(e){ return d; } });   // 설계도 그림은 벡터(SVG) — 확대해도 선명
+    imgsMap.set(p.id, imgs); solMap.set(p.id, await solImgOf(p));
+  }
   const title = $('#s-title').value||'수학 연습 문제';
   const sub = $('#s-sub').value, author = $('#s-author').value, date = $('#s-date').value;
   const twoCol = $('#s-2col').checked, withMeta = $('#s-meta').checked;
@@ -5097,7 +5900,10 @@ function htmlSolutionBody(p, solImg){
 }
 async function buildHtmlExport(mode, list){ // mode: 'sheet' 학습지 | 'book' 교재(표지+목차+뒤쪽 해설)
   const imgsMap = new Map(), solMap = new Map();
-  for(const p of list){ imgsMap.set(p.id, await imagesOf(p)); solMap.set(p.id, await solImgOf(p)); }
+  for(const p of list){
+    const imgs = (await imagesOf(p)).map((d,k)=>{ const sp = figSpecOf(p, k); if(!sp) return d; try{ return figSvgDataUri(sp); }catch(e){ return d; } });   // 설계도 그림은 벡터(SVG) — 확대해도 선명
+    imgsMap.set(p.id, imgs); solMap.set(p.id, await solImgOf(p));
+  }
   const title = $('#s-title').value||'수학 연습 문제';
   const sub = $('#s-sub').value, author = $('#s-author').value, date = $('#s-date').value;
   const withMeta = $('#s-meta').checked, twoCol = $('#s-2col').checked;
