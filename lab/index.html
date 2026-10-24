@@ -490,7 +490,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
       <h3>② 분할 결과 확인 후 일괄 저장</h3>
       <div class="row" style="margin-bottom:.6rem">
         <button class="btn" id="btn-ai-drafts" onclick="aiTranscribeDrafts()">🤖 AI 텍스트 변환 (이미지 문항)</button>
-        <button class="btn" onclick="redrawAllDraftFigs()" title="AI 변환으로 잘라낸 그림을 깨끗한 벡터로 다시 그림">🪄 그림 전체 다시 그리기</button>
+        <button class="btn" onclick="redrawAllDraftFigs()" title="AI 변환으로 잘라낸 그림을 깨끗한 벡터로 다시 그림">🎨 그림 전체 다시 그리기</button>
         <span class="hint">이미지 문항을 편집 가능한 텍스트·수식으로 바꾸고 단원·난이도를 추천합니다. API 키 필요 — [백업·데이터]에서 설정</span>
       </div>
       <div class="grid4">
@@ -1733,11 +1733,12 @@ function rerenderBulk(){
         ${d.choices&&d.choices.length?`<div class="hint">${d.choices.map(c=>esc(c)).join(' &nbsp; ')}</div>`:''}
         ${d.img?`<div class="pimgs figcmp">
             ${d.imgOrig?`<figure><img src="${d.imgOrig}" style="max-height:170px;opacity:.75" alt="문항 ${esc(d.num||'')} 원본 그림"><figcaption>원본</figcaption></figure>`:''}
-            <figure><img src="${d.img}" style="max-height:${d.imgOrig?230:170}px" alt="문항 ${esc(d.num||'')} 이미지">${d.imgOrig?'<figcaption>🪄 다시 그린 그림 (이 그림이 저장됩니다)'+(d.figSpec?' · 📐 설계도 있음':'')+'</figcaption>':(d.figSpec?'<figcaption>📐 설계도로 그린 그림</figcaption>':'')}</figure></div>
-          ${(d.aiDone||d.figSpec)?`<div class="row" style="margin-top:.35rem">${d._redrawing?'<span class="hint">🪄 AI가 그림을 다시 그리는 중… (수십 초)</span>'
-            :(d.aiDone?`<button class="btn sm" onclick="redrawDraftFig(${i})">🪄 ${d.imgOrig?'한 번 더 다시 그리기':'그림 다시 그리기'}</button>`
+            <figure><img src="${d.img}" style="max-height:${d.imgOrig?230:170}px" alt="문항 ${esc(d.num||'')} 이미지">${d.imgOrig?'<figcaption>🎨 다시 그린 그림 (이 그림이 저장됩니다)'+(d.figSpec?' · 📐 설계도 있음':'')+'</figcaption>':(d.figSpec?'<figcaption>📐 설계도로 그린 그림</figcaption>':'')}</figure></div>
+          ${(d.aiDone||d.figSpec)?`<div class="row" style="margin-top:.35rem">${d._redrawing?'<span class="hint">🎨 AI가 그림을 다시 그리는 중… (수십 초)</span>'
+            :(d.aiDone?`<button class="btn sm" onclick="redrawDraftFig(${i})">🎨 ${d.imgOrig?'한 번 더 다시 그리기':(d.redrawNote?'다시 시도':'그림 다시 그리기')}</button>`
              +(d.imgOrig?`<button class="btn ghost sm" onclick="revertDraftFig(${i})">↶ 원본 그림 쓰기</button>`:''):'')
-             +(d.figSpec?`<button class="btn ghost sm" onclick="editDraftFigSpec(${i})">📐 설계도 고치기</button>`:'')}</div>`:''}`:''}
+             +(d.figSpec?`<button class="btn ghost sm" onclick="editDraftFigSpec(${i})">📐 설계도 고치기</button>`:'')}</div>`
+            +(d.redrawNote && !d._redrawing?`<div class="hint" style="margin-top:.25rem;color:${d.redrawNote.startsWith('⚠')?'var(--danger)':'#8a6d1f'}">${esc(d.redrawNote)}</div>`:''):''}`:''}
         ${d.sol||d.ans||d.solImg?`<div class="pmeta">${d.ans?`<span class="tag">정답 ${esc(d.ans.slice(0,12))} ✓</span>`:''}${d.sol?`<span class="tag">해설 매칭 ✓</span>`:''}${d.solImg&&!d.sol?`<span class="tag" style="background:#e4f2e8;color:var(--ok)">해설 이미지 — AI 변환 대기</span>`:''}</div>`:''}</div>
       <button class="btn danger sm" onclick="state.bulkDrafts.splice(${i},1);rerenderBulk()">삭제</button></div>`).join('');
   if(!state._aiBusy) $('#bulk-status').textContent = state.bulkDrafts.length+'개 문제';
@@ -3549,7 +3550,7 @@ function buildGenPrompt(){
     +`- 문항 사이에는 빈 줄 하나. 인사말·설명·제목 등 다른 텍스트는 절대 쓰지 말 것\n`
     +`- 그래프·도형 그림이 필요한 문항은 본문의 그림 자리에 한 줄로 [그림설계]{설계도 JSON}[/그림설계] 를 넣을 것.\n`
     +`  프로그램이 설계도대로 정확히 그려 줍니다. 그림을 말로 설명하지 말고, 설계도의 식·좌표·길이·라벨은 그 문항의 숫자와 꼭 맞출 것(답이 드러나는 값은 쓰지 말 것).\n`
-    +`  JSON 은 한 줄로, 줄바꿈 없이. 형식:\n  · 함수 그래프 ${FIG_GRAPH_GUIDE.replace(/\n/g,'\n  ')}\n  · 평면 도형 ${FIG_GEO_GUIDE.replace(/\n/g,'\n  ')}`;
+    +`  JSON 은 한 줄로, 줄바꿈 없이. 형식:\n  · 함수 그래프 ${FIG_GRAPH_GUIDE.replace(/\n/g,'\n  ')}\n  · 평면 도형 ${FIG_GEO_GUIDE.replace(/\n/g,'\n  ')}\n  · 입체도형 ${FIG_SPACE_GUIDE.replace(/\n/g,'\n  ')}`;
 }
 /* 생성 결과의 [그림설계]{JSON}[/그림설계] → 설계도대로 그린 그림(d.img·d.figSpec) + 본문엔 [그림] 자리 표시.
    설계도가 틀리면 [그림] 자리만 남기고 경고(#검수주의) */
@@ -4279,6 +4280,17 @@ const FIG_GEO_GUIDE = '{"kind":"geometry","points":{"A":[0,4],"B":[-3,0],"C":[3,
   +'- circles: c 중심, r 반지름 또는 through 지나는 점. arcs: from·to 는 각도(도, 0=오른쪽 90=위, 반시계) 또는 점 이름, sector:true 면 부채꼴.\n'
   +'- angles: p=[A,B,C] 는 꼭짓점 B의 각(∠ABC), label 은 각 이름·크기, right:true 는 직각 표시, n:2 는 두 겹 호.\n'
   +'- 좌표평면 위 도형이면 axes:true (원점 O 자동).\n';
+const FIG_SPACE_GUIDE = '{"kind":"space","proj":{"x":[1,-0.15],"y":[0.55,0.75],"z":[0,1]},"axes":{"x":[-0.3,3.7],"y":[-0.3,2.3]},'
+  +'"points":{"A":[1,0,0],"B":[1,1,0]},'
+  +'"curves":[{"x":"t","y":"sqrt(1+(ln(t))^2)","z":0,"t":[1,2.718],"label":"y=√(1+(ln x)²)","lt":2.5,"pos":"br","dash":false},'
+  +'{"x":1,"y":"0.5-0.5*cos(t)","z":"0.5*sin(t)","t":[0,3.1416]}],'
+  +'"segments":[{"p":["A","B"],"dash":true}],'
+  +'"fills":[{"p":[{"x":1,"y":"0.5-0.5*cos(t)","z":"0.5*sin(t)","t":[0,3.1416]}],"fill":"dark"}],'
+  +'"texts":[{"at":[1,0,0],"text":"x=1","pos":"b"}]}\n'
+  +'- 좌표는 (x,y,z). proj: 각 축 1단위가 그림에서 향하는 방향 [오른쪽, 위] — 원본 그림의 축 방향·길이 비율에 맞게.\n'
+  +'- curves: 매개변수 t 의 식 x(t), y(t), z(t)(숫자도 됨)와 "t":[시작,끝]. 단면(반원·원·정사각형)·밑면 곡선·윤곽선을 문제 조건대로 계산해서 (원: a+r*cos(t), b+r*sin(t)).\n'
+  +'- 가려서 안 보이는 선은 dash:true. fills: 점·곡선(t 범위를 거꾸로 써도 됨)을 차례로 이어 만든 면을 색칠("light" 연한 회색, "dark" 진한 회색).\n'
+  +'- axes: 원본에 있는 축만 범위와 함께. 원점 O 자동. points·texts 는 점 이름·x=1 같은 글자.\n';
 function aiRedrawPrompt(w, h){
   const W = Math.round(w||600), H = Math.round(h||400);
   return '이 이미지는 수학 문제의 그림입니다(원본 크기 '+W+'×'+H+'px). 그림을 따라 그리지 말고 "읽어서" 프로그램이 정확히 다시 그릴 수 있는 설계도로 바꾸세요. 종류에 맞는 방식 하나로 JSON 하나만 출력하세요. 설명·코드블록 금지.\n\n'
@@ -4287,16 +4299,19 @@ function aiRedrawPrompt(w, h){
     +'(나) 점·선분·다각형·원·호·각으로 이루어진 평면 도형(삼각형·사각형·원·부채꼴·좌표 위 도형):\n'+FIG_GEO_GUIDE
     +'- 점 좌표: 원본 그림에서 각 점의 픽셀 위치(왼쪽 위 0,0 ~ 오른쪽 아래 '+W+','+H+')를 읽어 그대로 쓰고 "ydown":true 를 넣으세요. 길이·각이 문제에 주어져 정확한 좌표를 계산할 수 있으면 수학 좌표(y 위로 +)로 쓰고 ydown 은 빼세요.\n'
     +'- 그림에 적힌 글자(점 이름·길이·각)를 빠짐없이.\n\n'
-    +'(다) 표·수직선·벤 다이어그램 등 그 밖의 평면 그림이면 SVG로 따라 그리기:\n'
+    +'(다) 입체도형(단면이 있는 입체, 원기둥·원뿔·구·각기둥·회전체·좌표공간)이면 3차원 좌표로:\n'+FIG_SPACE_GUIDE
+    +'- 문제의 식으로 밑면·단면 곡선을 계산하세요. 원본과 같은 방향에서 본 모습이 되도록 proj 를 고르세요.\n\n'
+    +'(라) 표·수직선·벤 다이어그램 등 그 밖의 평면 그림이면 SVG로 따라 그리기:\n'
     +'{"kind":"svg","svg":"<svg viewBox=\'0 0 '+W+' '+H+'\' xmlns=\'http://www.w3.org/2000/svg\'>...</svg>"}\n'
     +'- viewBox 는 반드시 0 0 '+W+' '+H+' (원본 픽셀 좌표 그대로) — 원본에서 각 점·선의 위치를 읽어 그 좌표에 그리세요. 비율을 바꾸지 마세요.\n'
     +'- 곡선·원호는 <path> 의 C(베지어)·A(원호)로 매끄럽게. 선은 검정 #000(stroke-width 2), 배경 흰색.\n'
     +'- 글자는 <text>: 점 이름·숫자는 serif, 변수(x,y)는 italic serif. SVG 속성값은 작은따옴표(\'), 문자열 안 줄바꿈 금지. script·외부 링크·image 금지.\n\n'
-    +'(라) 입체도형(원기둥·회전체·겨냥도), 사진처럼 복잡한 그림, 또는 다시 그리면 원본보다 나빠질 것 같으면:\n'
+    +'(마) 사진·실물 그림처럼 식·좌표로 나타낼 수 없는 그림이면:\n'
     +'{"kind":"keep","reason":"짧은 이유"}';
 }
 /* ── 안전한 수식 계산기: AI가 읽어 준 그래프 식(x의 함수)을 직접 계산 (eval 사용 안 함) ── */
-function compileMathExpr(src){
+function compileMathExpr(src, v){ // v: 변수 이름(기본 x, 입체 곡선의 매개변수는 t)
+  const V = v || 'x';
   let s = String(src||'').replace(/\s+/g,'').replace(/π/g,'pi').replace(/[−–]/g,'-').replace(/[×·]/g,'*').replace(/÷/g,'/')
     .replace(/²/g,'^2').replace(/³/g,'^3').replace(/√/g,'sqrt').replace(/\*\*/g,'^')
     .replace(/½/g,'(1/2)').replace(/¼/g,'(1/4)').replace(/¾/g,'(3/4)').replace(/⅓/g,'(1/3)').replace(/⅔/g,'(2/3)');
@@ -4311,9 +4326,9 @@ function compileMathExpr(src){
     if(/[a-z]/i.test(c)){
       const w = s.slice(i).match(/^[a-z]+/i)[0].toLowerCase(); let rest = w;
       while(rest){                                         // "xsin" → x, sin 처럼 붙은 이름 나누기
-        const f = Object.keys(FN).concat(Object.keys(CONST), ['x']).filter(k=>rest.startsWith(k)).sort((a,b)=>b.length-a.length)[0];
+        const f = Object.keys(FN).concat(Object.keys(CONST), [V]).filter(k=>rest.startsWith(k)).sort((a,b)=>b.length-a.length)[0];
         if(!f) throw new Error('모르는 이름: '+rest);
-        toks.push(FN[f] ? {t:'f', v:f} : f==='x' ? {t:'x'} : {t:'n', v:CONST[f]});
+        toks.push(FN[f] ? {t:'f', v:f} : f===V ? {t:'x'} : {t:'n', v:CONST[f]});
         rest = rest.slice(f.length);
       }
       i += w.length; continue;
@@ -4385,16 +4400,28 @@ function figTextW(ch, size, italic){
 }
 /* 교과서식 라벨: 변수·점 이름은 기울임, 숫자·기호·π·함수 이름(ln, sin…)은 바로, ½ 같은 분수는 위아래로, ²·³ 은 위첨자 */
 function figLabelPieces(t, FS){
-  const str = String(t).replace(/-/g,'−'), chars = [...str], SF = Math.round(FS*0.62);
+  let chars = [...String(t).replace(/-/g,'−')];
+  const SF = Math.round(FS*0.62);
+  // √( … ) → 괄호를 빼고 그 안 글자 위에 근호 윗선(ov)
+  const ov = new Array(chars.length).fill(false), drop = new Array(chars.length).fill(false);
+  for(let i=0;i<chars.length;i++){
+    if(chars[i] !== '√' || chars[i+1] !== '(') continue;
+    let d = 0, j = i+1;
+    for(; j<chars.length; j++){ if(chars[j]==='(') d++; else if(chars[j]===')' && --d===0) break; }
+    if(j >= chars.length) continue;
+    drop[i+1] = drop[j] = true; for(let k=i+2;k<j;k++) ov[k] = true;
+  }
+  const keepIdx = chars.map((_,i)=>i).filter(i=>!drop[i]);
+  const ovK = keepIdx.map(i=>ov[i]); chars = keepIdx.map(i=>chars[i]);
   const upright = new Array(chars.length).fill(false);
   const re = /(sin|cos|tan|ln|log|exp|lim|max|min)/g; let m;
   const flat = chars.join('');                                 // 위 함수 이름은 모두 1글자 단위 문자라 인덱스가 같다
   while((m = re.exec(flat))) for(let k=m.index; k<m.index+m[0].length; k++) upright[k] = true;
   return chars.map((ch, i)=>{
-    if(FIG_FRAC[ch]) return { ch, kind:'frac', w: Math.max(figTextW(FIG_FRAC[ch][0], SF), figTextW(FIG_FRAC[ch][1], SF)) + FS*0.16 };
-    if(FIG_SUP[ch]) return { ch, kind:'sup', w: figTextW(FIG_SUP[ch], SF) + 1 };
+    if(FIG_FRAC[ch]) return { ch, kind:'frac', ov: ovK[i], w: Math.max(figTextW(FIG_FRAC[ch][0], SF), figTextW(FIG_FRAC[ch][1], SF)) + FS*0.16 };
+    if(FIG_SUP[ch]) return { ch, kind:'sup', ov: ovK[i], w: figTextW(FIG_SUP[ch], SF) + 1 };
     const op = /[=+−<>≤≥]/.test(ch), it = /[a-zA-Zα-ωθ]/.test(ch) && ch!=='π' && !upright[i];
-    return { ch, kind: it ? 'it' : 'up', op, w: figTextW(ch, FS, it) + (op ? FS*0.12 : 0) };
+    return { ch, kind: it ? 'it' : 'up', op, ov: ovK[i], w: figTextW(ch, FS, it) + (op ? FS*0.12 : 0) };
   });
 }
 function figLabelWidth(t, FS){ return figLabelPieces(t, FS).reduce((a,p)=>a+p.w, 0); }
@@ -4403,8 +4430,11 @@ function figLabelSvg(t, x, y, align, FS){ // (x,y)=기준선 위치, align: left
   const ps = figLabelPieces(t, FS), total = ps.reduce((a,p)=>a+p.w, 0);
   let cx = align==='right' ? x - total : align==='center' ? x - total/2 : x;
   const f = n=>+n.toFixed(1), SF = Math.round(FS*0.62);
-  let out = '';
+  let out = '', ovStart = null;
+  const ovEnd = ex=>{ if(ovStart == null) return; out += `<rect x="${f(ovStart)}" y="${f(y - FS*0.86)}" width="${f(ex - ovStart)}" height="${f(Math.max(1, FS*0.05))}"/>`; ovStart = null; };
   for(const p of ps){
+    if(p.ov && ovStart == null) ovStart = cx - FS*0.04;
+    if(!p.ov) ovEnd(cx);
     if(p.kind==='frac'){
       const [a, b] = FIG_FRAC[p.ch], mid = cx + p.w/2;
       out += `<text x="${f(mid)}" y="${f(y - FS*0.42)}" font-size="${SF}" text-anchor="middle">${a}</text>`
@@ -4417,6 +4447,7 @@ function figLabelSvg(t, x, y, align, FS){ // (x,y)=기준선 위치, align: left
     }
     cx += p.w;
   }
+  ovEnd(cx);
   return out;
 }
 const figNum = v=>typeof v==='number' && isFinite(v);
@@ -4458,7 +4489,14 @@ function figSpecIssues(spec){
       if(!figNum(c.r) && !ok(c.through)) out.push(`원·호 ${i+1}: 반지름 r 또는 지나는 점 through 가 필요합니다`);
     });
     if(!Object.keys(P).length && !(spec.circles||[]).length) out.push('점이 하나도 없습니다');
-  } else out.push('kind 는 "graph"(함수 그래프) 또는 "geometry"(평면 도형)여야 합니다');
+  } else if(spec.kind === 'space'){
+    const { ref, fn } = figSpaceParts(spec);
+    const tryT = (e, where)=>{ if(e == null || figNum(e)) return; try{ fn(e); }catch(er){ out.push(`${where} 식 "${e}": ${er.message} (매개변수는 t)`); } };
+    (spec.curves||[]).forEach((c,i)=>{ ['x','y','z'].forEach(k=>tryT(c[k], `곡선 ${i+1}의 ${k}`));
+      const tr = Array.isArray(c.t) ? c.t : [c.from, c.to]; if(!figNum(tr[0]) || !figNum(tr[1])) out.push(`곡선 ${i+1}: t 범위("t":[시작,끝])가 없습니다`); });
+    (spec.segments||[]).forEach((sg,i)=>(Array.isArray(sg) ? sg : (sg.p||[])).forEach(r=>{ if(!ref(r)) out.push(`선분 ${i+1}: 없는 점 "${Array.isArray(r)?r.join(','):r}"`); }));
+    if(!(spec.curves||[]).length && !(spec.segments||[]).length && !Object.keys(spec.points||{}).length) out.push('그릴 곡선·선분·점이 없습니다');
+  } else out.push('kind 는 "graph"(함수 그래프), "geometry"(평면 도형), "space"(입체) 중 하나여야 합니다');
   return out;
 }
 function figGeoPt(v){ // 점 값: [x,y] | [x,y,"pos"] | {x,y,pos,label,dot,hide}
@@ -4471,6 +4509,7 @@ const FIG_DIRS = { t:[0,-1], b:[0,1], l:[-1,0], r:[1,0], tl:[-0.75,-0.75], tr:[0
 function figSpecToSvg(spec, origW, origH){
   if(!spec || typeof spec !== 'object') throw new Error('설계도가 비었습니다');
   if(spec.kind === 'geometry') return figGeometrySvg(spec, origW, origH);
+  if(spec.kind === 'space') return figSpaceSvg(spec, origW, origH);
   if(spec.kind && spec.kind !== 'graph') throw new Error('알 수 없는 그림 종류: '+spec.kind);
   return figGraphSvg(spec, origW, origH);
 }
@@ -4704,6 +4743,134 @@ function figGeometrySvg(spec, origW, origH){
   if(!drawn) throw new Error('도형에서 그릴 것을 찾지 못했습니다');
   return { svg: figWrap(W, H, under + axes + body, FS), w: W, h: H };
 }
+/* 입체(공간) 그림: x·y·z 좌표를 사선 투영(spec.proj = 각 축 1단위가 화면에서 향하는 방향)으로 그린다.
+   곡선은 매개변수 t 의 식 (x(t), y(t), z(t)) — 단면(반원·원)·회전체 윤곽·밑면 곡선을 정확히 계산.
+   가려진 선은 dash, 면 색칠은 fills(점·곡선을 이어 만든 닫힌 영역) */
+function figSpaceParts(spec){
+  const pr = spec.proj || {};
+  const dir = (v, d)=> Array.isArray(v) && figNum(v[0]) && figNum(v[1]) ? v : d;
+  const ex = dir(pr.x, [1, -0.12]), ey = dir(pr.y, [0.6, 0.45]), ez = dir(pr.z, [0, 1]);
+  const P2 = q=>[q[0]*ex[0] + q[1]*ey[0] + q[2]*ez[0], q[0]*ex[1] + q[1]*ey[1] + q[2]*ez[1]];
+  const pts = {};
+  const PT = (spec.points && typeof spec.points === 'object' && !Array.isArray(spec.points)) ? spec.points : {};
+  for(const [k, v] of Object.entries(PT)){
+    if(Array.isArray(v) && figNum(v[0]) && figNum(v[1]) && figNum(v[2])) pts[k] = { q:[v[0], v[1], v[2]], pos: typeof v[3]==='string' ? v[3] : '', name:k };
+    else if(v && typeof v === 'object' && figNum(v.x) && figNum(v.y) && figNum(v.z)) pts[k] = { q:[v.x, v.y, v.z], pos:v.pos||'', label:v.label, dot:v.dot, hide:v.hide, name:k };
+  }
+  const ref = r=> typeof r === 'string' ? (pts[r] && pts[r].q) : (Array.isArray(r) && r.length >= 3 && figNum(r[0]) && figNum(r[1]) && figNum(r[2]) ? r : null);
+  const fn = e=>{ if(figNum(e)) return ()=>e; return compileMathExpr(e, 't'); };
+  const sample = c=>{                                         // 곡선 → 3차원 점 목록 (정의 안 되는 곳은 끊음)
+    const tr = Array.isArray(c.t) ? c.t : [c.from, c.to];
+    if(!figNum(tr[0]) || !figNum(tr[1])) throw new Error('곡선의 t 범위가 없습니다');
+    const fx = fn(c.x), fy = fn(c.y), fz = fn(c.z == null ? 0 : c.z), N = 360, segs = [[]];
+    for(let k=0;k<=N;k++){
+      const t = tr[0] + (tr[1]-tr[0])*k/N, q = [fx(t), fy(t), fz(t)];
+      if(q.every(isFinite)) segs[segs.length-1].push(q); else if(segs[segs.length-1].length) segs.push([]);
+    }
+    return segs.filter(sg=>sg.length > 1);
+  };
+  return { P2, pts, ref, sample, fn };
+}
+function figSpaceSvg(spec, origW, origH){
+  const { P2, pts, ref, sample, fn } = figSpaceParts(spec);
+  const isCurve = it=> it && typeof it === 'object' && !Array.isArray(it) && (it.x != null || it.y != null);
+  const flat = [];                                            // 화면 맞춤용 모든 2차원 점
+  const used = new Set();
+  const curves = (spec.curves||[]).map(c=>{ try{ return { c, segs: sample(c) }; }catch(e){ return null; } }).filter(Boolean);
+  curves.forEach(o=>o.segs.forEach(sg=>sg.forEach(q=>flat.push(P2(q)))));
+  const fills = (spec.fills||spec.polygons||[]).map(fl=>{
+    const items = Array.isArray(fl) ? fl : (fl.p || []), path = [];
+    for(const it of items){
+      if(isCurve(it)){ try{ sample(it).forEach(sg=>path.push(...sg)); }catch(e){} }
+      else { const q = ref(it); if(q){ path.push(q); if(typeof it === 'string') used.add(it); } }
+    }
+    path.forEach(q=>flat.push(P2(q)));
+    return { fl, path };
+  }).filter(o=>o.path.length >= 3);
+  const segs = (spec.segments||[]).map(sg=>{
+    const names = Array.isArray(sg) ? sg : (sg.p || []), qs = names.map(ref);
+    if(qs.length < 2 || qs.some(q=>!q)) return null;
+    names.forEach(r=>typeof r==='string' && used.add(r)); qs.forEach(q=>flat.push(P2(q)));
+    return { sg: Array.isArray(sg) ? {} : sg, qs };
+  }).filter(Boolean);
+  Object.values(pts).forEach(o=>flat.push(P2(o.q)));
+  const AX = spec.axes === true ? { x:[0,1], y:[0,1], z:[0,1] } : (spec.axes && typeof spec.axes === 'object' ? spec.axes : null);
+  const axes = [];
+  if(AX) for(const [k, i] of [['x',0],['y',1],['z',2]]){
+    const r = AX[k]; if(!Array.isArray(r) || !figNum(r[0]) || !figNum(r[1])) continue;
+    const a = [0,0,0], b = [0,0,0]; a[i] = r[0]; b[i] = r[1];
+    axes.push({ k, a, b }); flat.push(P2(a), P2(b));
+  }
+  const texts = (spec.texts||[]).map(t=>({ t, q: ref(t.at) })).filter(o=>o.q && o.t.text != null);
+  texts.forEach(o=>flat.push(P2(o.q)));
+  if(flat.length < 2) throw new Error('입체 그림에서 그릴 것을 찾지 못했습니다');
+  let x0 = Math.min(...flat.map(p=>p[0])), x1 = Math.max(...flat.map(p=>p[0])), y0 = Math.min(...flat.map(p=>p[1])), y1 = Math.max(...flat.map(p=>p[1]));
+  const span = Math.max(x1-x0, y1-y0) || 1;
+  if(x1-x0 < span*0.05){ x0 -= span*0.05; x1 += span*0.05; }
+  if(y1-y0 < span*0.05){ y0 -= span*0.05; y1 += span*0.05; }
+  const { W, H } = figOutSize(spec, origW, origH, (x1-x0)/(y1-y0));
+  const FS = Math.max(15, Math.round(Math.min(W, H*1.4)*0.034)), LW = +Math.max(2, W/420).toFixed(2);
+  const m = FS*2.2, s = Math.min((W-2*m)/(x1-x0), (H-2*m)/(y1-y0));
+  const ox = (W - (x1-x0)*s)/2, oy = (H - (y1-y0)*s)/2;
+  const S2 = q=>{ const p = P2(q); return [ox + (p[0]-x0)*s, H - oy - (p[1]-y0)*s]; };
+  const f = n=>+n.toFixed(1), dashA = `stroke-dasharray="${f(LW*4)} ${f(LW*3)}"`;
+  const stroke = (dash, w)=>`fill="none" stroke="#000" stroke-width="${f(w||LW)}" stroke-linejoin="round"${dash?' '+dashA:''}`;
+  const pathOf = qs=>'M'+qs.map(q=>{ const p = S2(q); return f(p[0])+' '+f(p[1]); }).join('L');
+  const all2 = Object.values(pts).map(o=>S2(o.q));
+  const cen = all2.length ? [all2.reduce((a,p)=>a+p[0],0)/all2.length, all2.reduce((a,p)=>a+p[1],0)/all2.length] : [W/2, H/2];
+  let under = '', axesSvg = '', body = '', drawn = 0;
+  for(const o of fills){
+    const shade = o.fl.fill === 'dark' ? '#bdbdbd' : (typeof o.fl.fill === 'string' && /^#[0-9a-f]{3,6}$/i.test(o.fl.fill) ? o.fl.fill : FIG_FILL);
+    under += `<path d="${pathOf(o.path)}Z" fill="${shade}"/>`;
+    if(o.fl.stroke) body += `<path d="${pathOf(o.path)}Z" ${stroke(o.fl.dash)}/>`;
+    drawn++;
+  }
+  for(const a of axes){
+    const A = S2(a.a), B = S2(a.b);
+    axesSvg += `<line x1="${f(A[0])}" y1="${f(A[1])}" x2="${f(B[0])}" y2="${f(B[1])}" ${stroke(false, LW*0.75)}/>` + figArrowHead(A[0], A[1], B[0], B[1], FS*0.45);
+    const L = Math.hypot(B[0]-A[0], B[1]-A[1]) || 1, ux = (B[0]-A[0])/L, uy = (B[1]-A[1])/L;
+    const lab = (AX.labels && AX.labels[a.k]) || a.k;
+    axesSvg += figLabelSvg(lab, B[0] + ux*FS*0.7 + (Math.abs(uy) > 0.8 ? FS*0.35 : 0), B[1] + uy*FS*0.7 + FS*0.35 + (Math.abs(uy) < 0.5 ? FS*0.55 : 0), Math.abs(uy) > 0.8 ? 'left' : 'center', FS);
+  }
+  if(axes.length && spec.origin !== false && !pts.O){ const O = S2([0,0,0]); axesSvg += figLabelSvg('O', O[0] - FS*0.35, O[1] + FS*1.0, 'right', FS); }
+  for(const o of curves){
+    o.segs.forEach(sg=>{ body += `<path d="${pathOf(sg)}" ${stroke(o.c.dash, o.c.bold ? LW*1.3 : LW)}/>`; });
+    drawn++;
+    if(o.c.label){
+      const tr = Array.isArray(o.c.t) ? o.c.t : [o.c.from, o.c.to];
+      const lt = figNum(o.c.lt) ? o.c.lt : tr[1];
+      let q = null; try{ q = [fn(o.c.x)(lt), fn(o.c.y)(lt), fn(o.c.z == null ? 0 : o.c.z)(lt)]; }catch(e){}
+      if(q && q.every(isFinite)){
+        const p = S2(q), d = FIG_DIRS[o.c.pos] || [0.75, 0.75];
+        const lw = figLabelWidth(o.c.label, FS);
+        body += figLabelSvg(o.c.label, Math.min(W - lw/2 - 4, Math.max(lw/2 + 4, p[0] + d[0]*(FS*0.5 + lw/2))), p[1] + d[1]*FS*0.9 + FS*0.35, 'center', FS);
+      }
+    }
+  }
+  for(const o of segs){ body += `<path d="${pathOf(o.qs)}" ${stroke(o.sg.dash)}/>`; drawn++;
+    if(o.sg.label != null && o.sg.label !== ''){
+      const A = S2(o.qs[0]), B = S2(o.qs[o.qs.length-1]), L = Math.hypot(B[0]-A[0], B[1]-A[1]) || 1;
+      let nx = -(B[1]-A[1])/L, ny = (B[0]-A[0])/L; const mx = (A[0]+B[0])/2, my = (A[1]+B[1])/2;
+      if((cen[0]-mx)*nx + (cen[1]-my)*ny > 0){ nx = -nx; ny = -ny; }
+      body += figLabelSvg(o.sg.label, mx + nx*FS*0.85, my + ny*FS*0.85 + FS*0.35, 'center', FS);
+    } }
+  for(const o of Object.values(pts)){
+    const p = S2(o.q);
+    if(o.dot === true || (o.dot !== false && !used.has(o.name))) body += `<circle cx="${f(p[0])}" cy="${f(p[1])}" r="${f(LW*1.6)}"/>`;
+    if(o.hide) continue;
+    const lab = o.label != null ? String(o.label) : o.name, lw = figLabelWidth(lab, FS);
+    let d = FIG_DIRS[o.pos];
+    if(!d){ const vx = p[0]-cen[0], vy = p[1]-cen[1], L = Math.hypot(vx, vy); d = L > 1 ? [vx/L, vy/L] : [-0.75, 0.75]; }
+    body += figLabelSvg(lab, p[0] + d[0]*(FS*0.55 + lw/2), p[1] + d[1]*FS*0.8 + FS*0.35, 'center', FS);
+    drawn++;
+  }
+  for(const o of texts){
+    const p = S2(o.q), d = FIG_DIRS[o.t.pos] || [0,0];
+    body += figLabelSvg(String(o.t.text), p[0] + d[0]*FS*0.9, p[1] + d[1]*FS*0.9 + FS*0.35, 'center', FS); drawn++;
+  }
+  if(!drawn) throw new Error('입체 그림에서 그릴 것을 찾지 못했습니다');
+  return { svg: figWrap(W, H, under + axesSvg + body, FS), w: W, h: H };
+}
 /* SVG 문자열 → 흰 배경 PNG(dataURL). scale 로 해상도 조절 */
 function figLoadSvg(svg){
   return new Promise((res, rej)=>{
@@ -4735,10 +4902,10 @@ async function aiRedrawFigureSpec(dataURL, fallbackW, fallbackH){
       { type:'text', text: aiRedrawPrompt(OW, OH) }
     ], 8000);
   if(r && r.kind === 'keep'){
-    const e = new Error('입체·복잡한 그림이라 다시 그리면 원본보다 나빠질 수 있어 원본을 그대로 둡니다'+(r.reason?` (${String(r.reason).slice(0,60)})`:''));
+    const e = new Error('식·좌표로 나타낼 수 없는 그림이라 원본을 그대로 둡니다'+(r.reason?` (${String(r.reason).slice(0,60)})`:''));
     e.keep = true; throw e;
   }
-  if(r && (r.kind === 'graph' || r.kind === 'geometry')){
+  if(r && (r.kind === 'graph' || r.kind === 'geometry' || r.kind === 'space')){
     const spec = { ...r, size: [Math.round(OW), Math.round(OH)] };
     return { img: await figSpecToPng(spec), spec };
   }
@@ -4775,10 +4942,12 @@ async function redrawDraftFig(i, batch){
     const dim = await imgDims(src);
     const out = await aiRedrawFigureSpec(src, dim.w, dim.h);
     d.imgOrig = src; d.img = out.img;
-    if(out.spec) d.figSpec = out.spec; else delete d.figSpec;   // 설계도(그래프·도형)는 저장 후에도 고칠 수 있게 보관
-    if(!batch) toast('🪄 그림을 다시 그렸습니다 — 원본과 비교해 보고, 다르면 [한 번 더] 또는 [↶ 원본 그림 쓰기]');
+    if(out.spec) d.figSpec = out.spec; else delete d.figSpec;   // 설계도(그래프·도형·입체)는 저장 후에도 고칠 수 있게 보관
+    delete d.redrawNote;
+    if(!batch) toast('🎨 그림을 다시 그렸습니다 — 원본과 비교해 보고, 다르면 [한 번 더] 또는 [↶ 원본 그림 쓰기]');
     return true;
   }catch(e){
+    d.redrawNote = (e.keep ? '🖼 원본 유지 — ' : '⚠ 다시 그리기 실패 — ')+(e.message||e)+(e.keep ? '' : ' · [다시 시도]를 눌러 보세요');   // 화면에 남겨 둠
     if(batch) throw e;
     toast((e.keep ? '🖼 ' : '⚠ 그림 다시 그리기 실패: ')+(e.message||e)); return false;
   }finally{ d._redrawing = false; rerenderBulk(); }
@@ -4793,20 +4962,20 @@ async function redrawAllDraftFigs(){
   if(!aiSettings().key){ toast('API 키가 없습니다 — [백업·데이터 → AI 변환 설정]에서 먼저 저장하세요.'); return; }
   if(!confirm(`그림 ${targets.length}개를 AI가 깨끗하게 다시 그립니다 (그림당 소액 과금, 그림당 수십 초).\n원본은 보관되므로 문항별로 [↶ 원본 그림 쓰기]로 되돌릴 수 있습니다.\n계속할까요?`)) return;
   let ok = 0, fail = 0, kept = 0, lastErr = '';
-  aiBatchStart('🪄 그림 다시 그리는 중');
+  aiBatchStart('🎨 그림 다시 그리는 중');
   state._aiBusy = true;                                  // 진행 상태줄을 미리보기 갱신이 덮지 않게
   try{
     for(let k=0; k<targets.length; k++){
       if(AI_BATCH.cancel) break;
-      $('#bulk-status').textContent = `🪄 그림 다시 그리는 중… ${k+1}/${targets.length} (문항 ${targets[k].d.num||''})`;
+      $('#bulk-status').textContent = `🎨 그림 다시 그리는 중… ${k+1}/${targets.length} (문항 ${targets[k].d.num||''})`;
       try{ await redrawDraftFig(targets[k].i, true); ok++; }
       catch(e){
         if(e.keep){ kept++; continue; }                  // 입체·복잡한 그림: 원본 유지
         fail++; lastErr = e.message||String(e); if(ok===0 && /API 키|401|네트워크|API 오류 4/.test(lastErr)) throw e;
       }
     }
-    $('#bulk-status').textContent = (AI_BATCH.cancel ? '⏹ 중지됨 — ' : '🪄 ')+`그림 ${ok}개를 다시 그렸습니다`
-      +(kept?` · 입체·복잡한 그림 ${kept}개는 원본 유지`:'')
+    $('#bulk-status').textContent = (AI_BATCH.cancel ? '⏹ 중지됨 — ' : '🎨 ')+`그림 ${ok}개를 다시 그렸습니다`
+      +(kept?` · 식·좌표로 그릴 수 없는 그림 ${kept}개는 원본 유지`:'')
       +(fail?` · 실패 ${fail}개(원본 유지) · ${lastErr}`:'')+'. 원본과 비교해 확인한 뒤 [전체 저장]하세요.';
   }catch(e){
     $('#bulk-status').textContent = '⚠ 그림 다시 그리기 중단: '+(e.message||e);
@@ -4818,14 +4987,14 @@ async function imgedAiRedraw(){
   if(!confirm('AI가 이 그림을 벡터로 새로 그립니다 (본인 API 키, 소액 과금).\n결과가 원본과 다르면 [↶ 취소]로 되돌리고 다시 시도하거나 다른 도구로 수정할 수 있습니다.\n계속할까요?')) return;
   const hint = $('#imged-hint');
   try{
-    hint.textContent = '🪄 AI가 그림을 다시 그리는 중… (수십 초 걸릴 수 있어요)';
+    hint.textContent = '🎨 AI가 그림을 다시 그리는 중… (수십 초 걸릴 수 있어요)';
     const out = await aiRedrawFigureSpec(IMGED.cv.toDataURL('image/png'), IMGED.cv.width, IMGED.cv.height);
     imgedPushUndo();
     await imgedLoad(out.img);
     IMGED.spec = out.spec; IMGED.specSnap = out.spec ? IMGED.cv.toDataURL('image/png') : '';   // 이후 손으로 고치면 설계도는 버림
     IMGED.rotStarted = false; IMGED.rotBase = null; const rr = $('#imged-rot'); if(rr) rr.value = 0;
     hint.textContent = '';
-    toast('🪄 AI가 벡터로 다시 그렸습니다 — 원본과 비교해 확인하고, 다르면 [↶ 취소] 후 재시도·수정하세요.');
+    toast('🎨 AI가 벡터로 다시 그렸습니다 — 원본과 비교해 확인하고, 다르면 [↶ 취소] 후 재시도·수정하세요.');
     logJob('AI 그림 복원', IMGED.p ? (stripBoxMarks(IMGED.p.question||'').slice(0,20)||IMGED.p.id) : '', '벡터 재생성');
   }catch(e){
     hint.textContent = '';
@@ -4865,6 +5034,13 @@ const FIG_TEMPLATES = {
   graph: { kind:'graph', x:[-3, 4], y:[-2, 6],
     curves:[ { f:'x^2-2*x+1', from:-1, to:3.4, label:'y=x²−2x+1', lx:2.2, ly:5.2 } ],
     points:[ { x:0, y:0, label:'O', pos:'bl' }, { x:1, y:0, label:'1', pos:'br', dot:false } ], xlabel:'x', ylabel:'y' },
+  space: { kind:'space', proj:{ x:[1,-0.15], y:[0.55,0.75], z:[0,1] }, axes:{ x:[-0.3,3.3], y:[-0.3,2] },
+    curves:[ { x:'t', y:'t/2+0.3', z:0, t:[0.5,3], label:'y=½x+0.3', lt:3, pos:'br' },
+             { x:'t', y:'(t/2+0.3)/2', z:'(t/2+0.3)/2', t:[1,2.5] },
+             { x:1, y:'0.4-0.4*cos(t)', z:'0.4*sin(t)', t:[0,3.1416] },
+             { x:2.5, y:'0.775-0.775*cos(t)', z:'0.775*sin(t)', t:[0,3.1416] } ],
+    fills:[ { p:[ { x:2.5, y:'0.775-0.775*cos(t)', z:'0.775*sin(t)', t:[0,3.1416] } ], fill:'dark' } ],
+    texts:[ { at:[1,0,0], text:'x=1', pos:'b' }, { at:[2.5,0,0], text:'x=2.5', pos:'b' } ] },
   geometry: { kind:'geometry', points:{ A:[1, 4], B:[0, 0], C:[5, 0], H:[1, 0] },
     polygons:[ { p:['A','B','C'] } ], segments:[ { p:['A','H'], dash:true }, { p:['B','C'], label:'5' } ],
     angles:[ { p:['A','H','C'], right:true }, { p:['A','C','B'], label:'θ' } ] },
@@ -4885,13 +5061,14 @@ function openFigSpecEditor(opts){
       <div class="spread" style="margin-bottom:.4rem"><h3 style="margin:0">📐 그림 설계도 ${opts.isNew?'— 새 그림':'고치기'}</h3>
         <button class="btn ghost sm" onclick="figedClose()">✕</button></div>
       <p class="hint" style="margin:.1rem 0 .5rem">그림을 손으로 그리지 않고 <b>식·좌표</b>로 그립니다. 왼쪽 숫자·식·글자를 고치면 오른쪽 그림이 바로 바뀝니다.
-        말로 고치려면 아래 칸에 적고 [🤖 AI로 고치기]. 함수 그래프는 <code>"kind":"graph"</code>, 도형은 <code>"kind":"geometry"</code>.</p>
+        말로 고치려면 아래 칸에 적고 [🤖 AI로 고치기]. 함수 그래프는 <code>"kind":"graph"</code>, 도형은 <code>"kind":"geometry"</code>, 입체는 <code>"kind":"space"</code>.</p>
       <div class="grid2" style="align-items:start">
         <div>
           <div class="row" style="margin-bottom:.35rem;flex-wrap:wrap;gap:.3rem">
             <span class="hint">예시로 시작:</span>
             <button class="btn ghost sm" onclick="figedTemplate('graph')">📈 함수 그래프</button>
             <button class="btn ghost sm" onclick="figedTemplate('geometry')">📐 평면 도형</button>
+            <button class="btn ghost sm" onclick="figedTemplate('space')">◆ 입체도형</button>
           </div>
           <textarea id="figed-json" spellcheck="false" style="width:100%;min-height:330px;font-family:Consolas,Menlo,monospace;font-size:.78rem;line-height:1.45"></textarea>
           <div class="row" style="margin-top:.4rem;gap:.3rem">
@@ -4903,7 +5080,7 @@ function openFigSpecEditor(opts){
         <div>
           <div id="figed-prev" style="border:1px solid var(--line);border-radius:8px;background:#fff;padding:6px;text-align:center;min-height:200px"></div>
           <details style="margin-top:.5rem"><summary class="hint" style="cursor:pointer">설계도 쓰는 법 (항목 설명)</summary>
-            <pre class="hint" style="white-space:pre-wrap;font-size:.72rem;max-height:240px;overflow:auto">${esc(FIG_GRAPH_GUIDE+'\n'+FIG_GEO_GUIDE)}</pre></details>
+            <pre class="hint" style="white-space:pre-wrap;font-size:.72rem;max-height:240px;overflow:auto">${esc(FIG_GRAPH_GUIDE+'\n'+FIG_GEO_GUIDE+'\n'+FIG_SPACE_GUIDE)}</pre></details>
         </div>
       </div>
       <div class="row" style="justify-content:flex-end;margin-top:.6rem">
@@ -4957,7 +5134,7 @@ async function figedAskAi(){
   try{
     const r = await aiJsonCall([{ type:'text', text:
       '수학 문제 그림의 설계도(JSON)를 요청대로 고쳐 주세요. 형식은 그대로 유지하고, 고친 설계도 JSON 하나만 출력하세요.\n\n'
-      +'[설계도 형식]\n함수 그래프: '+FIG_GRAPH_GUIDE+'\n평면 도형: '+FIG_GEO_GUIDE
+      +'[설계도 형식]\n함수 그래프: '+FIG_GRAPH_GUIDE+'\n평면 도형: '+FIG_GEO_GUIDE+'\n입체: '+FIG_SPACE_GUIDE
       +'\n[지금 설계도]\n'+JSON.stringify(cur.spec)+'\n\n[요청]\n'+ask }], 4000);
     if(!r || typeof r !== 'object' || !r.kind) throw new Error('AI 응답에 설계도가 없습니다');
     if(cur.spec.size && !r.size) r.size = cur.spec.size;
@@ -5032,7 +5209,7 @@ async function openImgEditor(id, idx){
       <button class="btn ghost sm" data-t="crop">✂ 크롭</button>
       <label style="color:#dfe7df;font-size:.78rem;display:flex;align-items:center;gap:.3rem">굵기<input id="imged-size" type="range" min="2" max="60" value="14" style="width:80px"></label>
       <button class="btn ghost sm" onclick="imgedSharpen()" title="흐린 스캔을 깨끗한 흑백으로">✨ 선명하게</button>
-      <button class="btn ghost sm" onclick="imgedAiRedraw()" title="AI가 그림을 벡터(SVG)로 깨끗하게 다시 그립니다 (API 키 필요)">🪄 AI로 새로 그리기</button>
+      <button class="btn ghost sm" onclick="imgedAiRedraw()" title="AI가 그림을 벡터(SVG)로 깨끗하게 다시 그립니다 (API 키 필요)">🎨 AI로 새로 그리기</button>
       <label style="color:#dfe7df;font-size:.78rem;display:flex;align-items:center;gap:.3rem">기울기<input id="imged-rot" type="range" min="-7" max="7" step="0.2" value="0" style="width:80px"></label>
       <button class="btn ghost sm" onclick="imgedBakeRotate()">기울기 적용</button>
       <button class="btn ghost sm" onclick="imgedUndo()">↶ 취소</button>

@@ -1,4 +1,4 @@
-// smoke27: AI 벡터 복원(🪄 AI로 새로 그리기) — fetch 스텁, SVG 렌더·캔버스 교체·undo·sanitize·오류 경로
+// smoke27: AI 벡터 복원(🎨 AI로 새로 그리기) — fetch 스텁, SVG 렌더·캔버스 교체·undo·sanitize·오류 경로
 const { chromium } = require('playwright-core');
 const http = require('http');
 const fs = require('fs');
@@ -66,7 +66,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   await page.click('button:has-text("🖌 그림 편집")');
   await page.waitForTimeout(500);
   const btn = await page.$('#imged-bar button[onclick="imgedAiRedraw()"]');
-  check('🪄 버튼이 편집기 툴바에 존재', !!btn);
+  check('🎨 버튼이 편집기 툴바에 존재', !!btn);
 
   // ── 1) fetch 스텁: 작은따옴표 속성 SVG + script 포함(제거 검증) ──
   await page.evaluate(() => {
