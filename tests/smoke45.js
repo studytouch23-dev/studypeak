@@ -102,9 +102,17 @@ const C1 = 40, C2 = 222, C3 = 404;                              // 세 단의 �
   // ── 완료 → 해설 조각 전부 풀에 (이어짐 포함), 번호 그대로 ──
   await page.click('#pdfed-finish');
   await page.waitForFunction(() => (state.solPool||[]).length > 0, null, { timeout: 60000 });
-  const pool = await page.evaluate(() => state.solPool.map(p => p.num));
-  check('완료: 이어짐 포함 모든 조각이 해설 풀에', pool.length === R.length, `${pool.length} / ${R.length}`);
-  check('이어짐 조각도 원래 번호로', pool.filter(n => n === '3').length === 2 && pool.filter(n => n === '7').length === 2, pool.join(','));
+  const pool = await page.evaluate(async () => {
+    const h = async d => { const im = new Image(); await new Promise(r => { im.onload = r; im.src = d; }); return im.naturalHeight; };
+    const out = [];
+    for(const p of state.solPool) out.push({ num: p.num, hint: p.hint || '', h: await h(p.img) });
+    return out;
+  });
+  const P = n => pool.filter(p => p.num === n);
+  check('완료: 번호마다 해설 한 장 (이어짐은 앞 조각에 붙임)', pool.length === R.filter(r => !r.cont).length && ['1','2','3','4','5','6','7','8','9','10'].every(n => P(n).length === 1), pool.map(p=>p.num).join(','));
+  check('이어짐 붙이기: 3번 = 1단 끝 + 2단 위, 5번 = 2단 끝 + 3단 위', P('3')[0].hint.includes('S3 line 22') && P('3')[0].hint.includes('S3cont line 6') && P('5')[0].hint.includes('S5cont line 4'), P('3')[0].hint.slice(-60));
+  check('이어짐 붙이기: 페이지를 넘는 7번도 한 장', P('7')[0].hint.includes('S7 line 32') && P('7')[0].hint.includes('S7cont line 5'));
+  check('붙인 그림은 두 조각 높이의 합만큼 길다', P('3')[0].h > P('4')[0].h * 2, `${P('3')[0].h} vs ${P('4')[0].h}`);
 
   check('페이지 오류 없음', errors.length === 0, errors.join(' / '));
   fs.rmSync(tmp, { recursive:true, force:true });

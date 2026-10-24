@@ -51,6 +51,8 @@ if(EACH){
 (async () => {
   const lab = await openLab({ stub: STUB });
   const page = lab.page;
+  // 랩 코드가 AI에게 물을 때(해설 짝짓기·재확인) 이 컴퓨터의 Claude Code(Max)로 답하게 연결
+  if(MAX) await page.exposeFunction('__maxAsk', prompt => runClaude(CLAUDE_BIN, prompt, { timeoutMs: 300000 }));
   // --max면 페이지의 API 변환 제안만 거절하고 나머지 확인창은 수락
   page.on('dialog', d => (MAX && d.message().includes('AI로 텍스트·수식 변환할까요')) ? d.dismiss() : d.accept());
 
@@ -148,18 +150,17 @@ if(EACH){
               await page.evaluate(([j, r]) => { state.solPool[j].items = solItemsOf(r); }, [j, r]);
             }catch(e){ console.error(`\n  ⚠ 해설 조각 ${j+1} 읽기 실패: `+(e.message||e).split('\n')[0]); }
           }
-          const mp = await page.evaluate(() => { const probs = solProbsOfDrafts(), sols = solPoolItems(state.solPool);
-            return sols.length && probs.length ? aiSolMatchPrompt(probs, sols) : ''; });
-          let r = null;
-          if(mp){ try{ r = runClaude(CLAUDE_BIN, mp, { timeoutMs: 300000 }); }catch(e){ console.error('\n  ⚠ 해설 짝짓기 실패 — 번호로만 맞춥니다: '+(e.message||e).split('\n')[0]); } }
-          const res = await page.evaluate(r => {
+          // 짝짓기: 랩의 solMatchFlow(번호 우선 + 내용 확인 + 엇갈리면 재확인)를 그대로, AI 호출만 이 컴퓨터의 Claude Code로
+          process.stdout.write('  🔗 해설↔문제 짝짓는 중… (번호 + 내용 대조)   \r');
+          const res = await page.evaluate(async () => {
             const probs = solProbsOfDrafts(), sols = solPoolItems(state.solPool);
-            const pairs = r ? solPairsOf(r, probs.length, sols.length) : solPairsByNumber(probs, sols);
+            const { pairs, stats } = await solMatchFlow(probs, sols, (t) => window.__maxAsk(t));
             const out = applySolPairsToDrafts(probs, sols, pairs);
             state.solPoolDone = true; rerenderBulk();
-            return { ...out, total: sols.length };
-          }, r);
-          solLine = ` · 해설 ${res.matched}문항에 짝지음` + (res.leftover ? ` (짝 못 찾은 해설 ${res.leftover}개)` : '');
+            return { ...out, stats, total: sols.length };
+          });
+          solLine = ` · 해설 ${res.matched}문항에 짝지음 (번호·내용 일치 ${res.stats.byNumber}, 내용으로 바로잡음 ${res.stats.byContent})`
+            + (res.leftover ? ` (짝 못 찾은 해설 ${res.leftover}개)` : '');
         }
         fs.rmSync(tmp, { recursive: true, force: true });
         // 단원 분류: 텍스트만 8문항씩 묶어 따로 (전사와 분리 — 각 호출이 한 가지 일만)
