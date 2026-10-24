@@ -20,10 +20,25 @@ node graph.js render 그림.json            # 그림.svg + 그림.png 생성 (PN
 node graph.js render 그림.json -o a.png --scale 2
 node graph.js check 그림.json             # 형식 점검(없는 점·틀린 식)
 node graph.js pull --id <문항ID> --out ./work       # 문항의 원본 그림·본문·기존 설계도를 파일로
-node graph.js attach --id <문항ID> 그림.json [--index 0|new]   # 문항 그림 교체(기본 0번)/추가 + 클라우드 동기화
+node graph.js attach --id <문항ID> 그림.json [--index 0|new]   # 문항 그림 교체(기본 0번)/추가 + 클라우드 동기화 (.svg 도 가능)
+node graph.js pull --src "3월" --no 26 --out ./work            # ID 대신 출처·번호로
 ```
 `pull`·`attach` 는 `SP_EMAIL`, `SP_PASSWORD`(랩의 [🔑 자동화용 비밀번호 설정]) 환경변수가 필요하다.
 없으면 **사용자에게 물어볼 것** — 추측하지 않는다. 문항ID는 웹 문제 상세나 HTML 내보내기의 `data-id`.
+
+## 사용자가 부르는 말
+
+"3월 모의고사 26번 그림 다시 그려줘", "문항 ID mvxxxx 그림 다시 그려줘" — 문항 ID는 웹 문제 상세 맨 위 `ID … 📋`(누르면 복사).
+ID 대신 `--src "출처 일부" --no 26` 으로 찾을 수 있다(여러 개면 목록을 보여 주고 고르게 한다).
+
+## 품질 원칙 (웹의 🎨 버튼보다 잘 그리는 이유 — 그대로 지킬 것)
+
+- **눈대중 금지, 식으로 계산**: 문제 본문의 식·조건으로 좌표를 계산한다. 필요하면 node/python 으로 점을 계산하는 짧은 코드를 써도 된다.
+- **그리고 → 보고 → 고치기를 최소 2번**: render 한 PNG 와 원본 PNG 를 Read 로 나란히 보고, 곡선 모양·교점·단면 방향·
+  점선(가려진 선)·글자(빠진 것/새로 생긴 것)·시점 각도를 비교해 고친다. 원본과 거의 같을 때까지 반복.
+- 설계도(JSON)로 표현이 안 되거나 더 정확하게 하고 싶으면 **SVG 를 직접 작성**해도 된다(계산한 좌표로 path·text).
+  `render 그림.svg -o 확인.png` 로 확인하고 `attach --id … 그림.svg` 로 넣는다(스크립트·외부 링크는 자동 제거, 원본 비율 유지).
+  단 설계도(JSON)로 넣으면 선생님이 웹에서 숫자만 바꿔 고칠 수 있으므로 가능하면 설계도를 우선한다.
 
 ## 작업 순서 (기존 문항 그림 다시 그리기)
 
@@ -90,7 +105,8 @@ node graph.js attach --id <문항ID> 그림.json [--index 0|new]   # 문항 그�
   shape: `semicircle`·`square`·`eqtriangle`·`rtriangle`(빗변이 밑면)·`rect`/`triangle`(높이 식 `h`). `sections`: 진하게 그릴 단면 x.
 - `revolution`: `{"type":"revolution","f":"x의 식","from":a,"to":b}` — x축 둘레 회전체 (교과서식 납작한 끝 타원, 뒤쪽 반은 점선).
 - `cylinder`·`cone`: `{"c":[x,y,z],"r":1,"h":2,"axis":true}` (z 방향으로 섬) · `sphere`: `{"c":[x,y,z],"r":1}` — 옆선이 타원 끝에 정확히, 밑면 뒤쪽 점선.
-- 매크로로 안 되는 것만 아래 `curves`/`segments`/`fills` 로 직접.
+- `guides:true` + `fromLabel`/`toLabel`: x=from, x=to 직선(밑면 위, y축과 평행)과 글자("x=1", "x=e").
+- 매크로로 안 되는 것만 아래 `curves`/`segments`/`fills` 로 직접. 이름을 쓰지 않을 보조점은 `_p1` 처럼 `_` 로 시작.
 - 원본에 없는 점 이름(A, B…)을 만들지 말 것.
 
 직접 쓰는 형식:

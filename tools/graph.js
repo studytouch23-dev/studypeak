@@ -11,7 +11,8 @@
  *   node graph.js check 설계도.json               # 형식 점검만
  *   node graph.js pull --id <문항ID> [--out 폴더]  # 문항의 그림·본문·설계도를 파일로 (원본 보고 설계도 쓰기용)
  *   node graph.js attach --id <문항ID> 설계도.json [--index 0|new]   # 그림을 문항에 넣고 클라우드 동기화
- *   설계도 파일 대신 - 를 쓰면 표준입력에서 읽는다.
+ *   설계도 파일 대신 - 를 쓰면 표준입력에서 읽는다. .svg 파일(직접 계산해 그린 SVG)도 그대로 쓸 수 있다.
+ *   --id 대신 --src "출처 일부" --no 26 으로 문항을 찾을 수 있다 (예: --src 3월 --no 26).
  *
  * pull·attach 는 클라우드 로그인이 필요: 환경변수 SP_EMAIL, SP_PASSWORD(랩의 자동화용 비밀번호)
  * 옵션: --scale 2 (PNG 해상도 배율) · --stub 테스트용(개발 전용)
@@ -26,7 +27,7 @@ function opt(name, def){ const i = argv.indexOf('--'+name); return i >= 0 ? argv
 const STUB = argv.includes('--stub');
 const OUT = opt('o', null) || (argv.includes('-o') ? argv[argv.indexOf('-o')+1] : null);
 const SCALE = Math.max(0.5, Math.min(4, +opt('scale', 1) || 1));
-const flagVals = new Set(['-o','--o','--id','--out','--index','--scale'].flatMap(f => argv.indexOf(f) >= 0 ? [argv[argv.indexOf(f)+1]] : []));
+const flagVals = new Set(['-o','--o','--id','--out','--index','--scale','--src','--no'].flatMap(f => argv.indexOf(f) >= 0 ? [argv[argv.indexOf(f)+1]] : []));
 const files = argv.slice(1).filter(a => !a.startsWith('--') && a !== '-o' && !flagVals.has(a));
 
 function usage(){
@@ -38,6 +39,8 @@ function usage(){
 function readSpec(f){
   if(!f) usage();
   const raw = f === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(f, 'utf8');
+  if(/\.svg$/i.test(f) || /^\s*(<\?xml[^>]*>\s*)?<svg[\s>]/i.test(raw))           // 직접 그린 SVG
+    return { kind:'svg', svg: raw.replace(/^\s*<\?xml[^>]*>\s*/i, '').replace(/<!DOCTYPE[^>]*>\s*/i, '').trim() };
   try{ return JSON.parse(raw); }
   catch(e){ console.error('⚠ 설계도 JSON 형식 오류: '+e.message); process.exit(1); }
 }
@@ -82,9 +85,24 @@ function writeDataUrl(file, dataUrl){
         }
       }
     } else {
-      const ID = opt('id');
-      if(!ID){ console.error('--id <문항ID> 를 지정하세요.'); process.exit(2); }
+      let ID = opt('id');
+      const SRC = opt('src'), NO = opt('no');
+      if(!ID && !(SRC || NO)){ console.error('--id <문항ID> 또는 --src "출처" --no 번호 를 지정하세요.'); process.exit(2); }
       await loginCloud(page, EMAIL||'stub@test', PASSWORD||'stub');
+      if(!ID){                                                   // 출처·원번호로 찾기 (동기화된 내 문항에서)
+        await page.waitForTimeout(1500);
+        const hits = await page.evaluate(async ({SRC, NO}) => {
+          try{ await sbPull(true); }catch(e){}
+          return state.problems.filter(p => (!SRC || String(p.srcName||'').includes(SRC)) && (!NO || String(p.origNo||'') === String(NO)))
+            .map(p => ({ id:p.id, src:p.srcName, no:p.origNo, q:String(p.question||'').replace(/\s+/g,' ').slice(0,40) }));
+        }, { SRC, NO });
+        if(hits.length !== 1){
+          console.error(hits.length ? `문항이 ${hits.length}개 찾아졌습니다 — --id 로 하나를 고르세요:` : '조건에 맞는 문항이 없습니다.');
+          hits.slice(0, 20).forEach(h => console.error(`  ${h.id}  [${h.src||''} ${h.no||''}번] ${h.q}`));
+          await lab.close(); process.exit(2);
+        }
+        ID = hits[0].id; console.log(`📄 ${hits[0].src||''} ${hits[0].no||''}번 → ${ID}`);
+      }
       const rec = await page.evaluate(async id => {
         try{
           const c = await sbLoad();
