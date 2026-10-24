@@ -83,6 +83,11 @@ if(!SUBJECT && !LIKE_ID){
       extra = (extra ? extra+' / ' : '')
         + '아래 [원본 문제]와 같은 개념·같은 풀이 구조를 쓰되 숫자·상황을 바꾼 유사 문제로 만들 것.\n[원본 문제]\n'
         + bodyParts.join('\n');
+      // 원본 그림의 설계도가 있으면 함께 — 숫자를 바꾸면 설계도도 같이 바꿔 [그림설계]로 넣게 한다
+      const specs = (base.figSpecs || []).filter(x => x && typeof x === 'object');
+      if(specs.length)
+        extra += '\n[원본 그림 설계도]\n' + specs.map(x => JSON.stringify(x)).join('\n')
+          + '\n→ 새 문항의 숫자·식에 맞게 이 설계도를 고쳐 그림 자리에 [그림설계]...[/그림설계] 로 넣을 것.';
     }
     $('#g-extra').value = extra;
     return { subj, chap, sect };
@@ -95,8 +100,9 @@ if(!SUBJECT && !LIKE_ID){
   const text = runClaude(CLAUDE_BIN, prompt, { expectJson: false, timeoutMs: TIMEOUT_MIN*60000 });
 
   // 생성 결과 → 랩의 분할 파서(genResultToBulk)로 — 단원 자동 태깅 포함
-  await page.evaluate(t => { $('#g-result').value = t; genResultToBulk(); }, text);
+  const fig = await page.evaluate(async t => { $('#g-result').value = t; return genResultToBulk(); }, text);
   const n = await page.evaluate(() => state.bulkDrafts.length);
+  if(fig && (fig.made || fig.bad)) console.log(`📐 설계도로 그림 ${fig.made}개 그림` + (fig.bad ? ` · 그리지 못한 그림 ${fig.bad}개(#검수주의)` : ''));
   if(!n){
     console.error('⚠ 생성 결과를 문항으로 나누지 못했습니다. 응답 앞부분:');
     console.error(text.slice(0, 400));
@@ -110,7 +116,8 @@ if(!SUBJECT && !LIKE_ID){
     for(let i = 0; i < n; i++){
       process.stdout.write(`  🧮 독립 검산 중… ${i+1}/${n}   \r`);
       try{
-        const vp = await page.evaluate(i => { const d = state.bulkDrafts[i]; return aiVerifyPrompt(d.text, d.choices); }, i);
+        const vp = await page.evaluate(i => { const d = state.bulkDrafts[i];
+          return aiVerifyPrompt((d.text||'') + (d.figSpec ? '\n[그림 내용(설계도)] '+JSON.stringify(d.figSpec) : ''), d.choices); }, i);
         const r = runClaude(CLAUDE_BIN, vp, { timeoutMs: 300000 });
         const out = await page.evaluate(([i, r]) => {
           const d = state.bulkDrafts[i], o = verifyOutcome(d.ans, d.choices, r);
@@ -134,6 +141,7 @@ if(!SUBJECT && !LIKE_ID){
   if(STUB){
     console.log(`[stub] 클라우드 업로드 행: ${await page.evaluate(() => window.__rows.problems.size)}`);
     console.log(`[stub] 태그: ${await page.evaluate(() => JSON.stringify([...window.__rows.problems.values()].map(r => (r.data && r.data.tags) || [])))}`);
+    console.log(`[stub] 설계도: ${await page.evaluate(() => JSON.stringify([...window.__rows.problems.values()].map(r => ((r.data && r.data.figSpecs) || []).map(x => x && x.kind))))}`);
   }
   await lab.close();
   process.exit(0);

@@ -7,6 +7,7 @@
 |---|---|
 | `ingest.js` | PDF 일괄 등록: 영역 인식 → AI 변환(이미지→한글 텍스트·수식, 소단원 태깅) → 저장 → 클라우드 동기화 |
 | `generate.js` | 유사/신규 문제 생성: 랩의 생성 프롬프트로 Claude Code(Max)가 문제를 만들어 자동 등록·동기화 |
+| `graph.js` | 그림 설계도(JSON: 식·좌표) → 정확한 그래프·도형 SVG/PNG, 문항 그림 내려받기(pull)·교체(attach). 설계도 형식은 `.claude/skills/math-graph/SKILL.md` |
 
 ## 준비 (최초 1회)
 
@@ -75,3 +76,17 @@ node generate.js --like-id <문항ID> --count 3
 - **중복**: 같은 PDF를 두 번 넣으면 중복 등록될 수 있다(웹의 중복 검사 도구로 정리 가능).
   완전히 똑같은 본문은 저장 단계에서 자동 제외된다.
 - 실패한 파일/문항은 끝에 목록으로 보여주며, 그것만 다시 돌리면 된다.
+
+## 그래프·도형 그림 (graph.js)
+
+그림을 베끼지 않고 **설계도(식·좌표)** 로 그린다. 랩과 같은 엔진이라 웹·한글·HTML 결과가 같다.
+
+```bash
+node graph.js render 그림.json                   # 그림.svg + 그림.png
+node graph.js check 그림.json                    # 형식 점검
+node graph.js pull --id <문항ID> --out ./work     # 원본 그림·본문을 파일로 (SP_EMAIL/SP_PASSWORD 필요)
+node graph.js attach --id <문항ID> 그림.json      # 문항의 0번 그림을 설계도 그림으로 교체 + 동기화 (--index new 면 추가)
+```
+맥의 Claude Code 에게 "문항 <ID> 그래프 다시 그려줘"라고 하면 `math-graph` 스킬대로
+pull → 설계도 작성 → render 로 원본과 비교 → attach 까지 한다.
+`generate.js` 로 만든 그래프·도형 문항은 그림이 자동으로 그려지고 설계도도 함께 저장된다.
