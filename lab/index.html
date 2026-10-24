@@ -1962,41 +1962,135 @@ function bestAnchorSeq(list){ // 읽기 순서에서 +1~+4씩 이어지는 최�
   const out=[]; for(let i=bi;i>=0;i=prev[i]) out.push(list[i]);
   return out.reverse();
 }
-function detectRegionsByAnchors(pg, pageIdx){
+function detectRegionsByAnchors(pg, pageIdx, opts){
+  // opts.cols: 단 경계 [{x0,x1}](pt, 렌더 잉크로 찾음) · opts.carry: 앞 단/앞 페이지의 마지막 번호(해설 이어짐)
+  opts = opts || {};
   const out = [];
   let anchors = pg.anchors;
+  out.lastNum = opts.carry || null;                         // 배열 + lastNum(마지막 번호) 속성
   if(!anchors.length) return out;
   // "1." 처럼 마침표가 붙은 번호가 2개 이상이면 맨숫자 앵커(쪽번호·표 숫자)는 노이즈로 간주
   const dotted = anchors.filter(a=>a.dot);
   if(dotted.length>=2) anchors = dotted;
-  const mid = pg.w/2;
-  const rightXs = anchors.filter(a=>a.x >= mid).map(a=>a.x);
-  const twoCol = anchors.some(a=>a.x < mid*0.8) && rightXs.length>0
-    && Math.min(...rightXs) < pg.w*0.62;                  // 진짜 2단이면 오른단 번호는 가운데 부근에서 시작
-  let cols = twoCol ? [anchors.filter(a=>a.x<mid), anchors.filter(a=>a.x>=mid)] : [anchors.slice()];
-  cols = cols.map(c=>c.sort((a,b)=>b.y-a.y));             // PDF 좌표(아래 0) → 위에서 아래로
-  // 번호 수열 정합 + 같은 번호 중복 제거
-  const kept = new Set(bestAnchorSeq([].concat(...cols)));
+  let cols = (opts.cols && opts.cols.length) ? opts.cols.map(c=>({...c})) : null;
+  if(!cols){                                               // 렌더가 없을 때: 번호 위치로 2단 판단(예전 방식)
+    const mid = pg.w/2, rightXs = anchors.filter(a=>a.x >= mid).map(a=>a.x);
+    const twoCol = anchors.some(a=>a.x < mid*0.8) && rightXs.length>0 && Math.min(...rightXs) < pg.w*0.62;
+    cols = twoCol ? [{x0:pg.w*0.02, x1:mid-4}, {x0:mid+2, x1:pg.w*0.975}] : [{x0:pg.w*0.02, x1:pg.w*0.975}];
+  }
+  const colOf = a=>{ const i = cols.findIndex(c=>a.x >= c.x0-12 && a.x < c.x1); return i<0 ? (a.x < cols[0].x0 ? 0 : cols.length-1) : i; };
+  let byCol = cols.map(()=>[]);
+  anchors.forEach(a=>byCol[colOf(a)].push(a));
+  byCol = byCol.map(c=>c.sort((a,b)=>b.y-a.y));             // PDF 좌표(아래 0) → 위에서 아래로
+  // 번호 수열 정합(읽기 순서: 왼쪽 단 위→아래, 다음 단…) + 같은 번호 중복 제거
+  const kept = new Set(bestAnchorSeq([].concat(...byCol)));
   const seenNum = new Set();
-  cols = cols.map(c=>c.filter(a=>{
+  byCol = byCol.map(c=>c.filter(a=>{
     if(!kept.has(a) || seenNum.has(a.num)) return false;
     seenNum.add(a.num); return true;
   }));
+  let lastNum = opts.carry || null;
   for(let ci=0; ci<cols.length; ci++){
-    const colAnchors = cols[ci];
+    const col = cols[ci], colAnchors = byCol[ci];
+    const fitBase = { col:ci, cx0:col.x0, cx1:col.x1 };
+    // 해설: 단 맨 위 ~ 첫 번호 사이 = 앞 해설의 이어지는 부분 (같은 번호로)
+    if(opts.cont && lastNum){
+      const topY = pg.h*0.06;
+      const endY = colAnchors.length ? pg.h - Math.min(pg.h, colAnchors[0].y + 14) : pg.h*0.945;
+      if(endY - topY > 18)
+        out.push({ page:pageIdx, x:col.x0, y:topY, w:col.x1-col.x0, h:endY-topY, num:lastNum, cont:true,
+          _fit:{ ...fitBase, cont:true, ax:col.x0, aw:0, ah:10, base:topY } });
+    }
     for(let k=0;k<colAnchors.length;k++){
       const a = colAnchors[k];
       const topPdf = Math.min(pg.h, a.y + 14);
       const botPdf = (k+1<colAnchors.length) ? colAnchors[k+1].y + 16 : pg.h*0.055;
-      const x0 = Math.max(0, a.x - 8);
-      const x1 = twoCol ? (ci===0 ? mid - 4 : pg.w*0.975) : pg.w*0.975;
+      const x0 = Math.max(col.x0 - 2, a.x - 8), x1 = col.x1;
       if(x1-x0 < 20 || topPdf-botPdf < 12) continue;
-      const cx0 = twoCol && ci===1 ? mid + 2 : pg.w*0.02;
       out.push({ page:pageIdx, x:x0, y:pg.h-topPdf, w:x1-x0, h:topPdf-botPdf, num:a.num,
-        _fit:{ col:ci, ax:a.x, aw:a.w||8, ah:a.h||10, base:pg.h-a.y, cx0, cx1:x1 } });    // 잉크 맞춤(fitRegionsToInk)용
+        _fit:{ ...fitBase, ax:a.x, aw:a.w||8, ah:a.h||10, base:pg.h-a.y } });    // 잉크 맞춤(fitRegionsToInk)용
+    }
+    if(colAnchors.length) lastNum = colAnchors[colAnchors.length-1].num;
+  }
+  out.lastNum = lastNum;
+  return out;
+}
+/* ── 단(컬럼) 찾기: 렌더한 페이지에서 위아래로 비어 있는 세로 골(단 사이 여백)을 찾는다.
+   단 구분선(페이지 길이 세로줄)은 여백으로 친다. 1단·2단·3단 모두. 못 찾으면 null ── */
+function detectColumns(canvas, pg){
+  const W = canvas.width, H = canvas.height, S = W / pg.w;
+  const img = canvas.getContext('2d').getImageData(0, 0, W, H).data;
+  const dark = (x,y)=>{ const i=(y*W+x)*4; return (0.299*img[i]+0.587*img[i+1]+0.114*img[i+2]) < 170; };
+  const ry0 = Math.floor(H*0.06), ry1 = Math.floor(H*0.94), need = (ry1-ry0)/2*0.4;
+  const rule = new Uint8Array(W);
+  for(let x=0; x<W; x++){ let c=0; for(let y=ry0; y<ry1; y+=2) if(dark(x,y)) c++; if(c > need) rule[x]=1; }
+  const y0 = Math.floor(H*0.12), y1 = Math.floor(H*0.94), rows = (y1-y0)/2;
+  const cnt = new Float32Array(W);
+  for(let x=0; x<W; x++){
+    if(rule[x] || (x>0 && rule[x-1]) || (x<W-1 && rule[x+1])) continue;   // 구분선 = 여백
+    let c=0; for(let y=y0; y<y1; y+=2) if(dark(x,y)) c++;
+    cnt[x] = c;
+  }
+  const gutters = [], minW = W*0.012, tol = Math.max(1, rows*0.004);
+  let run = -1;
+  for(let x=Math.floor(W*0.1); x<=Math.floor(W*0.9); x++){
+    const blank = x < Math.floor(W*0.9) && cnt[x] <= tol;
+    if(blank){ if(run<0) run = x; }
+    else if(run >= 0){ if(x-run >= minW) gutters.push([run, x]); run = -1; }
+  }
+  // 양쪽에 글이 있는 골만 단 사이 여백 (짧은 줄 뒤의 오른쪽 빈 여백은 아님)
+  const inkIn = (a,b)=>{ for(let x=Math.max(0,a); x<Math.min(W,b); x++) if(cnt[x] > tol) return true; return false; };
+  const real = gutters.filter(([a,b])=> inkIn(Math.floor(W*0.03), a) && inkIn(b, Math.ceil(W*0.97)));
+  // 골 사이(또는 페이지 끝까지)가 단 하나 너비도 안 되면, 둘 중 넓은 골만 진짜 단 사이 여백
+  // (번호 "6." 과 본문 사이 같은 좁은 틈은 단 안의 띄어쓰기)
+  const minCol = W*0.12;
+  for(let changed = true; changed; ){
+    changed = false;
+    for(let i=0; i<real.length; i++){
+      const leftEdge = i ? real[i-1][1] : Math.floor(W*0.02), rightEdge = i+1 < real.length ? real[i+1][0] : Math.ceil(W*0.98);
+      if(real[i][0] - leftEdge < minCol && i){                   // 앞 골과 너무 가까움
+        const drop = (real[i][1]-real[i][0]) < (real[i-1][1]-real[i-1][0]) ? i : i-1;
+        real.splice(drop, 1); changed = true; break;
+      }
+      if((i===0 && real[i][0] - leftEdge < minCol) || (i===real.length-1 && rightEdge - real[i][1] < minCol)){   // 페이지 끝 쪽 좁은 띠
+        real.splice(i, 1); changed = true; break;
+      }
     }
   }
-  return out;
+  if(!real.length) return null;
+  const edges = [Math.floor(W*0.02)];
+  real.forEach(([a,b])=>{ const m = Math.round((a+b)/2); edges.push(m, m); });   // 단 경계 = 골의 가운데 (가장자리 글자가 잘리지 않게)
+  edges.push(Math.ceil(W*0.98));
+  let cols = [];
+  for(let i=0; i<edges.length; i+=2){
+    const c = { x0: edges[i]/S, x1: edges[i+1]/S };
+    if(cols.length && (edges[i+1]-edges[i]) < W*0.12) cols[cols.length-1].x1 = c.x1;   // 너무 좁은 띠는 앞 단에 합침
+    else cols.push(c);
+  }
+  if(cols.length > 1 && (cols[0].x1 - cols[0].x0)*S < W*0.12){ cols[1].x0 = cols[0].x0; cols.shift(); }
+  // 검증: 진짜 단이면 ① 문항 번호가 단 왼쪽 끝에 붙어 있거나 ② (번호 없이 이어지는 해설이라면) 글이 빽빽하다.
+  // 문장 속 띄어쓰기·선택지 간격으로 생긴 가짜 골은 이 조건을 못 맞추므로 왼쪽 단에 합친다.
+  let anchors = pg.anchors || [];
+  if(anchors.filter(a=>a.dot).length >= 2) anchors = anchors.filter(a=>a.dot);
+  const coverage = c=>{
+    const X0 = Math.floor(c.x0*S), X1 = Math.ceil(c.x1*S);
+    let rowsInk = 0, rowsAll = 0;
+    for(let y=y0; y<y1; y+=2){
+      rowsAll++;
+      for(let x=X0; x<X1; x+=2) if(!rule[x] && dark(x,y)){ rowsInk++; break; }
+    }
+    return rowsAll ? rowsInk/rowsAll : 0;
+  };
+  for(let i=1; i<cols.length; ){
+    const c = cols[i], w = c.x1 - c.x0;
+    const inCol = anchors.filter(a=>a.x >= c.x0-12 && a.x < c.x1);
+    const ok = inCol.length
+      ? Math.min(...inCol.map(a=>a.x)) - c.x0 < w*0.25         // 번호가 단 왼쪽 끝에
+      : coverage(c) >= 0.4;                                    // 번호 없는 단은 글이 빽빽해야
+    if(ok) i++;
+    else { cols[i-1].x1 = c.x1; cols.splice(i, 1); }
+  }
+  return cols.length >= 2 ? cols : null;
 }
 /* ── 픽셀 여백 투영 분할: 번호가 없는 PDF용 (단 감지 + 가로 여백으로 경계) ── */
 function detectRegionsByPixels(canvas, pgW, pgH, pageIdx, startNum){
@@ -2136,7 +2230,7 @@ async function pdfedToRegions(){
   $('#pdfed-step2').style.display='block';
   PDFED.cur = 0;
   // 전체 선택 페이지에 자동 인식 (앵커 우선, 없으면 픽셀 분할)
-  PDFED.regions = []; PDFED.nextNum = 1;
+  PDFED.regions = []; PDFED.nextNum = 1; PDFED.lastNumByPage = {};
   for(const pg of sel) await pdfedDetectPage(pg, false);
   pdfedRenumber();
   await pdfedShowPage();
@@ -2195,6 +2289,13 @@ function fitRegionsToInk(canvas, pg, regs){
     // 4pt 미만 틈으로 이어지는 동안 위로 포함. 번호 위치(왼쪽)에 잉크가 있는 줄 = 앞 문제의 글 → 멈춤. 최대 26pt
     fit.forEach((f, k)=>{
       const F = f.r._fit;
+      if(F.cont){                                           // 이어지는 해설: 단 맨 위에서 아래로 첫 잉크 줄
+        const lim2 = k+1 < fit.length ? fit[k+1].base - Math.round(14*S) : colBot;
+        let y = Math.max(f.base, colTop);
+        while(y < lim2 && !rowInk(y)) y++;
+        if(y >= lim2) f.drop = true;
+        f.top = y; return;
+      }
       const lim = Math.max(k ? fit[k-1].base + Math.round(4*S) : colTop, f.base - Math.round(26*S));
       const leftEnd = Math.min(X1, Math.ceil((F.ax + F.aw + 1)*S));
       const leftInk = y=>{ for(let x=X0; x<leftEnd; x++) if(!rule[x] && dark(x,y)) return true; return false; };
@@ -2220,7 +2321,8 @@ function fitRegionsToInk(canvas, pg, regs){
       f.bot = last;
     });
     for(const f of fit){
-      if(f.bot - f.top < Math.round(8*S)) continue;           // 잉크를 못 찾으면 기존 사각형 유지
+      if(f.drop){ f.r._drop = true; continue; }
+      if(f.bot - f.top < Math.round(8*S)){ if(f.r._fit.cont) f.r._drop = true; continue; }   // 잉크를 못 찾으면 기존 사각형 유지
       let minX = X1, maxX = X0;
       for(let y=f.top; y<=f.bot; y+=1){
         if(!rowInk(y)) continue;
@@ -2228,24 +2330,41 @@ function fitRegionsToInk(canvas, pg, regs){
         for(let x=X1-1; x>maxX; x--) if(!rule[x] && dark(x,y)){ maxX = x; break; }
       }
       if(maxX <= minX) continue;
-      const left = Math.max(X0, Math.min(minX, Math.floor(f.r._fit.ax*S)) - PAD);
+      const left = Math.max(X0, (f.r._fit.cont ? minX : Math.min(minX, Math.floor(f.r._fit.ax*S))) - PAD);
       const right = Math.min(X1, maxX + PAD);
       const top = Math.max(colTop, f.top - PAD), bot = Math.min(H, f.bot + PAD);
       Object.assign(f.r, { x:left/S, y:top/S, w:(right-left)/S, h:(bot-top)/S, fitted:true });
     }
-    for(let k=1; k<fit.length; k++){                          // 여백(PAD)끼리도 겹치지 않게
-      const a = fit[k-1].r, b = fit[k].r, aEnd = a.y + a.h;
+    const live = fit.filter(f=>!f.r._drop);
+    for(let k=1; k<live.length; k++){                         // 여백(PAD)끼리도 겹치지 않게
+      const a = live[k-1].r, b = live[k].r, aEnd = a.y + a.h;
       if(aEnd > b.y){ const m = (aEnd + b.y)/2; a.h = m - a.y; b.h = (b.y + b.h) - m; b.y = m; }
     }
   }
-  regs.forEach(r=>{ delete r._fit; });
-  return regs;
+  const kept = regs.filter(r=>!r._drop);
+  kept.forEach(r=>{ delete r._fit; });
+  return kept;
 }
 async function pdfedDetectPage(pg, rerender){
-  let regs = detectRegionsByAnchors(pg, pg.idx);
+  const isSol = pg.mode === 'sol';
+  PDFED.lastNumByPage = PDFED.lastNumByPage || {};
+  let carry = null;                                          // 앞쪽 해설 페이지의 마지막 번호 → 이 페이지 첫 단 위쪽은 그 해설의 이어짐
+  if(isSol){
+    const prev = pdfedSelPages().filter(p=>p.idx < pg.idx && p.mode==='sol').pop();
+    if(prev && PDFED.lastNumByPage[prev.idx]) carry = PDFED.lastNumByPage[prev.idx];
+  }
+  let canvas = null;
+  try{ canvas = await pdfedInkCanvas(pg); }catch(e){}
+  let cols = null;
+  if(canvas){ try{ cols = detectColumns(canvas, pg); }catch(e){} }
+  const det = detectRegionsByAnchors(pg, pg.idx, { cols, cont: isSol && !!canvas, carry });
+  let regs = det;
+  if(isSol) PDFED.lastNumByPage[pg.idx] = det.lastNum;
   if(regs.length){
-    try{ fitRegionsToInk(await pdfedInkCanvas(pg), pg, regs); }
-    catch(e){ regs.forEach(r=>{ delete r._fit; }); }        // 렌더 실패 시 번호 기준 사각형 그대로
+    if(canvas){
+      try{ regs = fitRegionsToInk(canvas, pg, regs); }
+      catch(e){ regs = regs.filter(r=>!r.cont); regs.forEach(r=>{ delete r._fit; }); }   // 실패 시 번호 기준 사각형 그대로
+    } else { regs = regs.filter(r=>!r.cont); regs.forEach(r=>{ delete r._fit; }); }
   }
   if(!regs.length){
     const c = await pdfedPixelCanvas(pg);
