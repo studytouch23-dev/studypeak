@@ -2072,16 +2072,35 @@ function detectColumns(canvas, pg){
   }
   // 양쪽에 글이 있는 골만 단 사이 여백 (짧은 줄 뒤의 오른쪽 빈 여백은 아님)
   const inkIn = (a,b)=>{ for(let x=Math.max(0,a); x<Math.min(W,b); x++) if(cnt[x] > tol) return true; return false; };
-  const real = gutters.filter(([a,b])=> inkIn(Math.floor(W*0.03), a) && inkIn(b, Math.ceil(W*0.97)));
-  // 골 사이(또는 페이지 끝까지)가 단 하나 너비도 안 되면, 둘 중 넓은 골만 진짜 단 사이 여백
-  // (번호 "6." 과 본문 사이 같은 좁은 틈은 단 안의 띄어쓰기)
   const minCol = W*0.12;
+  // 단 구분선(페이지 길이의 세로줄)이 가운데쪽에 있으면 그 자리는 '확실한' 단 경계 — 빈 띠 판단보다 우선
+  // 진짜 구분선: 끊김 없이(틈 3px 이하) 페이지 높이 45% 이상 이어지는 가는 세로줄 — 같은 x에서 시작하는 글줄들의 왼쪽 끝은 줄 사이가 끊겨 있어 제외
+  const longRun = x=>{ let best = 0, cur = 0, gap = 0;
+    for(let y=ry0; y<ry1; y++){ if(dark(x,y)){ cur += gap + 1; gap = 0; if(cur > best) best = cur; } else if(++gap > 3){ cur = 0; gap = 0; } }
+    return best; };
+  const hard = [];
+  for(let x=Math.floor(W*0.15); x<=Math.ceil(W*0.85); x++){
+    if(rule[x]===1 && rule[x-1]!==1){
+      let e = x; while(e+1 < W && rule[e+1]===1) e++;
+      if(e - x <= 4*S){ let lr = 0; for(let xx=x; xx<=e; xx++) lr = Math.max(lr, longRun(xx)); if(lr >= (ry1-ry0)*0.45) hard.push(Math.round((x+e)/2)); }
+      x = e;
+    }
+  }
+  // 앵커(문항 번호)들의 화면 x — 빈 띠 바로 오른쪽에 번호가 있으면 진짜 단 사이일 가능성이 높다
+  let anc0 = pg.anchors || [];
+  if(anc0.filter(a=>a.dot).length >= 2) anc0 = anc0.filter(a=>a.dot);
+  const anchorAfter = ([a,b])=>anc0.some(an=>{ const ax = an.x*S; return ax >= b - 2 && ax - b < 45*S; });
+  const real = gutters.filter(([a,b])=> inkIn(Math.floor(W*0.03), a) && inkIn(b, Math.ceil(W*0.97)))
+    .filter(([a,b])=> hard.every(h=>Math.abs((a+b)/2 - h) > minCol && !(h >= a && h <= b)));   // 구분선 근처의 빈 띠는 구분선이 대신함
+  // 골 사이(또는 페이지 끝까지)가 단 하나 너비도 안 되면, 둘 중 하나만 진짜 단 사이 여백 — 오른쪽에 번호가 붙은 쪽, 아니면 넓은 쪽
+  // (번호 "6." 과 본문 사이 같은 좁은 틈은 단 안의 띄어쓰기)
   for(let changed = true; changed; ){
     changed = false;
     for(let i=0; i<real.length; i++){
       const leftEdge = i ? real[i-1][1] : Math.floor(W*0.02), rightEdge = i+1 < real.length ? real[i+1][0] : Math.ceil(W*0.98);
       if(real[i][0] - leftEdge < minCol && i){                   // 앞 골과 너무 가까움
-        const drop = (real[i][1]-real[i][0]) < (real[i-1][1]-real[i-1][0]) ? i : i-1;
+        const ai = anchorAfter(real[i]), ap = anchorAfter(real[i-1]);
+        const drop = ai !== ap ? (ai ? i-1 : i) : ((real[i][1]-real[i][0]) < (real[i-1][1]-real[i-1][0]) ? i : i-1);
         real.splice(drop, 1); changed = true; break;
       }
       if((i===0 && real[i][0] - leftEdge < minCol) || (i===real.length-1 && rightEdge - real[i][1] < minCol)){   // 페이지 끝 쪽 좁은 띠
@@ -2089,17 +2108,18 @@ function detectColumns(canvas, pg){
       }
     }
   }
-  if(!real.length) return null;
-  const edges = [Math.floor(W*0.02)];
-  real.forEach(([a,b])=>{ const m = Math.round((a+b)/2); edges.push(m, m); });   // 단 경계 = 골의 가운데 (가장자리 글자가 잘리지 않게)
+  if(!real.length && !hard.length) return null;
+  const bounds = [...real.map(([a,b])=>({ x: Math.round((a+b)/2), hard:false })), ...hard.map(h=>({ x:h, hard:true }))].sort((p,q)=>p.x-q.x);
+  const edges = [Math.floor(W*0.02)], hardLeft = [false];
+  bounds.forEach(bd=>{ edges.push(bd.x, bd.x); hardLeft.push(bd.hard); });   // 단 경계 = 골의 가운데 / 구분선 (가장자리 글자가 잘리지 않게)
   edges.push(Math.ceil(W*0.98));
   let cols = [];
-  for(let i=0; i<edges.length; i+=2){
-    const c = { x0: edges[i]/S, x1: edges[i+1]/S };
-    if(cols.length && (edges[i+1]-edges[i]) < W*0.12) cols[cols.length-1].x1 = c.x1;   // 너무 좁은 띠는 앞 단에 합침
+  for(let i=0, k=0; i<edges.length; i+=2, k++){
+    const c = { x0: edges[i]/S, x1: edges[i+1]/S, hard: hardLeft[k] };
+    if(cols.length && !c.hard && (edges[i+1]-edges[i]) < W*0.12) cols[cols.length-1].x1 = c.x1;   // 너무 좁은 띠는 앞 단에 합침
     else cols.push(c);
   }
-  if(cols.length > 1 && (cols[0].x1 - cols[0].x0)*S < W*0.12){ cols[1].x0 = cols[0].x0; cols.shift(); }
+  if(cols.length > 1 && !cols[1].hard && (cols[0].x1 - cols[0].x0)*S < W*0.12){ cols[1].x0 = cols[0].x0; cols.shift(); }
   // 검증: 진짜 단이면 ① 문항 번호가 단 왼쪽 끝에 붙어 있거나 ② (번호 없이 이어지는 해설이라면) 글이 빽빽하다.
   // 문장 속 띄어쓰기·선택지 간격으로 생긴 가짜 골은 이 조건을 못 맞추므로 왼쪽 단에 합친다.
   let anchors = pg.anchors || [];
@@ -2116,12 +2136,14 @@ function detectColumns(canvas, pg){
   for(let i=1; i<cols.length; ){
     const c = cols[i], w = c.x1 - c.x0;
     const inCol = anchors.filter(a=>a.x >= c.x0-12 && a.x < c.x1);
-    const ok = inCol.length
-      ? Math.min(...inCol.map(a=>a.x)) - c.x0 < w*0.25         // 번호가 단 왼쪽 끝에
-      : coverage(c) >= 0.4;                                    // 번호 없는 단은 글이 빽빽해야
+    const ok = c.hard                                          // 구분선으로 나뉜 단은 그대로
+      || (inCol.length
+        ? Math.min(...inCol.map(a=>a.x)) - c.x0 < Math.min(w*0.25, 45)   // 번호가 단 왼쪽 끝에 (멀리 떨어져 있으면 문장 속 띄어쓰기로 생긴 가짜 단)
+        : coverage(c) >= 0.4);                                 // 번호 없는 단은 글이 빽빽해야
     if(ok) i++;
     else { cols[i-1].x1 = c.x1; cols.splice(i, 1); }
   }
+  cols.forEach(c=>{ delete c.hard; });
   return cols.length >= 2 ? cols : null;
 }
 /* ── 픽셀 여백 투영 분할: 번호가 없는 PDF용 (단 감지 + 가로 여백으로 경계) ── */
@@ -3493,7 +3515,8 @@ function openDetail(id){
   m.innerHTML = `
     <button class="close" onclick="closeModal()">✕</button>
     <div class="spread" style="margin-bottom:.6rem">
-      <h3 style="margin:0">문제 상세·수정 ${no?`<span class="hint"># ${no}</span>`:''}</h3>
+      <h3 style="margin:0">문제 상세·수정 ${no?`<span class="hint"># ${no}</span>`:''}
+        <span class="hint" style="font-weight:400;font-size:.72rem;cursor:pointer" title="맥의 Claude Code에 '문항 ${esc(p.id)} 그림 다시 그려줘'처럼 알려 줄 때 쓰는 번호 — 누르면 복사" onclick="navigator.clipboard&&navigator.clipboard.writeText('${esc(p.id)}').then(()=>toast('문항 ID를 복사했습니다'))">ID ${esc(p.id)} 📋</span></h3>
       <div class="row">
         <button class="btn ghost sm" ${pos<=0?'disabled':''} onclick="openDetail('${pos>0?nav[pos-1]:''}')">← 이전</button>
         <span class="hint">${pos>=0?(pos+1)+' / '+nav.length:''}</span>
@@ -4376,14 +4399,14 @@ const FIG_GEO_GUIDE = '{"kind":"geometry","points":{"A":[0,4],"B":[-3,0],"C":[3,
   +'- angles: p=[A,B,C] 는 꼭짓점 B의 각(∠ABC), label 은 각 이름·크기, right:true 는 직각 표시, n:2 는 두 겹 호.\n'
   +'- 좌표평면 위 도형이면 axes:true (원점 O 자동).\n';
 const FIG_SPACE_GUIDE = '{"kind":"space","proj":{"x":[1,-0.13],"y":[0.5,0.6],"z":[0,1]},"axes":{"x":[-0.4,3.9],"y":[-0.4,2.6]},'
-  +'"solids":[{"type":"crossSection","f":"sqrt(1+(ln(x))^2)","g":0,"from":1,"to":"e","shape":"semicircle","sections":[1.8],"baseRange":[0.35,3.7],"label":"y=√(1+(ln x)²)","lx":3.3}],'
-  +'"texts":[{"at":[1,0,0],"text":"x=1","pos":"bl"},{"at":[2.718,0,0],"text":"x=e","pos":"b"}]}\n'
+  +'"solids":[{"type":"crossSection","f":"sqrt(1+(ln(x))^2)","g":0,"from":1,"to":"e","shape":"semicircle","sections":[1.8],"baseRange":[0.35,3.7],"label":"y=√(1+(ln x)²)","lx":3.3,'
+  +'"guides":true,"fromLabel":"x=1","toLabel":"x=e"}]}\n'
   +'- 좌표는 (x,y,z). proj: 각 축 1단위가 그림에서 향하는 방향 [오른쪽, 위] — 원본 그림의 축 방향·길이 비율에 맞게.\n'
   +'- solids(우선 사용 — 앱이 곡선·단면·숨은선·색칠을 정확히 계산): \n'
-  +'  · crossSection: 밑면이 y=g(x)와 y=f(x) 사이(x는 from~to)이고 x축에 수직인 단면이 shape 인 입체. shape: semicircle(반원)·square(정사각형)·eqtriangle(정삼각형)·rtriangle(직각이등변삼각형, 빗변이 밑면)·rect·triangle(높이 h 식). sections: 가운데 진하게 그릴 단면의 x. baseRange: 밑면 곡선을 그릴 x 범위. label·lx: 곡선 이름과 위치.\n'
+  +'  · crossSection: 밑면이 y=g(x)와 y=f(x) 사이(x는 from~to)이고 x축에 수직인 단면이 shape 인 입체. shape: semicircle(반원)·square(정사각형)·eqtriangle(정삼각형)·rtriangle(직각이등변삼각형, 빗변이 밑면)·rect·triangle(높이 h 식). sections: 가운데 진하게 그릴 단면의 x. baseRange: 밑면 곡선을 그릴 x 범위. label·lx: 곡선 이름과 위치. guides:true 면 x=from, x=to 직선(y축과 평행)과 fromLabel·toLabel 글자.\n'
   +'  · revolution: {"type":"revolution","f":"x의 식","from":a,"to":b} — y=f(x)를 x축 둘레로 회전한 입체.\n'
   +'  · cylinder·cone: {"type":"cylinder","c":[x,y,z],"r":반지름,"h":높이,"axis":true}(밑면 중심 c, z 방향으로 서 있음) · sphere: {"type":"sphere","c":[x,y,z],"r":1}\n'
-  +'- solids 로 안 되는 부분만 직접: points(이름→[x,y,z]), segments({"p":[점,점],"dash":true}), curves(매개변수 t: {"x":"t","y":"t^2","z":0,"t":[0,1]}), fills, texts.\n'
+  +'- solids 로 안 되는 부분만 직접: points(이름→[x,y,z], 그림에 이름을 쓰지 않을 보조점은 이름을 _ 로 시작: "_p1"), segments({"p":[점,점],"dash":true}), curves(매개변수 t: {"x":"t","y":"t^2","z":0,"t":[0,1]}), fills, texts.\n'
   +'- 가려서 안 보이는 선은 dash:true. axes: 원본에 있는 축만 범위와 함께(원점 O 자동). 식의 변수는 solids 는 x, curves 는 t.\n'
   +'- 원본에 없는 점 이름·글자(A, B 등)를 새로 만들지 마세요. 원본에 적힌 글자만 texts 로.\n';
 function aiRedrawPrompt(w, h, ctx){
@@ -4598,7 +4621,9 @@ function figSpecIssues(spec){
       else ['f','g','h'].forEach(k=>{ if(typeof sd[k] === 'string'){ try{ compileMathExpr(sd[k]); }catch(er){ out.push(`입체 ${i+1}의 ${k} 식 "${sd[k]}": ${er.message} (변수는 x)`); } } });
     });
     if(!(spec.curves||[]).length && !(spec.segments||[]).length && !Object.keys(spec.points||{}).length && !(spec.solids||[]).length) out.push('그릴 곡선·선분·점·입체가 없습니다');
-  } else out.push('kind 는 "graph"(함수 그래프), "geometry"(평면 도형), "space"(입체) 중 하나여야 합니다');
+  } else if(spec.kind === 'svg'){
+    try{ figRawSvg(spec); }catch(e){ out.push(e.message); }
+  } else out.push('kind 는 "graph"(함수 그래프), "geometry"(평면 도형), "space"(입체), "svg"(직접 그린 SVG) 중 하나여야 합니다');
   return out;
 }
 function figGeoPt(v){ // 점 값: [x,y] | [x,y,"pos"] | {x,y,pos,label,dot,hide}
@@ -4612,8 +4637,25 @@ function figSpecToSvg(spec, origW, origH){
   if(!spec || typeof spec !== 'object') throw new Error('설계도가 비었습니다');
   if(spec.kind === 'geometry') return figGeometrySvg(spec, origW, origH);
   if(spec.kind === 'space') return figSpaceSvg(spec, origW, origH);
+  if(spec.kind === 'svg') return figRawSvg(spec, origW, origH);
   if(spec.kind && spec.kind !== 'graph') throw new Error('알 수 없는 그림 종류: '+spec.kind);
   return figGraphSvg(spec, origW, origH);
+}
+/* 직접 쓴 SVG(맥의 Claude Code가 계산해 그린 그림 등): 안전하게 정리하고 크기만 맞춤 */
+function figRawSvg(spec, origW, origH){
+  let svg = sanitizeSvg(spec.svg || '').trim();
+  if(!/^<svg[\s>]/i.test(svg) || !/<\/svg\s*>$/i.test(svg)) throw new Error('SVG 형식이 아닙니다 (<svg …>…</svg>)');
+  if(!/xmlns\s*=/.test(svg)) svg = svg.replace(/<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+  const head = svg.match(/<svg[^>]*>/i)[0];
+  const vb = head.match(/viewBox\s*=\s*['"]\s*[\d.-]+[\s,]+[\d.-]+[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
+  const num = k=>{ const m = head.match(new RegExp('\\s'+k+'\\s*=\\s*[\'"]?([\\d.]+)', 'i')); return m ? +m[1] : 0; };
+  const vw = vb ? +vb[1] : num('width'), vh = vb ? +vb[2] : num('height');
+  if(!vw || !vh) throw new Error('SVG 크기(viewBox 또는 width·height)를 알 수 없습니다');
+  const { W, H } = figOutSize({ size: spec.size || [vw, vh] }, origW, origH);
+  let h2 = head.replace(/\s(width|height)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  if(!vb) h2 = h2.replace(/<svg/i, `<svg viewBox="0 0 ${vw} ${vh}"`);
+  h2 = h2.replace(/<svg/i, `<svg width="${W}" height="${H}" preserveAspectRatio="xMidYMid meet"`);
+  return { svg: svg.replace(head, h2), w: W, h: H };
 }
 function figWrap(W, H, body, FS, defs){
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FIG_SERIF}" fill="#000">`
@@ -4817,7 +4859,7 @@ function figGeometrySvg(spec, origW, origH){
   for(const q of Object.values(pts)){
     const qx = X(q.x), qy = Y(q.y);
     if(q.dot === true || (q.dot !== false && !used.has(q.name))) body += `<circle cx="${f(qx)}" cy="${f(qy)}" r="${f(LW*1.6)}"/>`;
-    if(q.hide) continue;
+    if(q.hide || (q.label == null && /^_/.test(q.name))) continue;          // _로 시작하는 보조점은 이름을 쓰지 않음
     const lab = q.label != null ? String(q.label) : q.name;
     let dir = FIG_DIRS[q.pos];
     if(!dir){ const vx = qx - X(cen.x), vy = qy - Y(cen.y), L = Math.hypot(vx, vy); dir = L > 1 ? [vx/L, vy/L] : [0.75, -0.75]; }
@@ -4944,6 +4986,13 @@ function figExpandSolids(spec, P2){
         fill(s, true); curve(s); out.segments.push({ p:[s[0], s[s.length-1]] });
       }
       if(sd.label){ const lx = figNumOf(sd.lx, ext[1]); out.texts.push({ at:[lx, f(lx), 0], text: sd.label, pos: sd.pos || 'br' }); }
+      if(sd.guides){                                           // x=from, x=to 직선(밑면 위, y축과 평행) + 글자 — 수능 그림의 x=1, x=e
+        const ylo = figNumOf(sd.guideRange && sd.guideRange[0], -0.6), yhi = figNumOf(sd.guideRange && sd.guideRange[1], Math.max(f(a), f(b), g(a), g(b)) + 1.2);
+        [[a, sd.fromLabel], [b, sd.toLabel]].forEach(([x, lab])=>{
+          out.segments.push({ p:[[x, ylo, 0], [x, yhi, 0]] });
+          if(lab) out.texts.push({ at:[x, ylo, 0], text: lab, pos:'bl' });
+        });
+      }
     } else if(type === 'revolution' || type === 'cylinder' || type === 'cone' || type === 'sphere'){
       // 교과서식: 화면에서 축에 수직인 원은 납작한 타원(짧은 반지름 0.28배)으로, 옆선은 타원 끝에 정확히 닿게
       const V = (p, q)=>[p[0]+q[0], p[1]+q[1]], M = (p, k)=>[p[0]*k, p[1]*k];
@@ -5081,8 +5130,8 @@ function figSpaceSvg(spec, origW, origH){
     } }
   for(const o of Object.values(pts)){
     const p = S2(o.q);
-    if(o.dot === true || (o.dot !== false && !used.has(o.name))) body += `<circle cx="${f(p[0])}" cy="${f(p[1])}" r="${f(LW*1.6)}"/>`;
-    if(o.hide) continue;
+    if(o.dot === true || (o.dot !== false && !used.has(o.name) && !/^_/.test(o.name))) body += `<circle cx="${f(p[0])}" cy="${f(p[1])}" r="${f(LW*1.6)}"/>`;
+    if(o.hide || (o.label == null && /^_/.test(o.name))) continue;          // _로 시작하는 보조점은 이름을 쓰지 않음
     const lab = o.label != null ? String(o.label) : o.name, lw = figLabelWidth(lab, FS);
     let d = FIG_DIRS[o.pos];
     if(!d){ const vx = p[0]-cen[0], vy = p[1]-cen[1], L = Math.hypot(vx, vy); d = L > 1 ? [vx/L, vy/L] : [-0.75, 0.75]; }
@@ -5156,7 +5205,7 @@ async function aiRedrawFigureSpec(dataURL, fallbackW, fallbackH, opts){
   if(r && (r.kind === 'graph' || r.kind === 'geometry' || r.kind === 'space')){
     let spec = { ...r, size: [Math.round(OW), Math.round(OH)] }, img = null, err = '';
     try{ img = await figSpecToPng(spec); }catch(e){ err = e.message || String(e); }
-    const rounds = opts.refine === false ? 0 : (opts.rounds || 1);
+    const rounds = opts.refine === false ? 0 : (opts.rounds || (spec.kind === 'space' ? 2 : 1));   // 입체는 두 번 비교
     for(let k=0; k<rounds || (err && k<rounds+1); k++){              // 설계도 오류면 한 번 더 기회
       if(opts.onRefine) opts.onRefine(k, err);
       let fx = null;
@@ -5294,8 +5343,8 @@ const FIG_TEMPLATES = {
     curves:[ { f:'x^2-2*x+1', from:-1, to:3.4, label:'y=x²−2x+1', lx:2.2, ly:5.2 } ],
     points:[ { x:0, y:0, label:'O', pos:'bl' }, { x:1, y:0, label:'1', pos:'br', dot:false } ], xlabel:'x', ylabel:'y' },
   space: { kind:'space', proj:{ x:[1,-0.13], y:[0.5,0.6], z:[0,1] }, axes:{ x:[-0.4,3.9], y:[-0.4,2.6] },
-    solids:[ { type:'crossSection', f:'sqrt(1+(ln(x))^2)', g:0, from:1, to:'e', shape:'semicircle', sections:[1.8], baseRange:[0.35,3.7], label:'y=√(1+(ln x)²)', lx:3.3 } ],
-    texts:[ { at:[1,0,0], text:'x=1', pos:'bl' }, { at:[2.718,0,0], text:'x=e', pos:'b' } ] },
+    solids:[ { type:'crossSection', f:'sqrt(1+(ln(x))^2)', g:0, from:1, to:'e', shape:'semicircle', sections:[1.8], baseRange:[0.35,3.7], label:'y=√(1+(ln x)²)', lx:3.3,
+               guides:true, fromLabel:'x=1', toLabel:'x=e' } ] },
   geometry: { kind:'geometry', points:{ A:[1, 4], B:[0, 0], C:[5, 0], H:[1, 0] },
     polygons:[ { p:['A','B','C'] } ], segments:[ { p:['A','H'], dash:true }, { p:['B','C'], label:'5' } ],
     angles:[ { p:['A','H','C'], right:true }, { p:['A','C','B'], label:'θ' } ] },
