@@ -78,6 +78,22 @@ node graph.js attach --id <문항ID> 그림.json [--index 0|new]   # 문항 그�
 - `axes:true`: 좌표평면 위 도형(원점 O 자동).
 
 ### 입체도형 `"kind":"space"`
+
+**먼저 `solids` 매크로를 쓴다** — 수치만 넣으면 곡선·단면·숨은선·색칠을 앱이 계산한다:
+```json
+{"kind":"space","size":[490,210],"proj":{"x":[1,-0.13],"y":[0.5,0.6],"z":[0,1]},"axes":{"x":[-0.4,3.9],"y":[-0.4,2.6]},
+ "solids":[{"type":"crossSection","f":"sqrt(1+(ln(x))^2)","g":0,"from":1,"to":"e","shape":"semicircle",
+            "sections":[1.8],"baseRange":[0.35,3.7],"label":"y=√(1+(ln x)²)","lx":3.3}],
+ "texts":[{"at":[1,0,0],"text":"x=1","pos":"bl"},{"at":[2.718,0,0],"text":"x=e","pos":"b"}]}
+```
+- `crossSection`: 밑면이 y=g(x)~y=f(x)(x는 from~to), x축에 수직인 단면이 `shape` 인 입체.
+  shape: `semicircle`·`square`·`eqtriangle`·`rtriangle`(빗변이 밑면)·`rect`/`triangle`(높이 식 `h`). `sections`: 진하게 그릴 단면 x.
+- `revolution`: `{"type":"revolution","f":"x의 식","from":a,"to":b}` — x축 둘레 회전체 (교과서식 납작한 끝 타원, 뒤쪽 반은 점선).
+- `cylinder`·`cone`: `{"c":[x,y,z],"r":1,"h":2,"axis":true}` (z 방향으로 섬) · `sphere`: `{"c":[x,y,z],"r":1}` — 옆선이 타원 끝에 정확히, 밑면 뒤쪽 점선.
+- 매크로로 안 되는 것만 아래 `curves`/`segments`/`fills` 로 직접.
+- 원본에 없는 점 이름(A, B…)을 만들지 말 것.
+
+직접 쓰는 형식:
 ```json
 {"kind":"space","size":[395,170],"proj":{"x":[1,-0.15],"y":[0.55,0.75],"z":[0,1]},
  "axes":{"x":[-0.3,3.7],"y":[-0.3,2.3]},
