@@ -98,6 +98,7 @@ pull → 설계도 작성 → render 로 원본과 비교 → attach 까지 한�
 node twins.js --src "10월 모의고사"                          # 그 출처 문항 전부, 원본당 쌍둥이 1·변형 1
 node twins.js --src "10월" --nos 1-10,15 --twin 2 --variant 1 --diff harder
 node twins.js --ids 문항ID --twin 10                       # 한 문제로 쌍둥이 10개 (원본당 최대 10개씩)
+node twins.js --src "10월" --parallel 3                     # 원본 3개씩 동시에 (기본 2, 최대 4 — 빠르지만 Max 사용량이 빨리 참)
 node twins.js --ids 문항ID1,문항ID2 --no-verify
 ```
 다 만든 뒤 웹: 문제 검색 → [등록 묶음]에서 "… 쌍둥이·변형" → **[📚 원본 + 쌍둥이·변형으로 교재 만들기]**
