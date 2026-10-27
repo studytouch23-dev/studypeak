@@ -39,6 +39,9 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
           solution: kw === 'KWS3' && kind === '변형' ? '잘못된 수식 $\\frac{1}{$ 풀이' : `풀이 ${kind}${n}`,
           figure: kw === 'KWS1' ? { kind:'graph', x:[-1,5], y:[-3,6], curves:[{ f:'x^2-4*x' }] } : kw === 'KWS3' ? { kind:'geometry', points:{ A:[0,3], B:[0,0], C:[4,0] }, polygons:[{ p:['A','B','C'] }] } : null });
         reply = { items: [ mk('쌍둥이', 1), mk('변형', 1), mk('쌍둥이', 2) ] };      // 요청(쌍둥이1·변형1)보다 하나 더 → 버려야 함
+      } else if(t.includes('바로잡은 문제 하나')){                   // 수리: 2번 변형의 정답을 ① 로 바로잡음
+        calls.push({ kind:'repair' });
+        reply = { kind:'변형', question:'KWS2 변형1 수정됨 새 문제 $x^{2}+1$ 의 값은?', choices:['① 1','② 2','③ 3','④ 4','⑤ 5'], answer:'①', solution:'바로잡은 풀이', figure:null };
       } else if(t.includes('정답은 일부러 알려주지 않습니다')){
         calls.push({ kind:'verify', imgs, hasFig: t.includes('[그림 내용(설계도)]') });
         reply = t.includes('KWS2 변형') ? { answer:'①', work:'', wellPosed:true } : t.includes('KWS2') ? { answer:'③', wellPosed:true } : { answer: t.match(/쌍둥이1|변형1/) ? '11' : '0', wellPosed:true };
@@ -72,12 +75,13 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   check('설계도 있는 원본은 설계도를, 그림만 있는 원본은 그림 이미지를 함께 보냄', gen.find(c => c.kw === 'KWS1').hasSpec && gen.find(c => c.kw === 'KWS1').imgs === 0 && gen.find(c => c.kw === 'KWS3').imgs === 1, JSON.stringify(gen));
   check('객관식 원본은 객관식으로 만들라고 안내', gen.find(c => c.kw === 'KWS2').mc && !gen.find(c => c.kw === 'KWS1').mc);
   check('요청한 만큼만 저장 (원본당 쌍둥이 1 + 변형 1 = 6)', r.recs.length === 6, r.made.join(' | '));
-  check('독립 검산: 새 문제마다 1번, 그림 있는 문제는 설계도도 함께', ver.length === 6 && ver.filter(c => c.hasFig).length === 4, ver.length);
+  check('독립 검산: 새 문제마다 1번 + 바로잡은 문제 다시 1번, 그림 있는 문제는 그림 이미지와 함께', ver.length === 7 && ver.filter(c => c.imgs === 1).length === 4, JSON.stringify(ver.map(c => c.imgs)));
+  check('정답이 다르면 수리 호출 1번', r.calls.filter(c => c.kind === 'repair').length === 1);
   const R = (no, k) => r.recs.find(x => x.no === no && x.k === k) || {};
   check('원본과 연결(twinOf)·원래 번호·출처·난이도 한 단계 위', R('1','쌍둥이').of === 'S1' && R('2','변형').of === 'S2' && R('1','쌍둥이').src === '10월 모의고사 쌍둥이·변형' && R('1','쌍둥이').diff === 4, JSON.stringify(R('1','쌍둥이')));
   check('그림: 새 숫자에 맞는 설계도로 다시 그림 (원본 크기·글자 크기 이어받음)', R('1','쌍둥이').img === 1 && R('1','쌍둥이').spec === 'graph' && JSON.stringify(R('1','쌍둥이').size) === '[200,120]' && R('1','쌍둥이').fontPx === 15 && R('3','변형').spec === 'geometry', JSON.stringify([R('1','쌍둥이'), R('3','변형')].map(x => [x.spec, x.size, x.fontPx])));
   check('본문에 [그림] 자리', /\[그림\]/.test(R('1','쌍둥이').q));
-  check('태그: 쌍둥이/변형 + AI생성, 검산 불일치 #검산불일치, 깨진 수식 #검수주의', R('2','쌍둥이').tags.join() === '쌍둥이,AI생성' && R('2','변형').tags.includes('검산불일치') && R('3','변형').tags.includes('검수주의'), JSON.stringify(r.recs.map(x => x.tags)));
+  check('정답 불일치 문제는 바로잡힌 것으로 저장(검산 통과), 깨진 수식은 #검수주의', R('2','쌍둥이').tags.join() === '쌍둥이,AI생성' && R('2','변형').q.includes('수정됨') && !R('2','변형').tags.includes('검산불일치') && R('2','변형').verify === 'match' && R('3','변형').tags.includes('검수주의'), JSON.stringify(r.recs.map(x => [x.no, x.k, x.tags, x.verify])));
   check('저장 후 새 묶음 표시 + [📚 원본 + 쌍둥이·변형으로 교재 만들기]', r.banner.includes('쌍둥이·변형') && r.banner.includes('📚 원본 + 쌍둥이·변형으로 교재 만들기'), r.banner.slice(0, 100));
   check('카드에 👯 쌍둥이·변형 표시', /👯 쌍둥이 1번/.test(r.card) && /👯 변형 2번/.test(r.card));
   check('교재 순서: 원본 → 쌍둥이 → 변형 (원본 번호 순)', JSON.stringify(r.cart) === JSON.stringify(['S1','쌍둥이:1','변형:1','S2','쌍둥이:2','변형:2','S3','쌍둥이:3','변형:3']), JSON.stringify(r.cart));

@@ -97,7 +97,9 @@ pull → 설계도 작성 → render 로 원본과 비교 → attach 까지 한�
 ```bash
 node twins.js --src "10월 모의고사"                          # 그 출처 문항 전부, 원본당 쌍둥이 1·변형 1
 node twins.js --src "10월" --nos 1-10,15 --twin 2 --variant 1 --diff harder
+node twins.js --ids 문항ID --twin 10                       # 한 문제로 쌍둥이 10개 (원본당 최대 10개씩)
 node twins.js --ids 문항ID1,문항ID2 --no-verify
 ```
 다 만든 뒤 웹: 문제 검색 → [등록 묶음]에서 "… 쌍둥이·변형" → **[📚 원본 + 쌍둥이·변형으로 교재 만들기]**
 (원본 → 쌍둥이 → 변형 순서로 담겨 교재 HTML·한글·학습지로 바로 출력).
+만든 문제는 다른 AI 호출이 정답을 모른 채 그려진 그림을 보고 다시 풀어 확인하고, 틀리면 바로잡거나 버리고 새로 만들어 검산을 통과한 것만 저장한다.

@@ -21,10 +21,10 @@ fs.writeFileSync(fake, '#!/usr/bin/env node\n'
   + '  const kw = (p.split("[원본 문제]").pop().match(/KW\\d+/)||[""])[0];\n'
   + '  fs.appendFileSync(' + JSON.stringify(log) + ', "gen " + kw + " " + (img && fs.existsSync(img) ? "img" : "-") + "\\n");\n'
   + '  out = { items: [ { kind:"쌍둥이", question: kw+" 쌍둥이 $x+1$ 은?", choices:[], answer:"3", solution:"풀이", figure: kw==="KW2" ? { kind:"graph", x:[-1,3], y:[-1,3], curves:[{ f:"x" }] } : null },\n'
-  + '                   { kind:"변형", question: kw+" 변형 $x+2$ 은?", choices:[], answer:"4", solution:"풀이", figure:null } ] };\n'
+  + '                   { kind:"변형", question: kw+" 변형 $x+2$ 은?", choices:[], answer:"4", solution:"풀이", figure: kw==="KW2" ? { kind:"graph", x:[-1,3], y:[-1,4], curves:[{ f:"x+1" }] } : null } ] };\n'
   + '} else if(p.includes("정답은 일부러 알려주지 않습니다")){\n'
   + '  fs.appendFileSync(' + JSON.stringify(log) + ', "verify\\n");\n'
-  + '  out = { answer: p.includes("변형") ? "5" : "3", wellPosed:true };\n'
+  + '  out = { answer: p.includes("변형") ? "4" : "3", wellPosed:true, figureOk:true };\n'
   + '} else out = {};\n'
   + 'console.log(JSON.stringify({ result: JSON.stringify(out) }));\n');
 fs.chmodSync(fake, 0o755);
@@ -55,9 +55,9 @@ check('정상 종료', r.code === 0, r.code);
 check('출처·번호로 원본 2개(1·2번)만, 다른 출처 제외', /원본 2문항/.test(r.out) && calls.filter(c => c.startsWith('gen')).map(c => c.split(' ')[1]).join(',') === 'KW1,KW2', calls.join(' | '));
 check('그림 있는 원본은 이미지 파일로 넘김 (Claude Code가 Read)', calls.includes('gen KW2 img') && calls.includes('gen KW1 -'), calls.join(' | '));
 check('독립 검산: 새 문제 4개 각 1번', calls.filter(c => c === 'verify').length === 4);
-check('저장·동기화 4문항, 검산불일치 2(변형)', /✅ 4문항 저장·동기화/.test(r.out) && /검산불일치 2개/.test(r.out), (r.out.match(/✅[^\n]*/)||[])[0]);
+check('검산 통과 4문항 저장·동기화 (버린 것 없음)', /✅ 검산 통과 4문항 저장·동기화/.test(r.out) && !/버리고/.test(r.out), (r.out.match(/✅[^\n]*/)||[])[0]);
 const up = JSON.parse((r.out.match(/\[stub\] 업로드: (.+)/)||[,'[]'])[1]);
-check('클라우드: 쌍둥이·변형, 원래 번호, 태그, 그림 설계도', up.length === 4 && up.some(x => x[0] === '쌍둥이' && x[1] === '2' && x[3] === 1) && up.some(x => x[0] === '변형' && x[2].includes('검산불일치')), JSON.stringify(up));
+check('클라우드: 쌍둥이·변형, 원래 번호, 그림 원본엔 새 그림 설계도', up.length === 4 && up.filter(x => x[1] === '2' && x[3] === 1).length === 2 && up.filter(x => x[0] === '변형').length === 2, JSON.stringify(up));
 r = run(['--stub', '--src', '없는 출처']);
 check('원본이 없으면 안내하고 종료 코드 2', r.code === 2 && r.out.includes('원본 문항을 찾지 못했습니다'), r.code);
 r = run(['--stub', '--src', '10월', '--twin', '0', '--variant', '0']);

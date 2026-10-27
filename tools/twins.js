@@ -9,7 +9,7 @@
  *   node twins.js --src "10월 모의고사"                 # 출처에 이 글자가 든 문항 전부, 원본당 쌍둥이 1·변형 1
  *   node twins.js --src "10월" --nos 1-10,15 --twin 2 --variant 1 --diff harder
  *   node twins.js --ids id1,id2                         # 문항 ID 로 (웹 문제 상세의 ID)
- * 옵션: --twin N(기본 1) · --variant N(기본 1) · --diff same|easier|harder · --no-verify · --timeout 분(기본 10)
+ * 옵션: --twin N(기본 1, 최대 10) · --variant N(기본 1, 최대 10) · --diff same|easier|harder · --no-verify · --timeout 분(기본 10)
  * 환경변수: SP_EMAIL, SP_PASSWORD(랩의 자동화용 비밀번호), CLAUDE_BIN(기본 'claude')
  * 다 만든 뒤 웹: 문제 검색 → [등록 묶음]에서 "… 쌍둥이·변형" → [📚 원본 + 쌍둥이·변형으로 교재 만들기]
  */
@@ -24,7 +24,7 @@ const STUB = argv.includes('--stub');
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 const SRC = opt('src', ''), IDS = (opt('ids', '') || '').split(',').map(s=>s.trim()).filter(Boolean);
 const NOS = opt('nos', '');
-const TWIN = Math.max(0, Math.min(5, +opt('twin', 1) || 0)), VARIANT = Math.max(0, Math.min(5, +opt('variant', 1) || 0));
+const TWIN = Math.max(0, Math.min(10, +opt('twin', 1) || 0)), VARIANT = Math.max(0, Math.min(10, +opt('variant', 1) || 0));   // 원본당 최대 10개씩
 const DIFF = ['same','easier','harder'].includes(opt('diff')) ? opt('diff') : 'same';
 const VERIFY = !argv.includes('--no-verify');
 const TIMEOUT_MIN = +opt('timeout', 10) || 10;
@@ -50,7 +50,7 @@ if(!TWIN && !VARIANT){ console.error('--twin 또는 --variant 를 1 이상으로
   const lab = await openLab({ stub: STUB });
   const page = lab.page;
   page.on('dialog', d => d.accept());
-  page.on('console', m => { const t = m.text(); if(t.startsWith('TWIN-PROGRESS ')) process.stdout.write(`  👯 ${t.slice(14)}번 만드는 중…   \r`); });
+  page.on('console', m => { const t = m.text(); if(t.startsWith('TWIN-PROGRESS ')) process.stdout.write(`  👯 원본 ${t.slice(14)} (만들기 → 그림 → 검산)   \r`); });
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-twin-'));
   let k = 0;
   // 랩 코드의 AI 질문 → 이 컴퓨터의 Claude Code (그림은 파일로 넘겨 Read 로 보게)
@@ -80,12 +80,14 @@ if(!TWIN && !VARIANT){ console.error('--twin 또는 --variant 를 1 이상으로
   const res = await page.evaluate(async ({ids, opts}) => {
     const srcs = ids.map(id => state.problems.find(p => p.id === id));
     const r = await makeTwins(srcs, opts, (t, max, imgs) => window.__maxAsk(t, (imgs||[])[0] || null),
-      (i, n, s) => console.log(`TWIN-PROGRESS ${i+1}/${n} ${s.origNo||''}`));
+      (i, n, s, done, total) => console.log(`TWIN-PROGRESS ${i+1}/${n} · ${s.origNo||''}번 ${done}/${total}개`));
     return { ...r, saved: r.saved.length };
   }, { ids: sources, opts: { twin: TWIN, variant: VARIANT, diff: DIFF, verify: VERIFY } });
   await waitSynced(page);
-  console.log(`✅ ${res.saved}문항 저장·동기화 — 묶음 "${res.batchName}"`
-    + (res.mismatch ? ` · 검산불일치 ${res.mismatch}개(#검산불일치)` : '') + (res.warn ? ` · 수식 확인 ${res.warn}개(#검수주의)` : '')
+  const why = Object.entries(res.reasons || {}).map(([k, v]) => `${k} ${v}`).join(', ');
+  console.log(`\n✅ 검산 통과 ${res.saved}문항 저장·동기화 — 묶음 "${res.batchName}"`
+    + (res.repaired ? ` · 바로잡아 통과 ${res.repaired}개` : '') + (res.rejected ? ` · 버리고 다시 만든 것 ${res.rejected}개(${why})` : '')
+    + (res.short ? ` · ⚠ 끝내 못 만든 것 ${res.short}개` : '') + (res.warn ? ` · 수식 확인 ${res.warn}개(#검수주의)` : '')
     + (res.fail ? ` · 실패 ${res.fail}개 (${res.lastErr})` : ''));
   console.log('   웹: 문제 검색 → [등록 묶음] → [📚 원본 + 쌍둥이·변형으로 교재 만들기]');
   if(STUB){
