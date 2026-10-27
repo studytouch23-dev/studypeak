@@ -96,3 +96,5 @@ await page.evaluate(()=>{ pdfjsLib.GlobalWorkerOptions.workerSrc='http://127.0.0
 HWP 바이너리 파싱, DOCX/OMML 출력, 임베딩 검색, 멀티유저.
 (그림 AI 복원은 `imgedAiRedraw`가 Claude 비전→SVG로 서버 없이 구현함)
 (OCR·분류·해설은 사용자 API 키 기반 AI 변환/해설 생성으로 대체됨) `lab/README.md` 로드맵 참조.
+
+- 원기둥·원뿔(`figExpandSolids`): 밑면·윗면 원을 proj 로 **정확히 투영**(3차원 점 곡선) — 문제 조건으로 계산한 원 위 점이 타원 위에 놓임. 옆선은 화면에서 z 와 나란한 접선(원기둥)/꼭짓점 접선(원뿔), 뒤쪽 호 점선, 색칠은 `fill:true` 때만. 예전 방식으로 저장된 PNG 는 `figRerenderSolids`(FIG_VER=2, p.figV)가 시작·동기화 후 한 번 다시 그림. 중지: `AI_BATCH.ctrl`(AbortController) → `aiJsonCall` signal, makeTwins 의 ask 감싸기로 중지 뒤 새 호출 없음, `twinStop`.
