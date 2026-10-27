@@ -83,7 +83,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   check('본문에 [그림] 자리', /\[그림\]/.test(R('1','쌍둥이').q));
   check('정답 불일치 문제는 바로잡힌 것으로 저장(검산 통과), 깨진 수식은 #검수주의', R('2','쌍둥이').tags.join() === '쌍둥이,AI생성' && R('2','변형').q.includes('수정됨') && !R('2','변형').tags.includes('검산불일치') && R('2','변형').verify === 'match' && R('3','변형').tags.includes('검수주의'), JSON.stringify(r.recs.map(x => [x.no, x.k, x.tags, x.verify])));
   check('저장 후 새 묶음 표시 + [📚 원본 + 쌍둥이·변형으로 교재 만들기]', r.banner.includes('쌍둥이·변형') && r.banner.includes('📚 원본 + 쌍둥이·변형으로 교재 만들기'), r.banner.slice(0, 100));
-  check('카드에 👯 쌍둥이·변형 표시', /👯 쌍둥이 1번/.test(r.card) && /👯 변형 2번/.test(r.card));
+  check('카드에 👯 쌍둥이·변형 배지(번호 · 원본 N번)', /👯 쌍둥이 1 · 원본 1번/.test(r.card) && /👯 변형 1 · 원본 2번/.test(r.card));
   check('교재 순서: 원본 → 쌍둥이 → 변형 (원본 번호 순)', JSON.stringify(r.cart) === JSON.stringify(['S1','쌍둥이:1','변형:1','S2','쌍둥이:2','변형:2','S3','쌍둥이:3','변형:3']), JSON.stringify(r.cart));
   check('교재 제목 = "10월 모의고사 쌍둥이·변형"', r.title === '10월 모의고사 쌍둥이·변형', r.title);
   check('HTML 교재: 쌍둥이·변형 표시 6개, 설계도 그림은 벡터', r.html.marks === 6 && r.html.svg, JSON.stringify(r.html));

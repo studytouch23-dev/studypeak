@@ -10,6 +10,7 @@
  *   node twins.js --src "10월" --nos 1-10,15 --twin 2 --variant 1 --diff harder
  *   node twins.js --ids id1,id2                         # 문항 ID 로 (웹 문제 상세의 ID)
  * 옵션: --twin N(기본 1, 최대 10) · --variant N(기본 1, 최대 10) · --diff same|easier|harder · --no-verify · --timeout 분(기본 10)
+ *       --parallel N(동시에 처리할 원본 수, 기본 2, 최대 4 — 빨라지지만 Max 사용량이 빨리 참)
  * 환경변수: SP_EMAIL, SP_PASSWORD(랩의 자동화용 비밀번호), CLAUDE_BIN(기본 'claude')
  * 다 만든 뒤 웹: 문제 검색 → [등록 묶음]에서 "… 쌍둥이·변형" → [📚 원본 + 쌍둥이·변형으로 교재 만들기]
  */
@@ -28,6 +29,7 @@ const TWIN = Math.max(0, Math.min(10, +opt('twin', 1) || 0)), VARIANT = Math.max
 const DIFF = ['same','easier','harder'].includes(opt('diff')) ? opt('diff') : 'same';
 const VERIFY = !argv.includes('--no-verify');
 const TIMEOUT_MIN = +opt('timeout', 10) || 10;
+const PARALLEL = Math.max(1, Math.min(4, +opt('parallel', 2) || 2));
 const EMAIL = process.env.SP_EMAIL, PASSWORD = process.env.SP_PASSWORD;
 
 function parseNos(s){ // "1-10,15" → Set
@@ -50,7 +52,7 @@ if(!TWIN && !VARIANT){ console.error('--twin 또는 --variant 를 1 이상으로
   const lab = await openLab({ stub: STUB });
   const page = lab.page;
   page.on('dialog', d => d.accept());
-  page.on('console', m => { const t = m.text(); if(t.startsWith('TWIN-PROGRESS ')) process.stdout.write(`  👯 원본 ${t.slice(14)} (만들기 → 그림 → 검산)   \r`); });
+  page.on('console', m => { const t = m.text(); if(t.startsWith('TWIN-PROGRESS ')) console.log(`  👯 ${t.slice(14)}`); });
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-twin-'));
   let k = 0;
   // 랩 코드의 AI 질문 → 이 컴퓨터의 Claude Code (그림은 파일로 넘겨 Read 로 보게)
@@ -75,14 +77,21 @@ if(!TWIN && !VARIANT){ console.error('--twin 또는 --variant 를 1 이상으로
       .sort((a,b)=>(origNoKey(a)-origNoKey(b)) || ((a.createdAt||0)-(b.createdAt||0))).map(p => p.id);
   }, { SRC, IDS, nos: [...parseNos(NOS)] });
   if(!sources.length){ console.error('원본 문항을 찾지 못했습니다 (본문이 있는 문항만, 이미 만든 쌍둥이는 제외).'); await lab.close(); process.exit(2); }
-  console.log(`📄 원본 ${sources.length}문항 · 원본당 쌍둥이 ${TWIN} · 변형 ${VARIANT} · 난이도 ${DIFF}${VERIFY?' · 독립 검산':''} — Claude Code(Max)로 생성`);
+  console.log(`📄 원본 ${sources.length}문항 · 원본당 쌍둥이 ${TWIN} · 변형 ${VARIANT} · 난이도 ${DIFF}${VERIFY?' · 독립 검산':''} · 동시 ${PARALLEL}개 — Claude Code(Max)로 생성`);
 
   const res = await page.evaluate(async ({ids, opts}) => {
     const srcs = ids.map(id => state.problems.find(p => p.id === id));
     const r = await makeTwins(srcs, opts, (t, max, imgs) => window.__maxAsk(t, (imgs||[])[0] || null),
-      (i, n, s, done, total) => console.log(`TWIN-PROGRESS ${i+1}/${n} · ${s.origNo||''}번 ${done}/${total}개`));
+      e => { // 실황: 원본 시작·후보 생성·검산 결과를 한 줄씩
+        const s = srcs[e.i] || {}, no = `${s.origNo||e.i+1}번`;
+        if(e.type === 'src') console.log(`TWIN-PROGRESS ▶ 원본 ${no} 시작 (${e.i+1}/${srcs.length})`);
+        else if(e.type === 'gen') console.log(`TWIN-PROGRESS   ${no} 후보 만드는 중 (${e.done}/${e.total} 완료)`);
+        else if(e.type === 'item' && e.state === 'saved') console.log(`TWIN-PROGRESS   ${no} ✅ ${e.kind} 저장${e.repaired?' (바로잡음)':''}`);
+        else if(e.type === 'item' && e.state === 'rejected') console.log(`TWIN-PROGRESS   ${no} ✖ ${e.kind} 버림 — ${e.why||''}`);
+        else if(e.type === 'srcDone') console.log(`TWIN-PROGRESS ■ 원본 ${no} 끝${e.short?` (못 만든 것 ${e.short}개)`:''}${e.error?' — 오류: '+e.error:''}`);
+      });
     return { ...r, saved: r.saved.length };
-  }, { ids: sources, opts: { twin: TWIN, variant: VARIANT, diff: DIFF, verify: VERIFY } });
+  }, { ids: sources, opts: { twin: TWIN, variant: VARIANT, diff: DIFF, verify: VERIFY, concurrency: PARALLEL } });
   await waitSynced(page);
   const why = Object.entries(res.reasons || {}).map(([k, v]) => `${k} ${v}`).join(', ');
   console.log(`\n✅ 검산 통과 ${res.saved}문항 저장·동기화 — 묶음 "${res.batchName}"`
