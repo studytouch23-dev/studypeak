@@ -45,3 +45,8 @@ description: 사용자의 컴퓨터에 있는 수학 문제 PDF들을 스터디�
 
 등록·생성된 문항의 그래프·도형을 다시 그리거나 새로 만드는 요청은 `math-graph` 스킬(`tools/graph.js`)을 따른다.
 `generate.js` 는 그래프·도형 문항에 `[그림설계]` 설계도를 쓰게 해서 그림을 자동으로 그린다(설계도도 함께 저장).
+
+## 쌍둥이·유사 변형 문제
+
+"이 시험지 쌍둥이 문제 만들어줘", "유사 변형 2개씩" 같은 요청은 `node tools/twins.js --src "출처" [--nos 1-30] --twin N --variant N [--diff same|easier|harder]`.
+SP_EMAIL/SP_PASSWORD 가 필요(없으면 물어볼 것). 끝나면 웹의 [등록 묶음] → [📚 원본 + 쌍둥이·변형으로 교재 만들기] 를 안내한다.

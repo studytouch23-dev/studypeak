@@ -7,6 +7,7 @@
 |---|---|
 | `ingest.js` | PDF 일괄 등록: 영역 인식 → AI 변환(이미지→한글 텍스트·수식, 소단원 태깅) → 저장 → 클라우드 동기화 |
 | `generate.js` | 유사/신규 문제 생성: 랩의 생성 프롬프트로 Claude Code(Max)가 문제를 만들어 자동 등록·동기화 |
+| `twins.js` | 쌍둥이·유사 변형 문제 일괄 생성: 내 DB 원본(출처·번호·ID로 고름)으로 정답·해설·그림까지 만들고 독립 검산 → 원본과 연결해 새 등록 묶음으로 저장·동기화 (Claude Code = Max) |
 | `graph.js` | 그림 설계도(JSON: 식·좌표) → 정확한 그래프·도형 SVG/PNG, 문항 그림 내려받기(pull)·교체(attach). 설계도 형식은 `.claude/skills/math-graph/SKILL.md` |
 
 ## 준비 (최초 1회)
@@ -90,3 +91,15 @@ node graph.js attach --id <문항ID> 그림.json      # 문항의 0번 그림을
 맥의 Claude Code 에게 "문항 <ID> 그래프 다시 그려줘"라고 하면 `math-graph` 스킬대로
 pull → 설계도 작성 → render 로 원본과 비교 → attach 까지 한다.
 `generate.js` 로 만든 그래프·도형 문항은 그림이 자동으로 그려지고 설계도도 함께 저장된다.
+
+## 쌍둥이·유사 변형 문제 (twins.js)
+
+```bash
+node twins.js --src "10월 모의고사"                          # 그 출처 문항 전부, 원본당 쌍둥이 1·변형 1
+node twins.js --src "10월" --nos 1-10,15 --twin 2 --variant 1 --diff harder
+node twins.js --ids 문항ID --twin 10                       # 한 문제로 쌍둥이 10개 (원본당 최대 10개씩)
+node twins.js --ids 문항ID1,문항ID2 --no-verify
+```
+다 만든 뒤 웹: 문제 검색 → [등록 묶음]에서 "… 쌍둥이·변형" → **[📚 원본 + 쌍둥이·변형으로 교재 만들기]**
+(원본 → 쌍둥이 → 변형 순서로 담겨 교재 HTML·한글·학습지로 바로 출력).
+만든 문제는 다른 AI 호출이 정답을 모른 채 그려진 그림을 보고 다시 풀어 확인하고, 틀리면 바로잡거나 버리고 새로 만들어 검산을 통과한 것만 저장한다.
