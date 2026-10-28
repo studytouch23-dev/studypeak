@@ -85,6 +85,40 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   check('설정 창: [원본에 정답·해설이 없으면 먼저 채우기] 기본 켜짐 + 비어 있는 원본 수', r.fillOn && /원본에 정답·해설이 없으면 먼저 채우기/.test(r.modal) && /원본 1문항이 비어 있음/.test(r.modal), r.modal.match(/원본에 정답[^—]*—[^#]*/)?.[0]);
   check('실황 칩: 원본 채움·정답 확인 필요·본문 잘림', r.chips.some(t => /원본 채움 · 정답 5/.test(t)) && r.chips.some(t => /정답 확인 필요/.test(t)) && r.chips.some(t => /본문이 잘림/.test(t)), JSON.stringify(r.chips));
 
+  // 실패에 강하게: 풀이가 길어 잘리면 짧게 한 번 더, 검산이 실패해도 채운 것은 살림, 끝내 못 채우면 이유 표시
+  const f2 = await page.evaluate(async () => {
+    const base = { choices:[], subject:'수학Ⅰ', chapter:'수열', section:'', grade:'', srcType:'기출', srcName:'r', srcYear:'', difficulty:4, tags:[], reviewed:true, batch:'bR', batchName:'r', images:[], answer:'', solution:'' };
+    const src = [ { ...base, id:'LONG', origNo:'11', question:'CASE_LONG 수열 문제' }, { ...base, id:'VFAIL', origNo:'12', question:'CASE_VFAIL 문제' }, { ...base, id:'DEAD', origNo:'13', question:'CASE_DEAD 문제' } ];
+    for(const [k, p] of src.entries()){ p.createdAt = 100+k; p.updatedAt = 100+k; await saveProblem(p); state.problems.push(lightenProblem(p)); }
+    const log = [];
+    const ask = async t => {
+      const c = (t.match(/CASE_\w+/)||[''])[0];
+      if(t.includes('[원본 문제]') || t.includes('원본 문제를 바탕으로')) return { srcIdeas:['a'], items:[{ kind:'쌍둥이', ideas:['a'], question:c+' 쌍둥이', choices:[], answer:'9', solution:'s' }] };
+      if(t.includes('해설(풀이)')){
+        const brief = t.includes('핵심 단계만 간결하게'); log.push(c+(brief?':brief':''));
+        if(c === 'CASE_LONG' && !brief) throw new Error('AI 응답이 길이 제한에 잘렸습니다 — 문항이 매우 길면 나눠서 변환해 보세요.');
+        if(c === 'CASE_DEAD') throw new Error('AI 응답 JSON 해석 실패: x');
+        return { complete:true, answer:'42', solution:c+' 풀이' };
+      }
+      if(t.includes('정답은 일부러 알려주지 않습니다')){
+        if(t.includes('CASE_VFAIL 문제')) throw new Error('API 오류 529: overloaded');
+        return { answer: t.includes('쌍둥이') ? '9' : '42', sameIdeas:true };
+      }
+      return {};
+    };
+    const evs = [];
+    const res = await makeTwins(src.map(p => state.problems.find(x => x.id === p.id)), { twin:1, variant:0, concurrency:1 }, ask, e => { if(e.type === 'fill' && e.state !== 'run') evs.push(e); });
+    const rec = {}; for(const p of src) rec[p.id] = await DB.get('problems', p.id);
+    twinLiveStart([{ origNo:'13', question:'q' }], { twin:1, variant:0 }); twinLiveEvent({ ...evs.find(e => e.state === 'fail'), i:0 }); twinLiveRender();
+    const chip = document.querySelector('#twin-live .tl-chip.warn'); const chipTxt = chip ? chip.textContent : '', chipTitle = chip ? chip.title : '';
+    twinLiveClose();
+    return { log, long: rec.LONG.answer, vfail: [rec.VFAIL.answer, !!rec.VFAIL.verify], dead: rec.DEAD.answer, fillFail: res.fillFail, filled: res.filled, saved: res.saved.length, chipTxt, chipTitle, why: (evs.find(e => e.state === 'fail')||{}).why };
+  });
+  check('풀이가 길어 잘리면 짧게 한 번 더 → 채움', f2.long === '42' && f2.log.includes('CASE_LONG') && f2.log.includes('CASE_LONG:brief'), JSON.stringify(f2.log));
+  check('검산 호출이 실패해도 채운 정답은 저장', f2.vfail[0] === '42' && f2.vfail[1] === false, JSON.stringify(f2.vfail));
+  check('끝내 못 채우면: 원본은 그대로, 쌍둥이는 계속 만듦, 이유 표시', f2.dead === '' && f2.fillFail === 1 && f2.filled === 2 && f2.saved === 3 && f2.why === 'AI 답의 형식이 깨짐', JSON.stringify(f2));
+  check('실황 칩: 취소선 없는 주황 칩 + 이유 + 다시 하는 방법 안내', /못 채움 · AI 답의 형식이 깨짐 \(쌍둥이는 계속\)/.test(f2.chipTxt) && /AI 해설 생성/.test(f2.chipTitle), f2.chipTxt);
+
   check('페이지 오류 없음', errors.length === 0, errors.join(' / '));
   await lab.close();
   console.log(fails ? `\n${fails}개 실패` : '\n전체 통과');

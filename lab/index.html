@@ -215,6 +215,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 .tl-chip.check{background:#eef3fb;border-color:#c9d8f0;color:#2c5fd8}
 .tl-chip.repair{background:#fdf3e1;border-color:#ecd3a5;color:#8a5a12}
 .tl-chip.rejected{background:#fbeceb;border-color:#efc4bf;color:#a5352a;text-decoration:line-through}
+.tl-chip.warn{background:#fff6e5;border-color:#f0d49a;color:#8a5a12}
 .tl-chip.wait{color:#9a958a;border-style:dashed}
 .tl-chip.gen{color:#6b6b6b;animation:tlp 1.2s infinite}
 @keyframes tlp{50%{opacity:.45}}
@@ -6767,12 +6768,22 @@ function stylePresetAdd(kind, inputId, boxId){
 }
 function stylePresetDel(kind, inputId, boxId, k){ const a = stylePresets(kind); a.splice(k, 1); styleSavePresets(kind, a); renderStylePresets(kind, inputId, boxId); }
 /* 원본에 정답·해설이 없으면 먼저 채운다 — 정답을 알면 그 정답에 맞는 풀이만, 모르면 풀고 독립 검산 */
-function srcFillPrompt(src, other){
+/* 원본 채우기 실패 이유를 짧은 말로 */
+function fillFailWhy(m){
+  m = String(m||'');
+  if(/길이 제한|max_tokens/.test(m)) return '풀이가 너무 길어 잘림';
+  if(/JSON|해석/.test(m)) return 'AI 답의 형식이 깨짐';
+  if(/API 오류 5|overloaded|과부하|529|503/.test(m)) return 'AI 서버가 잠시 바쁨';
+  if(/비워서/.test(m)) return 'AI가 답을 비워서 보냄';
+  return m.slice(0, 40);
+}
+function srcFillPrompt(src, other, brief){
   const ch = (src.choices||[]).map(c=>String(c).trim()).filter(Boolean), ans = String(src.answer||'').trim();
   return '다음 한국 고등학교 수학 문제의 '+(ans ? '해설(풀이)' : '정답과 해설(풀이)')+'을 작성하세요. 아래 JSON 하나만 출력합니다. 설명·코드블록 금지.\n'
     +'{"complete":true,"answer":"'+(ans ? ans : ch.length ? '정답 — 반드시 ①~⑤ 기호 중 하나' : '정답 값(단답형)')+'","solution":"단계별 풀이"}\n'
     +'- 모든 수식은 $...$ 안에 LaTeX로 정확히. 문자열 안 줄바꿈은 \\n 으로 이스케이프.\n'
     +'- 풀이는 학생이 따라올 수 있게 단계별로 쓰고, 계산을 다른 방법이나 대입으로 검산한 뒤 확정하세요.\n'
+    +(brief ? '- 풀이는 핵심 단계만 간결하게(15줄 이내). 정답을 반드시 채우세요.\n' : '- 풀이는 길어도 30줄 이내로.\n')
     +(ans ? '- 정답은 '+ans+' 입니다(교재 정답). 이 정답에 이르는 풀이를 쓰고 answer 에는 그대로 '+ans+' 를 쓰세요.\n' : '')
     +(ch.length ? '- 마지막 줄은 "따라서 정답은 ⓝ이다." 형태로 끝내세요.\n' : '')
     +'- 문제 본문이 중간에 잘려 무엇을 구하는지 알 수 없으면 추측하지 말고 complete 를 false, answer 를 "" 로 하세요.\n'
@@ -6809,7 +6820,19 @@ async function makeTwins(sources, opts, ask, onEvent){
         emit({ type:'fill', i, state:'run', needAns, needSol });
         try{
           const fimg = imgs.slice(0, 1);
-          let r = await ask(srcFillPrompt(src), 4000, fimg) || {};
+          // 풀기: 어려운 문제는 풀이가 길어 잘리거나 형식이 깨질 수 있음 → 넉넉한 길이로, 실패하면 한 번 더(짧게 쓰라고)
+          let r = null, firstErr = '';
+          for(let tryN = 0; tryN < 2 && !r; tryN++){
+            try{
+              const x = await ask(srcFillPrompt(src, null, tryN > 0) , 12000, fimg) || {};
+              if(x.complete === false || String(x.answer==null ? '' : x.answer).trim() || String(x.solution||'').trim()) r = x;
+              else firstErr = firstErr || 'AI가 정답·해설을 비워서 보냄';
+            }catch(e){
+              if(/API 키|401|네트워크|API 오류 4|중지됨/.test(e.message||'')) throw e;
+              firstErr = firstErr || (e.message||String(e));
+            }
+          }
+          if(!r){ const err = new Error(firstErr || '알 수 없는 오류'); err.fillFail = true; throw err; }
           const tags = src.tags = (src.tags||[]).slice();
           if(r.complete === false){
             if(!tags.includes('본문확인')) tags.push('본문확인');
@@ -6818,16 +6841,16 @@ async function makeTwins(sources, opts, ask, onEvent){
           } else {
             let ans = needAns ? String(r.answer==null ? '' : r.answer).trim() : String(src.answer).trim();
             let sol = fixAiNewlines(String(r.solution||'')).trim(), verify = null;
-            if(needAns && ans && opts.verify !== false){                 // 정답을 새로 구했으면 다른 호출이 정답 모른 채 다시 풀어 비교
-              const vr = await ask(aiVerifyPrompt(src.question, src.choices), 2000, fimg);
+            if(needAns && ans && opts.verify !== false) try{             // 정답을 새로 구했으면 다른 호출이 정답 모른 채 다시 풀어 비교 (검산이 실패해도 채운 것은 살림)
+              const vr = await ask(aiVerifyPrompt(src.question, src.choices), 3000, fimg);
               let o = verifyOutcome(ans, src.choices, vr);
               if(o === 'mismatch' && vr && vr.wellPosed !== false){      // 다르면 한 번 더 신중히 → 맞으면 그 답으로
-                const r2 = await ask(srcFillPrompt(src, vr), 4000, fimg) || {};
+                const r2 = await ask(srcFillPrompt(src, vr), 12000, fimg) || {};
                 const a2 = String(r2.answer==null ? '' : r2.answer).trim();
                 if(a2 && verifyOutcome(a2, src.choices, vr) !== 'mismatch'){ ans = a2; sol = fixAiNewlines(String(r2.solution||'')).trim() || sol; o = verifyOutcome(a2, src.choices, vr); }
               }
               verify = { result:o, aiAnswer: String(vr && vr.answer || '').slice(0,60), note: String(vr && vr.work || '').slice(0,300), at: Date.now() };
-            }
+            }catch(e){ if(/API 키|401|네트워크|API 오류 4|중지됨/.test(e.message||'')) throw e; verify = null; }
             const got = (needAns && ans) || (needSol && sol);
             if(needAns && ans) src.answer = ans;
             if(needSol && sol) src.solution = sol;
@@ -6837,11 +6860,13 @@ async function makeTwins(sources, opts, ask, onEvent){
               if(verify) src.verify = verify;
               src.updatedAt = Date.now(); await saveProblem(src); out.filled++;
             }
-            emit({ type:'fill', i, state: !got ? 'fail' : (verify && verify.result === 'mismatch') ? 'check' : 'done', answer: src.answer, verify: verify && verify.result, why: got ? '' : 'AI가 정답·해설을 내놓지 않음' });
+            if(!got) out.fillFail = (out.fillFail||0) + 1;
+            emit({ type:'fill', i, state: !got ? 'fail' : (verify && verify.result === 'mismatch') ? 'check' : 'done', answer: src.answer, verify: verify && verify.result, why: got ? '' : 'AI가 정답·해설을 비워서 보냄' });
           }
         }catch(e){
           if(/API 키|401|네트워크|API 오류 4|중지됨/.test(e.message||'')) throw e;
-          emit({ type:'fill', i, state:'fail', why: e.message||String(e) });
+          out.fillFail = (out.fillFail||0) + 1;
+          emit({ type:'fill', i, state:'fail', why: fillFailWhy(e.message||String(e)) });
         }
       }
       const need = { 쌍둥이: nTwin, 변형: nVar }, made = [], seen = new Set([twinNorm(src.question)]);
@@ -7072,7 +7097,7 @@ function twinFillChip(f){ // 원본 정답·해설 채우기 상태
   if(f.state === 'done') return `<span class="tl-chip saved" title="원본에 정답·해설을 채웠습니다 (#AI해설)">📝 원본 채움${f.answer ? ' · 정답 '+esc(String(f.answer).slice(0, 16)) : ''}</span>`;
   if(f.state === 'check') return `<span class="tl-chip repair" title="독립 검산과 정답이 달라 #검산불일치 를 붙였습니다">📝 원본 채움 · ⚠ 정답 확인 필요</span>`;
   if(f.state === 'incomplete') return `<span class="tl-chip rejected" title="본문이 잘려 정답을 정할 수 없습니다 (#본문확인)">📝 원본 본문이 잘림 · 확인 필요</span>`;
-  return `<span class="tl-chip rejected" title="${esc(f.why||'')}">📝 원본 채우기 실패</span>`;
+  return `<span class="tl-chip warn" title="원본 문제의 정답·해설을 AI가 자동으로 채우지 못했습니다 (${esc(f.why||'')}). 쌍둥이·변형은 계속 만듭니다. 나중에 원본 문제 상세 화면의 [🤖 AI 해설 생성]으로 다시 채울 수 있어요.">📝 원본 정답·해설 못 채움${f.why ? ' · '+esc(f.why) : ''} (쌍둥이는 계속)</span>`;
 }
 function twinStop(){ // 중지: 새 AI 호출을 막고 진행 중인 요청도 끊음 → 이미 저장된 문제는 그대로
   if(TWIN_LIVE.done || TWIN_LIVE.stopping) return;
@@ -7105,7 +7130,7 @@ async function startTwinMaker(){
   refreshCounts();
   if(res.saved.length) twinShowGroups(res.batch); else go('db');
   const why = Object.entries(res.reasons).map(([k,v])=>`${k} ${v}`).join(', ');
-  toast((res.stopped ? '⏹ 중지했습니다 — ' : '')+`👯 검산을 통과한 ${res.saved.length}문항을 저장했습니다`+(res.filled?` · 📝 원본 정답·해설 채움 ${res.filled}개${res.fillCheck?`(정답 확인 필요 ${res.fillCheck})`:''}`:'')+(res.incomplete?` · ⚠ 본문이 잘린 원본 ${res.incomplete}개(#본문확인)`:'')+(res.repaired?` · 바로잡아 통과 ${res.repaired}개`:'')+(res.rejected?` · 버리고 다시 만든 것 ${res.rejected}개(${why})`:'')
+  toast((res.stopped ? '⏹ 중지했습니다 — ' : '')+`👯 검산을 통과한 ${res.saved.length}문항을 저장했습니다`+(res.filled?` · 📝 원본 정답·해설 채움 ${res.filled}개${res.fillCheck?`(정답 확인 필요 ${res.fillCheck})`:''}`:'')+(res.incomplete?` · ⚠ 본문이 잘린 원본 ${res.incomplete}개(#본문확인)`:'')+(res.fillFail?` · 원본 정답·해설 못 채움 ${res.fillFail}개(원본 상세의 [🤖 AI 해설 생성]으로 다시)`:'')+(res.repaired?` · 바로잡아 통과 ${res.repaired}개`:'')+(res.rejected?` · 버리고 다시 만든 것 ${res.rejected}개(${why})`:'')
     +(res.short?` · ⚠ 끝내 못 만든 것 ${res.short}개`:'')+(res.warn?` · 수식 확인 ${res.warn}개`:'')
     +(res.fail?` · 실패 ${res.fail}개 (${res.lastErr})`:''));
 }
