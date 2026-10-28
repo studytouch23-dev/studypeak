@@ -9,6 +9,7 @@
 <meta property="og:title" content="스터디피크 수학 랩 — 나만의 수학 문제 DB">
 <meta property="og:description" content="문제 등록 → 태그 보강 → 의미 검색 → 시험지 출력. 내 브라우저에 저장되는 비공개 수학 문제 연구소.">
 <meta property="og:url" content="https://www.studypeak.co.kr/lab/">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/contrib/auto-render.min.js"></script>
@@ -16,97 +17,155 @@
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 :root{
-  --green:#1F3A2E; --green-2:#2c5242; --green-3:#16281f; --gold:#D8B97C; --gold-2:#c4a159;
-  --bg:#f6f7f4; --card:#ffffff; --ink:#22281f; --muted:#6b7266;
-  --line:#e4e2d9; --danger:#b4432f; --ok:#2e7d4f; --sbw:232px;
+  /* 포인트 컬러 = 맑은 초록, 나머지는 차분한 회색 계열 (마이일타식 깔끔한 화면) */
+  --green:#16a34a; --green-2:#15803d; --green-3:#14532d; --green-50:#f0fdf4; --green-100:#dcfce7; --green-200:#bbf7d0;
+  --gold:#16a34a; --gold-2:#15803d;                       /* 예전 금색 강조 → 초록으로 통일 */
+  --bg:#f7f8fa; --card:#ffffff; --ink:#111827; --ink-2:#374151; --muted:#6b7280; --muted-2:#9ca3af;
+  --line:#e5e7eb; --line-2:#f1f2f4; --danger:#dc2626; --ok:#16a34a; --sbw:252px;
+  --r-lg:18px; --r-md:12px; --r-sm:9px;
+  --shadow:0 1px 2px rgba(16,24,40,.04);
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{font-size:16px}
-body{background:var(--bg);color:var(--ink);font-family:"Pretendard","Apple SD Gothic Neo",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;line-height:1.55}
-button{font-family:inherit;cursor:pointer}
-input,select,textarea{font-family:inherit;font-size:.95rem;border:1px solid var(--line);border-radius:8px;padding:.55rem .7rem;background:#fff;color:var(--ink);width:100%}
-input:focus,select:focus,textarea:focus{outline:2px solid rgba(31,58,46,.35);border-color:var(--green)}
+body{background:var(--bg);color:var(--ink);font-family:"Pretendard Variable","Pretendard",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;line-height:1.55;letter-spacing:-.01em;-webkit-font-smoothing:antialiased}
+button{font-family:inherit;cursor:pointer;letter-spacing:inherit}
+input,select,textarea{font-family:inherit;font-size:.95rem;border:1px solid var(--line);border-radius:10px;padding:.6rem .75rem;background:#fff;color:var(--ink);width:100%;letter-spacing:inherit;transition:border-color .15s, box-shadow .15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(22,163,74,.15)}
 textarea{resize:vertical;min-height:90px}
-label{font-size:.82rem;font-weight:700;color:var(--green);display:block;margin-bottom:.3rem}
-.hint{font-size:.78rem;color:var(--muted)}
+label{font-size:.82rem;font-weight:700;color:var(--ink-2);display:block;margin-bottom:.35rem}
+.hint{font-size:.8rem;color:var(--muted)}
+code{background:var(--line-2);border-radius:5px;padding:0 .3em;font-size:.88em}
 
 /* ── 레이아웃: 사이드바 + 메인 ── */
 #layout{display:flex;min-height:100vh}
-#sidebar{width:var(--sbw);flex:0 0 var(--sbw);background:var(--green);color:#e8ede8;display:flex;flex-direction:column;position:fixed;top:0;bottom:0;left:0;z-index:70;overflow-y:auto;transition:transform .2s}
-#sidebar .brand{display:flex;align-items:center;gap:.55rem;font-weight:800;font-size:1.02rem;color:#fff;padding:1rem .9rem .8rem;white-space:nowrap}
-#sidebar .brand .logo{background:var(--gold);color:var(--green);font-weight:900;border-radius:8px;padding:.1rem .45rem}
-#sidebar .brand small{display:block;font-weight:600;color:var(--gold);font-size:.68rem;letter-spacing:.08em}
-#sidebar .group{font-size:.68rem;font-weight:800;letter-spacing:.09em;color:#9eb3a4;padding:1rem .95rem .3rem}
-#sidebar nav button{display:flex;align-items:center;gap:.5rem;width:calc(100% - 1rem);margin:.1rem .5rem;text-align:left;background:transparent;border:0;color:#dfe7df;padding:.5rem .55rem;border-radius:8px;font-size:.9rem;font-weight:600}
-#sidebar nav button:hover{background:rgba(255,255,255,.1)}
-#sidebar nav button.active{background:var(--gold);color:var(--green);font-weight:800}
-#sidebar nav button .badge{margin-left:auto;background:rgba(255,255,255,.92);color:var(--green);border-radius:99px;font-size:.68rem;padding:0 .4rem;font-weight:800}
-#sidebar nav a.navlink{display:flex;align-items:center;gap:.5rem;width:calc(100% - 1rem);margin:.1rem .5rem;text-align:left;background:transparent;border:0;color:#dfe7df;padding:.5rem .55rem;border-radius:8px;font-size:.9rem;font-weight:600;text-decoration:none;box-sizing:border-box}
-#sidebar nav a.navlink:hover{background:rgba(255,255,255,.1)}
-#sidebar nav a.navlink .ext{margin-left:auto;opacity:.5;font-size:.78rem}
-#sidebar .sb-foot{margin-top:auto;padding:1rem .95rem;font-size:.7rem;color:#9eb3a4}
-#sidebar .sb-foot a{color:var(--gold)}
+#sidebar{width:var(--sbw);flex:0 0 var(--sbw);background:#fff;color:var(--ink-2);border-right:1px solid var(--line);display:flex;flex-direction:column;position:fixed;top:0;bottom:0;left:0;z-index:70;overflow-y:auto;transition:transform .2s}
+#sidebar .brand{display:flex;align-items:center;gap:.6rem;font-weight:800;font-size:1.05rem;color:var(--ink);padding:1.15rem 1.2rem 1rem;white-space:nowrap;border-bottom:1px solid var(--line-2)}
+#sidebar .brand .logo{background:var(--green);color:#fff;font-weight:900;border-radius:10px;width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;font-size:.85rem;letter-spacing:0}
+#sidebar .brand small{display:block;font-weight:700;color:var(--green);font-size:.66rem;letter-spacing:.1em}
+#sbnav{padding:.6rem .7rem 1rem}
+#sidebar nav button,#sidebar nav a.navlink{display:flex;align-items:center;gap:.65rem;width:100%;margin:.12rem 0;text-align:left;background:transparent;border:0;color:var(--ink-2);padding:.62rem .75rem;border-radius:10px;font-size:.93rem;font-weight:600;text-decoration:none;box-sizing:border-box}
+#sidebar nav button:hover,#sidebar nav a.navlink:hover{background:#f3f4f6;color:var(--ink)}
+#sidebar nav .ic{width:18px;height:18px;flex:0 0 18px;color:var(--muted)}
+#sidebar nav .ic svg{width:18px;height:18px;display:block}
+#sidebar nav button.active{background:var(--green);color:#fff;font-weight:700}
+#sidebar nav button.active .ic{color:#fff}
+#sidebar nav button .badge{margin-left:auto;background:var(--green-100);color:var(--green-2);border-radius:99px;font-size:.7rem;padding:.05rem .45rem;font-weight:800}
+#sidebar nav button.active .badge{background:rgba(255,255,255,.25);color:#fff}
+#sidebar nav .ng-head .chev{margin-left:auto;transition:transform .15s;color:var(--muted-2);font-size:.8rem}
+#sidebar nav .ng.closed .ng-head .chev{transform:rotate(-90deg)}
+#sidebar nav .ng-items{margin:.1rem 0 .35rem 1.35rem;padding-left:.7rem;border-left:1px solid var(--line)}
+#sidebar nav .ng.closed .ng-items{display:none}
+#sidebar nav .ng-items button{font-size:.9rem;padding:.55rem .75rem;font-weight:500}
+#sidebar nav .ng-items button.active{font-weight:700}
+#sidebar nav .ng-sep{height:1px;background:var(--line-2);margin:.6rem .3rem}
+#sidebar nav a.navlink .ext{margin-left:auto;opacity:.45;font-size:.78rem}
+#sidebar .sb-foot{margin-top:auto;padding:1rem 1.2rem;font-size:.72rem;color:var(--muted-2);border-top:1px solid var(--line-2)}
+#sidebar .sb-foot a{color:var(--green);font-weight:700}
 #mainwrap{flex:1;margin-left:var(--sbw);display:flex;flex-direction:column;min-width:0}
-#topbar{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.94);backdrop-filter:blur(4px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:.8rem;padding:.55rem 1.1rem;flex-wrap:wrap}
-#topbar .vt-top{font-weight:800;color:var(--green);font-size:1rem}
-#hamburger{display:none;background:none;border:1px solid var(--line);border-radius:8px;padding:.25rem .55rem;font-size:1.05rem}
+#topbar{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.96);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:.9rem;padding:.8rem 1.6rem;flex-wrap:wrap;min-height:64px}
+#topbar .vt-top{font-weight:800;color:var(--ink);font-size:1.12rem;display:flex;align-items:center;gap:.6rem}
+#topbar .vt-top .crumb-sep{width:1px;height:16px;background:var(--line);display:inline-block}
+#topbar .vt-top .crumb-a{color:var(--ink)}
+#hamburger{display:none;background:#fff;border:1px solid var(--line);border-radius:10px;padding:.3rem .6rem;font-size:1.05rem}
 .usage{margin-left:auto;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
-.usage .pill{background:#eef2ec;color:var(--green);border:1px solid #d7e0d4;border-radius:99px;font-size:.78rem;font-weight:800;padding:.2rem .7rem}
-.usage .pill.warn{background:#faf0dc;border-color:#e8d4a8;color:#7a5c1e}
-.usage .pill.cartp{background:var(--green);color:#fff;border-color:var(--green);cursor:pointer}
-main{max-width:1240px;width:100%;margin:0 auto;padding:1.2rem 18px 4rem}
+.usage .pill{background:#fff;color:var(--ink-2);border:1px solid var(--line);border-radius:99px;font-size:.84rem;font-weight:700;padding:.42rem .95rem}
+.usage .pill.warn{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
+.usage .pill.cartp{background:var(--green-50);color:var(--green-2);border-color:var(--green-200);cursor:pointer}
+.usage .pill.cartp:hover{background:var(--green-100)}
+main{max-width:1320px;width:100%;margin:0 auto;padding:1.8rem 28px 5rem}
 @media(max-width:900px){
   #sidebar{transform:translateX(-100%)}
-  #sidebar.open{transform:none;box-shadow:4px 0 18px rgba(0,0,0,.3)}
+  #sidebar.open{transform:none;box-shadow:4px 0 24px rgba(0,0,0,.18)}
   #mainwrap{margin-left:0}
   #hamburger{display:block}
+  main{padding:1.2rem 16px 5rem}
+  #topbar{padding:.6rem 16px}
 }
-#sb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:65;display:none}
+#sb-overlay{position:fixed;inset:0;background:rgba(17,24,39,.35);z-index:65;display:none}
 #sb-overlay.show{display:block}
 
 .view{display:none}
 .view.active{display:block}
-h2.vt{font-size:1.3rem;color:var(--green);margin-bottom:.2rem}
-p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1.1rem;margin-bottom:1rem}
-.card h3{color:var(--green);font-size:1.02rem;margin-bottom:.7rem}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
-.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
-.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:.8rem}
+h2.vt{font-size:1.65rem;font-weight:800;color:var(--ink);margin-bottom:.35rem;letter-spacing:-.02em}
+p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:1.35rem 1.4rem;margin-bottom:1.1rem;box-shadow:var(--shadow)}
+.card h3{color:var(--ink);font-size:1.05rem;font-weight:800;margin-bottom:.8rem}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem}
 @media(max-width:760px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
 .row{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
 .spread{display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap}
-.field{margin-bottom:.8rem}
+.field{margin-bottom:.9rem}
 
-.btn{border:0;border-radius:9px;padding:.55rem 1rem;font-weight:700;font-size:.9rem;background:var(--green);color:#fff}
+.btn{border:1px solid transparent;border-radius:10px;padding:.6rem 1.05rem;font-weight:700;font-size:.9rem;background:var(--green);color:#fff;transition:background .15s,border-color .15s,color .15s;display:inline-flex;align-items:center;gap:.35rem;justify-content:center}
 .btn:hover{background:var(--green-2)}
-.btn.gold{background:var(--gold);color:var(--green)}
-.btn.gold:hover{background:var(--gold-2)}
-.btn.ghost{background:#fff;color:var(--green);border:1px solid var(--line)}
-.btn.ghost:hover{border-color:var(--green)}
-.btn.danger{background:#fff;color:var(--danger);border:1px solid #e3c2ba}
-.btn.danger:hover{background:#fbf0ee}
-.btn.sm{padding:.3rem .6rem;font-size:.8rem;border-radius:7px}
+.btn.gold{background:var(--green);color:#fff}
+.btn.gold:hover{background:var(--green-2)}
+.btn.ghost{background:#fff;color:var(--ink-2);border:1px solid var(--line)}
+.btn.ghost:hover{border-color:var(--green);color:var(--green-2);background:var(--green-50)}
+.btn.danger{background:#fff;color:var(--danger);border:1px solid #fecaca}
+.btn.danger:hover{background:#fef2f2}
+.btn.sm{padding:.36rem .7rem;font-size:.8rem;border-radius:8px}
 .btn[disabled]{opacity:.45;cursor:not-allowed}
 
-.tag{display:inline-flex;align-items:center;gap:.25rem;background:#eef2ec;color:var(--green);border-radius:99px;padding:.12rem .6rem;font-size:.76rem;font-weight:700;margin:.12rem .18rem .12rem 0}
-.tag.src{background:#f4ecdc;color:#7a5c1e}
-.tag.diff{background:#e8eef9;color:#2c4a7c}
-.tag.user{background:#efe8f6;color:#5b3c82}
+.tag{display:inline-flex;align-items:center;gap:.25rem;background:#f3f4f6;color:var(--ink-2);border-radius:8px;padding:.18rem .6rem;font-size:.76rem;font-weight:600;margin:.12rem .18rem .12rem 0}
+.tag.src{background:#fff7ed;color:#9a3412}
+.tag.diff{background:#eff6ff;color:#1d4ed8}
+.tag.user{background:#f5f3ff;color:#6d28d9}
 
 /* dashboard */
-.stat{display:flex;flex-direction:column;gap:.15rem;padding:1rem;border:1px solid var(--line);border-radius:12px;background:#fff}
-.stat b{font-size:1.7rem;color:var(--green)}
-.stat span{font-size:.8rem;color:var(--muted)}
-.step{border:1px solid var(--line);border-radius:12px;padding:1rem;background:#fff}
-.step .no{color:var(--gold-2);font-weight:900;font-size:.78rem;letter-spacing:.06em}
-.step h4{color:var(--green);margin:.2rem 0 .3rem}
-.step p{font-size:.84rem;color:var(--muted)}
-
+.stat{display:flex;flex-direction:column;gap:.15rem;padding:1.15rem 1.25rem;border:1px solid var(--line);border-radius:var(--r-lg);background:#fff;box-shadow:var(--shadow)}
+.stat b{font-size:1.75rem;font-weight:800;color:var(--ink);letter-spacing:-.02em}
+.stat span{font-size:.82rem;color:var(--muted)}
+.stat.si{display:grid;grid-template-columns:52px 1fr;column-gap:1rem;align-items:center}
+.stat.si .sic{grid-row:1 / span 3;width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:var(--green-50);color:var(--green)}
+.stat.si .sic svg{width:24px;height:24px}
+.stat.si .sic.b{background:#eef2ff;color:#4f46e5}.stat.si .sic.y{background:#fffbeb;color:#d97706}.stat.si .sic.p{background:#f5f3ff;color:#7c3aed}
+.stat.si .sl{font-size:.8rem;color:var(--muted);font-weight:600}
+.stat.si b{line-height:1.2}
+.stat.si .ss{font-size:.78rem;color:var(--muted-2)}
+.step{border:1px solid var(--line);border-radius:var(--r-lg);padding:1.2rem 1.25rem;background:#fff;box-shadow:var(--shadow)}
+.step .no{color:var(--green);font-weight:800;font-size:.76rem;letter-spacing:.08em}
+.step h4{color:var(--ink);font-size:1.05rem;margin:.3rem 0 .35rem}
+.step p{font-size:.86rem;color:var(--muted)}
+/* 하위 탭 (태그 관리: 단원태그 · 출처태그 · 나만의태그) */
+.subtabs{display:inline-flex;gap:.25rem;background:#f3f4f6;border-radius:12px;padding:.25rem;margin-bottom:1.2rem}
+.subtabs button{border:0;background:transparent;border-radius:9px;padding:.5rem 1.05rem;font-size:.9rem;font-weight:700;color:var(--muted)}
+.subtabs button.on{background:#fff;color:var(--green-2);box-shadow:0 1px 3px rgba(16,24,40,.1)}
+.vhead{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem}
+.vhead > div{flex:1;min-width:0}
+.vhead > .btn{flex:0 0 auto;margin-top:.4rem}
+@media(max-width:760px){.vhead{flex-wrap:wrap}
+  .grid4{grid-template-columns:1fr 1fr}
+  .stat.si{grid-template-columns:1fr;padding:.9rem}
+  .stat.si .sic{grid-row:auto;width:38px;height:38px;border-radius:11px;margin-bottom:.4rem}
+  .stat.si .sic svg{width:19px;height:19px}
+  h2.vt{font-size:1.35rem}}
+/* 표 */
+.tbl{width:100%;border-collapse:collapse;font-size:.9rem}
+.tbl th{background:#f9fafb;color:var(--muted);font-weight:700;font-size:.8rem;text-align:left;padding:.75rem 1rem;border-bottom:1px solid var(--line)}
+.tbl td{padding:.85rem 1rem;border-bottom:1px solid var(--line-2);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.pillc{display:inline-flex;align-items:center;border-radius:8px;padding:.2rem .6rem;font-size:.78rem;font-weight:700;background:#f3f4f6;color:var(--ink-2);margin:.12rem .15rem .12rem 0}
+.pillc.g{background:var(--green-50);color:var(--green-2)}
+.pillc.b{background:#eef2ff;color:#4338ca}
+.pillc.clk{cursor:pointer}.pillc.clk:hover{outline:1px solid var(--green)}
+.th-run{border:1px solid var(--line);border-radius:16px;padding:1rem 1.1rem;margin-bottom:.75rem;background:#fff;display:grid;grid-template-columns:auto 1fr;gap:.2rem .9rem}
+.th-run.sel{border-color:var(--green);background:#f6fef9}
+.th-run .th-ck{grid-row:1 / span 4;padding-top:.15rem}
+.th-run .th-ck input{width:18px;height:18px;accent-color:var(--green)}
+.th-run .th-when{font-size:.8rem;color:var(--muted);font-weight:600}
+.th-run .th-name{font-weight:800;font-size:1rem;color:var(--ink)}
+.th-run .th-meta{font-size:.8rem;color:var(--muted)}
+.th-run .th-acts{display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.45rem}
+.th-bar{position:sticky;bottom:12px;z-index:40;background:#111827;color:#fff;border-radius:14px;padding:.7rem 1rem;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;box-shadow:0 10px 30px rgba(0,0,0,.2)}
+.th-bar .btn.ghost{background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.25)}
+.tgi-chip{cursor:pointer}
 /* 태그 관리 */
 .subj-chip{display:inline-flex;align-items:center;gap:.4rem;border:1.5px solid var(--line);background:#fff;border-radius:99px;padding:.3rem .8rem;font-size:.85rem;font-weight:700;color:var(--ink);margin:.2rem .25rem .2rem 0;cursor:pointer}
 .subj-chip:hover{border-color:var(--green)}
-.subj-chip.sel{border-color:var(--green);background:#eef2ec;color:var(--green)}
+.subj-chip.sel{border-color:var(--green);background:#f0fdf4;color:var(--green)}
 .subj-chip .mini{background:none;border:0;font-size:.8rem;opacity:.55;padding:0 .1rem}
 .subj-chip .mini:hover{opacity:1}
 .cascade{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
@@ -115,10 +174,10 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 .col-box .col-h{display:flex;justify-content:space-between;align-items:center;padding:.6rem .8rem;border-bottom:1px solid var(--line);font-weight:800;color:var(--green);font-size:.88rem}
 .col-box .col-h .cnt{color:var(--muted);font-weight:700;font-size:.78rem}
 .col-list{flex:1;overflow:auto;max-height:420px}
-.col-item{display:flex;align-items:center;gap:.4rem;padding:.5rem .8rem;border-bottom:1px solid #f0efe8;cursor:pointer;font-size:.9rem}
-.col-item:hover{background:#f7f8f4}
-.col-item.sel{background:#eef2ec;font-weight:800;color:var(--green)}
-.col-item .n{margin-left:auto;font-size:.72rem;color:var(--muted);background:#f1f1ea;border-radius:99px;padding:0 .45rem}
+.col-item{display:flex;align-items:center;gap:.4rem;padding:.5rem .8rem;border-bottom:1px solid #f1f2f4;cursor:pointer;font-size:.9rem}
+.col-item:hover{background:#f9fafb}
+.col-item.sel{background:#f0fdf4;font-weight:800;color:var(--green)}
+.col-item .n{margin-left:auto;font-size:.72rem;color:var(--muted);background:#f3f4f6;border-radius:99px;padding:0 .45rem}
 .col-item .mini{background:none;border:0;font-size:.78rem;opacity:.5;padding:0 .1rem}
 .col-item .mini:hover{opacity:1}
 .col-add{border-top:1px solid var(--line);padding:.55rem}
@@ -137,17 +196,17 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 .tagtree .tabs3 button{flex:1;border:1px solid var(--line);background:#fff;border-radius:8px;padding:.35rem 0;font-size:.78rem;white-space:nowrap;font-weight:700;color:var(--muted)}
 .tagtree .tabs3 button.active{background:var(--green);border-color:var(--green);color:#fff}
 .titem{display:flex;align-items:center;gap:.4rem;padding:.38rem .5rem;border-radius:7px;font-size:.85rem;cursor:pointer}
-.titem:hover{background:#f3f5f0}
-.titem.sel{background:#eef2ec;color:var(--green);font-weight:800}
+.titem:hover{background:#f3f4f6}
+.titem.sel{background:#f0fdf4;color:var(--green);font-weight:800}
 .titem.sub{margin-left:.9rem;font-size:.8rem}
-.titem .n{margin-left:auto;font-size:.7rem;color:var(--muted);background:#f1f1ea;border-radius:99px;padding:0 .4rem}
+.titem .n{margin-left:auto;font-size:.7rem;color:var(--muted);background:#f3f4f6;border-radius:99px;padding:0 .4rem}
 #tree-body{max-height:480px;overflow:auto;margin-bottom:.5rem}
 .mode-tgl{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
 .mode-tgl button{border:0;background:#fff;padding:.4rem .75rem;font-size:.84rem;font-weight:700;color:var(--muted)}
 .mode-tgl button.active{background:var(--green);color:#fff}
 .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(265px,1fr));gap:.7rem;align-items:stretch}
 .pcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:.7rem .8rem;display:flex;flex-direction:column;gap:.4rem}
-.pcard.selected{outline:2px solid var(--gold);background:#fffdf6}
+.pcard.selected{outline:2px solid var(--gold);background:#f0fdf4}
 .pc-top{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
 .pc-top input{width:auto;transform:scale(1.15)}
 .pc-no{color:var(--muted);font-size:.78rem}
@@ -155,21 +214,21 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 .pc-text:hover{color:var(--green)}
 .pcard .pimgs{cursor:pointer}
 .pcard .pimgs img{max-height:120px;max-width:100%}
-.pc-tags{border-top:1px solid #f0efe8;padding-top:.4rem;margin-top:auto}
+.pc-tags{border-top:1px solid #f1f2f4;padding-top:.4rem;margin-top:auto}
 .trow{display:flex;gap:.35rem;align-items:flex-start;margin-bottom:.15rem}
 .trow .tl{flex:0 0 2.4rem;font-size:.7rem;font-weight:800;color:var(--muted);padding-top:.2rem}
-.pc-date{font-size:.7rem;color:#b2b5ac;text-align:right}
+.pc-date{font-size:.7rem;color:#9ca3af;text-align:right}
 #pager{display:flex;gap:.3rem;justify-content:center;align-items:center;margin-top:1rem;flex-wrap:wrap}
-.preset-chip{display:inline-flex;align-items:center;gap:.3rem;background:#eef2ec;border:1px solid #d7e0d4;border-radius:99px;padding:.15rem .6rem;font-size:.78rem;font-weight:700;color:var(--green);cursor:pointer;margin:.1rem .2rem .1rem 0}
+.preset-chip{display:inline-flex;align-items:center;gap:.3rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:99px;padding:.15rem .6rem;font-size:.78rem;font-weight:700;color:var(--green);cursor:pointer;margin:.1rem .2rem .1rem 0}
 .preset-chip .x{opacity:.5}.preset-chip .x:hover{opacity:1}
 /* PDF 영역 인식 에디터 */
 #pdfed-bg .modal{width:96vw}
 .pdfed-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.5rem;max-height:60vh;overflow:auto}
 .pdfed-thumb{border:2px solid var(--line);border-radius:8px;padding:.25rem;cursor:pointer;text-align:center;background:#fff;position:relative}
 .pdfed-thumb img{width:100%;display:block;border-radius:4px}
-.pdfed-thumb.sel{border-color:var(--green);background:#eef2ec}
+.pdfed-thumb.sel{border-color:var(--green);background:#f0fdf4}
 .pdfed-thumb .pno{font-size:.72rem;color:var(--muted);font-weight:700}
-.pdfed-thumb .badge-ans{position:absolute;top:4px;right:4px;background:#faf0dc;color:#7a5c1e;font-size:.64rem;font-weight:800;border-radius:6px;padding:0 .3rem}
+.pdfed-thumb .badge-ans{position:absolute;top:4px;right:4px;background:#fff7ed;color:#7a5c1e;font-size:.64rem;font-weight:800;border-radius:6px;padding:0 .3rem}
 .pdfed-thumb .pmode{position:absolute;top:4px;left:4px;font-size:.64rem;font-weight:800;border-radius:6px;padding:0 .35rem;background:var(--green);color:#fff}
 .pdfed-thumb.m-sol{border-color:var(--gold-2)} .pdfed-thumb.m-sol .pmode{background:var(--gold-2)}
 .pdfed-thumb.m-skip{opacity:.45} .pdfed-thumb.m-skip .pmode{background:#999}
@@ -181,11 +240,11 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 .reg-box.sel .rno{background:var(--gold-2)}
 .reg-ghost{position:absolute;border:2px dashed #2c5fd8;background:rgba(44,95,216,.08);pointer-events:none}
 .regrow{display:flex;align-items:center;gap:.3rem;border:1px solid var(--line);border-radius:8px;padding:.3rem .45rem;margin-bottom:.3rem;font-size:.8rem;cursor:pointer}
-.regrow.sel{border-color:var(--gold-2);background:#fffdf6}
+.regrow.sel{border-color:var(--gold-2);background:#f0fdf4}
 .regrow input{width:52px;padding:.15rem .3rem;font-size:.78rem}
 .plist{display:flex;flex-direction:column;gap:.7rem}
 .pitem{background:#fff;border:1px solid var(--line);border-radius:12px;padding:.9rem 1rem;display:flex;gap:.8rem}
-.pitem.selected{outline:2px solid var(--gold);background:#fffdf6}
+.pitem.selected{outline:2px solid var(--gold);background:#f0fdf4}
 .pitem .chk{flex:0 0 auto;padding-top:.2rem}
 .pitem .body{flex:1;min-width:0}
 .ptext{font-size:.95rem;white-space:pre-wrap;word-break:break-word;max-height:7.5em;overflow:hidden;cursor:pointer}
@@ -198,17 +257,17 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 /* 👯 쌍둥이·변형 실황 패널 */
 #twin-live{position:fixed;right:16px;bottom:16px;z-index:70;width:min(460px,calc(100vw - 32px));max-height:72vh;display:none;flex-direction:column;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 32px rgba(0,0,0,.22);overflow:hidden}
 #twin-live.show{display:flex}
-#twin-live .tl-head{background:#23321f;color:#fff;padding:.6rem .8rem}
+#twin-live .tl-head{background:#111827;color:#fff;padding:.6rem .8rem}
 #twin-live .tl-head b{font-size:.95rem}
 #twin-live .tl-bar{height:6px;background:rgba(255,255,255,.18);border-radius:99px;margin:.45rem 0 .3rem;overflow:hidden}
-#twin-live .tl-bar i{display:block;height:100%;background:var(--gold-2,#d8b97c);transition:width .4s}
+#twin-live .tl-bar i{display:block;height:100%;background:var(--gold-2,#16a34a);transition:width .4s}
 #twin-live .tl-stats{font-size:.76rem;opacity:.92;display:flex;gap:.6rem;flex-wrap:wrap}
 #twin-live .tl-body{overflow:auto;padding:.4rem .6rem .6rem}
 #twin-live.min .tl-body,#twin-live.min .tl-foot{display:none}
-.tl-src{border:1px solid var(--line);border-radius:10px;padding:.45rem .55rem;margin:.35rem 0;background:#fbfbf8}
-.tl-src.run{border-color:#b9d3c2;background:#f4faf6}
+.tl-src{border:1px solid var(--line);border-radius:10px;padding:.45rem .55rem;margin:.35rem 0;background:#fafafa}
+.tl-src.run{border-color:#b9d3c2;background:#f0fdf4}
 .tl-src .tl-t{font-size:.8rem;display:flex;gap:.4rem;align-items:center}
-.tl-src .tl-t span.q{color:#7a756b;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex:1}
+.tl-src .tl-t span.q{color:#6b7280;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex:1}
 .tl-chips{display:flex;flex-wrap:wrap;gap:.25rem;margin-top:.3rem}
 .tl-chip{font-size:.72rem;border-radius:99px;padding:.08rem .5rem;border:1px solid var(--line);background:#fff;cursor:default;white-space:nowrap}
 .tl-chip.saved{background:#e4f2e8;border-color:#b9d3c2;color:#1f6b3a;cursor:pointer}
@@ -216,29 +275,29 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 .tl-chip.repair{background:#fdf3e1;border-color:#ecd3a5;color:#8a5a12}
 .tl-chip.rejected{background:#fbeceb;border-color:#efc4bf;color:#a5352a;text-decoration:line-through}
 .tl-chip.warn{background:#fff6e5;border-color:#f0d49a;color:#8a5a12}
-.tl-chip.wait{color:#9a958a;border-style:dashed}
+.tl-chip.wait{color:#9ca3af;border-style:dashed}
 .tl-chip.gen{color:#6b6b6b;animation:tlp 1.2s infinite}
 @keyframes tlp{50%{opacity:.45}}
 #twin-live .tl-foot{border-top:1px solid var(--line);padding:.5rem .7rem;display:flex;gap:.4rem;flex-wrap:wrap}
 /* 👯 원본별 묶어 보기 */
-.tgroup{border:1px solid var(--line);border-radius:14px;padding:.6rem .7rem .7rem;margin-bottom:.8rem;background:#fcfcf9}
+.tgroup{border:1px solid var(--line);border-radius:14px;padding:.6rem .7rem .7rem;margin-bottom:.8rem;background:#fafafa}
 .tg-head{display:flex;align-items:center;gap:.5rem;font-size:.85rem;margin-bottom:.45rem;flex-wrap:wrap}
-.tg-head .tg-no{background:#23321f;color:#fff;border-radius:8px;padding:.05rem .5rem;font-weight:800}
+.tg-head .tg-no{background:#111827;color:#fff;border-radius:8px;padding:.05rem .5rem;font-weight:800}
 .tg-row{display:flex;gap:.6rem;overflow-x:auto;padding:.75rem .15rem .35rem;align-items:stretch}
 .tg-row .pcard{flex:0 0 280px;margin:0}
-.tg-row .pcard.tg-orig{border:2px solid #23321f}
-.tg-arrow{flex:0 0 auto;align-self:center;font-size:1.4rem;color:#9bb8a6}
+.tg-row .pcard.tg-orig{border:2px solid #111827}
+.tg-arrow{flex:0 0 auto;align-self:center;font-size:1.4rem;color:#86efac}
 .pcard{position:relative}
 .tg-sel{font-size:.75rem;font-weight:800;color:#9a9a90;border:1px solid var(--line);border-radius:99px;padding:.05rem .5rem}
-.tg-sel.on{color:#23321f;background:#f1ead8;border-color:#d8b97c}
+.tg-sel.on{color:#111827;background:#dcfce7;border-color:#16a34a}
 .tg-btns{display:flex;gap:.3rem;flex-wrap:wrap}
 .tg-allbar{display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;padding:.5rem .7rem;margin-bottom:.7rem;background:#f4f6fb;border-radius:12px;font-size:.85rem}
-#twin-live .tl-btn{background:#fff;color:#23321f;border:0;border-radius:8px;padding:.28rem .65rem;font-size:.8rem;font-weight:800;cursor:pointer;white-space:nowrap}
-#twin-live .tl-btn:hover{background:#f1ead8}
+#twin-live .tl-btn{background:#fff;color:#111827;border:0;border-radius:8px;padding:.28rem .65rem;font-size:.8rem;font-weight:800;cursor:pointer;white-space:nowrap}
+#twin-live .tl-btn:hover{background:#dcfce7}
 #twin-live .tl-btn.stop{background:#d64545;color:#fff}
 #twin-live .tl-btn.stop:hover{background:#b93636}
 #twin-live .tl-btn:disabled{opacity:.6;cursor:default}
-.dprev{border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;margin-bottom:.7rem;background:#fffdf7}
+.dprev{border:1px solid var(--line);border-radius:12px;padding:.55rem .8rem;margin-bottom:.8rem;background:#fafafa}
 .dprev summary{cursor:pointer;font-size:.8rem;font-weight:700;color:var(--muted)}
 .dprev #e-prev{padding:.5rem .1rem .2rem;line-height:1.75}
 .dprev #e-prev .ch{display:flex;flex-wrap:wrap;gap:.3rem 1.4rem;margin-top:.35rem}
@@ -250,9 +309,9 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 @media(max-width:980px){.db-layout > .tagtree{order:2}}
 .pcard .twin-badge{position:absolute;top:-9px;left:12px;font-size:.68rem;font-weight:800;border-radius:99px;padding:.05rem .5rem;background:#2c5fd8;color:#fff}
 .pcard .twin-badge.var{background:#8a4fd8}
-.pcard .twin-badge.orig{background:#23321f}
+.pcard .twin-badge.orig{background:#111827}
 .figcmp figure{margin:0;text-align:center}
-.figcmp figcaption{font-size:.72rem;color:#8a857a}
+.figcmp figcaption{font-size:.72rem;color:#9ca3af}
 .pimgs{display:flex;gap:.4rem;margin-top:.4rem;flex-wrap:wrap}
 .pimgs img{max-height:90px;border:1px solid var(--line);border-radius:6px}
 .pmeta{margin-top:.45rem}
@@ -261,12 +320,12 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 .empty{padding:2.2rem;text-align:center;color:var(--muted);border:1.5px dashed var(--line);border-radius:12px;background:#fff}
 
 /* suggestions */
-.sugg{background:#f4f7f2;border:1px solid #dbe5d6;border-radius:10px;padding:.7rem .8rem;margin:.6rem 0}
+.sugg{background:#f0fdf4;border:1px solid #dcfce7;border-radius:10px;padding:.7rem .8rem;margin:.6rem 0}
 .sugg b{color:var(--green);font-size:.82rem}
-.sugg .tag{cursor:pointer;border:1px dashed #9db39a;background:#fff}
-.sugg .tag:hover{background:#eef2ec}
-.dropzone{border:2px dashed #b9c4b4;border-radius:12px;background:#fbfcf9;padding:1.4rem;text-align:center;cursor:pointer;margin-bottom:.6rem;color:var(--green)}
-.dropzone:hover,.dropzone.over{border-color:var(--green);background:#f1f5ee}
+.sugg .tag{cursor:pointer;border:1px dashed #86efac;background:#fff}
+.sugg .tag:hover{background:#f0fdf4}
+.dropzone{border:2px dashed #d1d5db;border-radius:12px;background:#fafafa;padding:1.4rem;text-align:center;cursor:pointer;margin-bottom:.6rem;color:var(--green)}
+.dropzone:hover,.dropzone.over{border-color:var(--green);background:#f0fdf4}
 
 /* 담기 바 */
 #cartbar{position:fixed;bottom:0;left:var(--sbw);right:0;background:var(--green);color:#fff;z-index:60;display:none;box-shadow:0 -3px 12px rgba(0,0,0,.2)}
@@ -313,6 +372,54 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
   .pr-ans h2{font-size:13pt;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:10px}
   .pr-ans .arow{margin-bottom:10px;break-inside:avoid}
 }
+/* ═══ 새 디자인 덧칠 (컴포넌트) ═══ */
+.pcard{border-radius:14px;border-color:var(--line);padding:.85rem .95rem;transition:box-shadow .15s,border-color .15s}
+.pcard:hover{box-shadow:0 4px 14px rgba(16,24,40,.06);border-color:#d1d5db}
+.pcard.selected{outline:2px solid var(--green);outline-offset:-1px;background:#f6fef9}
+.pc-text:hover{color:var(--green-2)}
+.titem{border-radius:9px;padding:.45rem .6rem}
+.titem.sel{background:var(--green-50);color:var(--green-2)}
+.tagtree .tabs3 button{border-radius:9px;padding:.42rem 0}
+.tagtree .tabs3 button.active{background:var(--green);border-color:var(--green)}
+.mode-tgl{border-radius:11px;background:#f3f4f6;border:0;padding:.2rem;gap:.15rem}
+.mode-tgl button{background:transparent;border-radius:9px}
+.mode-tgl button.active{background:#fff;color:var(--green-2);box-shadow:0 1px 3px rgba(16,24,40,.1)}
+.col-box{border-radius:14px}
+.col-box .col-h{color:var(--ink);background:#f9fafb;border-radius:14px 14px 0 0}
+.col-item.sel{background:var(--green-50);color:var(--green-2)}
+.subj-chip{border-radius:12px;padding:.42rem .9rem}
+.subj-chip.sel{border-color:var(--green);background:var(--green-50);color:var(--green-2)}
+.dropzone{border-color:#d1d5db;border-radius:16px;background:#fafafa;color:var(--ink-2);padding:1.8rem}
+.dropzone:hover,.dropzone.over{border-color:var(--green);background:var(--green-50)}
+.modal{border-radius:20px;padding:1.6rem}
+.modal h3{color:var(--ink)}
+.modal-bg{background:rgba(17,24,39,.45)}
+#toast{background:#111827;border-radius:12px}
+#cartbar{background:#111827}
+.sheet-item{border-radius:12px}
+.sheet-item .num{color:var(--green)}
+.empty{border-radius:16px}
+.preset-chip{background:var(--green-50);border-color:var(--green-200);color:var(--green-2)}
+.pdfed-thumb.sel{border-color:var(--green);background:var(--green-50)}
+.pdfed-thumb .pmode{background:var(--green)}
+.tgroup{border-radius:18px;background:#fff}
+.tg-head .tg-no{background:var(--green);border-radius:8px}
+.tg-row .pcard.tg-orig{border:2px solid var(--green)}
+.pcard .twin-badge.orig{background:var(--green)}
+.pcard .twin-badge{background:#4f46e5}
+.tg-sel.on{background:var(--green-50);border-color:var(--green-200);color:var(--green-2)}
+.tg-allbar{background:var(--green-50);border:1px solid var(--green-100)}
+#twin-live{border-radius:18px;box-shadow:0 18px 40px rgba(16,24,40,.18)}
+#twin-live .tl-head{background:linear-gradient(135deg,#15803d,#16a34a)}
+#twin-live .tl-bar i{background:#fff}
+#twin-live .tl-btn{color:var(--green-3)}
+#twin-live .tl-btn:hover{background:var(--green-50)}
+.tl-src.run{border-color:var(--green-200);background:var(--green-50)}
+.dash-todo button{border-radius:10px}
+.dash-todo button:hover{border-color:var(--green);background:var(--green-50)}
+.sugg{background:var(--green-50);border-color:var(--green-100)}
+.sugg b{color:var(--green-2)}
+
 </style>
 </head>
 <body>
@@ -324,21 +431,29 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 <aside id="sidebar">
   <div class="brand"><span class="logo">SP</span><span>스터디피크 수학 랩<small>MY MATH LAB</small></span></div>
   <nav id="sbnav">
-    <div class="group">마이 랩</div>
-    <button data-view="dashboard" class="active">📊 대시보드</button>
-    <div class="group">태그 관리</div>
-    <button data-view="tags">🏷 단원태그</button>
-    <div class="group">문제 DB 관리</div>
-    <button data-view="add">📝 문제 등록</button>
-    <button data-view="gen">🤖 AI 문제 생성</button>
-    <button data-view="db">🔍 문제 검색·작업 <span class="badge" id="nav-count">0</span></button>
-    <button data-view="sheet">📄 학습지 생성·관리 <span class="badge" id="nav-cart">0</span></button>
-    <div class="group">데이터</div>
-    <button data-view="data">💾 백업·데이터</button>
-    <div class="group">바로가기</div>
-    <a class="navlink" href="https://student.studypeak.io" target="_blank" rel="noopener">🎓 학생 페이지 <span class="ext">↗</span></a>
-    <a class="navlink" href="https://teacher.studypeak.io" target="_blank" rel="noopener">🧑‍🏫 선생님 페이지 <span class="ext">↗</span></a>
-    <a class="navlink" href="https://admin.studypeak.io" target="_blank" rel="noopener">⚙️ 관리자 페이지 <span class="ext">↗</span></a>
+    <button data-view="dashboard" class="active"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>대시보드</button>
+    <div class="ng" data-ng="tag"><button class="ng-head" type="button"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg></span>태그 관리<span class="chev">▾</span></button>
+      <div class="ng-items">
+        <button data-view="tags">단원태그</button>
+        <button data-view="srctags">출처태그</button>
+        <button data-view="mytags">나만의태그</button>
+      </div></div>
+    <div class="ng" data-ng="db"><button class="ng-head" type="button"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5M8 19V5M12 19 16 5l4 14"/></svg></span>문제 DB 관리<span class="chev">▾</span></button>
+      <div class="ng-items">
+        <button data-view="add">문제 등록</button>
+        <button data-view="db">문제 검색·작업 <span class="badge" id="nav-count">0</span></button>
+        <button data-view="sheet">학습지 생성·관리 <span class="badge" id="nav-cart">0</span></button>
+      </div></div>
+    <div class="ng" data-ng="ai"><button class="ng-head" type="button"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9.5 17h5"/></svg></span>AI 작업<span class="chev">▾</span></button>
+      <div class="ng-items">
+        <button data-view="gen">AI 문제 생성</button>
+        <button data-view="twinhist">변형문항 생성 내역</button>
+      </div></div>
+    <button data-view="data"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg></span>백업·데이터</button>
+    <div class="ng-sep"></div>
+    <a class="navlink" href="https://student.studypeak.io" target="_blank" rel="noopener"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></span>학생 페이지 <span class="ext">↗</span></a>
+    <a class="navlink" href="https://teacher.studypeak.io" target="_blank" rel="noopener"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></span>선생님 페이지 <span class="ext">↗</span></a>
+    <a class="navlink" href="https://admin.studypeak.io" target="_blank" rel="noopener"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></span>관리자 페이지 <span class="ext">↗</span></a>
   </nav>
   <div class="sb-foot">공부는 데이터다<br><a href="/">studypeak.co.kr</a><br>데이터는 이 브라우저에만 저장됩니다.</div>
 </aside>
@@ -361,10 +476,10 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
   <p class="vd">쌓여 있는 수학 자료를 문제 단위 DB로 만들고, 필요한 문제만 골라 시험지로 다시 출력하세요. 모든 데이터는 이 브라우저에만 저장되는 <b>비공개 개인 DB</b>입니다.</p>
 
   <div class="grid4" style="margin-bottom:1rem">
-    <div class="stat"><b id="st-problems">0</b><span>등록된 문제</span></div>
-    <div class="stat"><b id="st-units">0</b><span>사용 중인 단원</span></div>
-    <div class="stat"><b id="st-tags">0</b><span>나만의 태그</span></div>
-    <div class="stat"><b id="st-sheets">0</b><span>만든 학습지</span></div>
+    <div class="stat si"><span class="sic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/></svg></span><span class="sl">등록된 문제</span><b id="st-problems">0</b><span class="ss">내 문제 DB</span></div>
+    <div class="stat si"><span class="sic b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5Z"/></svg></span><span class="sl">사용 중인 단원</span><b id="st-units">0</b><span class="ss">과목 › 대단원</span></div>
+    <div class="stat si"><span class="sic p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg></span><span class="sl">나만의 태그</span><b id="st-tags">0</b><span class="ss">직접 붙인 태그</span></div>
+    <div class="stat si"><span class="sic y"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg></span><span class="sl">만든 학습지</span><b id="st-sheets">0</b><span class="ss">저장한 학습지·교재</span></div>
   </div>
 
   <div class="card dash-cont" id="dash-cont" style="display:none"></div>
@@ -412,13 +527,14 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 
 <!-- ───────────────── 단원태그 관리 ───────────────── -->
 <section class="view" id="view-tags">
+  <div class="subtabs"><button class="on" onclick="go('tags')">단원태그</button><button class="" onclick="go('srctags')">출처태그</button><button class="" onclick="go('mytags')">나만의태그</button></div>
   <h2 class="vt">단원 태그</h2>
   <p class="vd">과목 안에서 대단원 → 중단원 계층으로 단원 태그를 구성합니다. 프리셋 위에 내 기준대로 추가·수정하세요.</p>
 
-  <div class="grid3" style="margin-bottom:1rem">
-    <div class="stat"><b id="tg-subjects">0</b><span>등록 과목</span></div>
-    <div class="stat"><b id="tg-units">0</b><span>선택 과목 단원 수</span></div>
-    <div class="stat"><b id="tg-used">0</b><span>선택 과목 문제 수</span></div>
+  <div class="grid3" style="margin-bottom:1.1rem">
+    <div class="stat si"><span class="sic "><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5Z"/><path d="M8 7h7"/></svg></span><span class="sl">등록 과목</span><b id="tg-subjects">0</b><span class="ss">현재 사용 중인 과목</span></div>
+    <div class="stat si"><span class="sic b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg></span><span class="sl">선택 과목 단원</span><b id="tg-units">0</b><span class="ss">대단원 + 중단원</span></div>
+    <div class="stat si"><span class="sic y"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span><span class="sl">선택 과목 문제</span><b id="tg-used">0</b><span class="ss">이 과목으로 태그된 내 문제</span></div>
   </div>
 
   <div class="card">
@@ -449,17 +565,72 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
     <p class="hint" style="margin-top:.6rem">더 세분화된 유형(소단원·상세유형)은 문제의 <b>나만의 태그</b>로 붙이면 검색·필터에 그대로 쓸 수 있습니다. 숫자 배지는 해당 태그가 붙은 내 문제 수입니다.</p>
   </div>
 
-  <div class="grid2">
-    <div class="card">
-      <h3>출처태그 <span class="hint">학교 · 교재 · 기출 연도</span></h3>
-      <div id="srctag-list" class="hint">아직 출처가 등록된 문제가 없습니다.</div>
-    </div>
-    <div class="card">
-      <h3>나만의태그 <span class="hint">난이도 · 기술적 태그</span></h3>
-      <div id="usertag-list" class="hint">아직 나만의 태그가 없습니다.</div>
+</section>
+
+<!-- ───────────────── 출처태그 ───────────────── -->
+<section class="view" id="view-srctags">
+  <div class="subtabs"><button class="" onclick="go('tags')">단원태그</button><button class="on" onclick="go('srctags')">출처태그</button><button class="" onclick="go('mytags')">나만의태그</button></div>
+  <h2 class="vt">출처 태그</h2>
+  <p class="vd">문제의 출처를 <b>출처 유형 → 출처 이름 → 연도</b>로 정리합니다. 이름을 바꾸거나 합치면 그 출처의 문제 전부에 바로 반영됩니다.</p>
+  <div class="grid3" style="margin-bottom:1.1rem">
+    <div class="stat si"><span class="sic "><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/></svg></span><span class="sl">출처 유형</span><b id="st-srctypes">0</b><span class="ss">기출 · 교재 · 학교 · 자작 …</span></div>
+    <div class="stat si"><span class="sic b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg></span><span class="sl">출처 이름</span><b id="st-srcnames">0</b><span class="ss">등록된 출처 수</span></div>
+    <div class="stat si"><span class="sic y"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.6.6 1 1.4 1 2.2V16h6v-.3c0-.8.4-1.6 1-2.2A6 6 0 0 0 12 3Z"/></svg></span><span class="sl">팁</span><b style="font-size:1.05rem">이름이 조금씩 다른 출처는 합치세요</b><span class="ss">'10월 모의고사'와 '10월모의' → [✎ 이름 바꾸기]로 같은 이름이면 합쳐집니다</span></div>
+  </div>
+  <div class="card">
+    <div class="spread" style="margin-bottom:.8rem"><h3 style="margin:0">출처 계층 <span class="hint" style="font-weight:500">유형을 고르면 출처 이름이, 이름을 고르면 연도와 할 일이 나옵니다</span></h3>
+      <button class="btn ghost sm" onclick="addSrcType()">＋ 출처 유형 추가</button></div>
+    <div class="grid3" id="srctag-cols">
+      <div class="col-box"><div class="col-h"><span>출처 유형</span><span class="cnt" id="srct-cnt"></span></div><div class="col-list" id="srct-list"></div></div>
+      <div class="col-box"><div class="col-h"><span>출처 이름</span><span class="cnt" id="srcn-cnt"></span></div><div class="col-list" id="srcn-list"></div></div>
+      <div class="col-box"><div class="col-h"><span>연도 · 할 일</span><span class="cnt" id="srcy-cnt"></span></div><div class="col-list" id="srcy-list"></div></div>
     </div>
   </div>
 </section>
+
+<!-- ───────────────── 나만의태그 ───────────────── -->
+<section class="view" id="view-mytags">
+  <div class="subtabs"><button class="" onclick="go('tags')">단원태그</button><button class="" onclick="go('srctags')">출처태그</button><button class="on" onclick="go('mytags')">나만의태그</button></div>
+  <div class="vhead"><div><h2 class="vt">나만의 태그</h2>
+    <p class="vd">문제에 붙일 나만의 태그를 <b>태그 그룹</b>으로 구성하세요. 그룹마다 단일/복수 선택과 필수 여부를 정하면 문제 상세 화면에서 버튼으로 바로 붙일 수 있습니다.</p></div>
+    <button class="btn" onclick="editTagGroup(-1)">＋ 새 태그 그룹</button></div>
+  <div class="grid3" style="margin-bottom:1.1rem">
+    <div class="stat si"><span class="sic "><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg></span><span class="sl">태그 그룹</span><b id="st-tgroups">0</b><span class="ss">현재 사용 중인 상위 태그</span></div>
+    <div class="stat si"><span class="sic b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></svg></span><span class="sl">전체 하위 태그</span><b id="st-titems">0</b><span class="ss">모든 그룹의 하위 항목 합계</span></div>
+    <div class="stat si"><span class="sic y"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.6.6 1 1.4 1 2.2V16h6v-.3c0-.8.4-1.6 1-2.2A6 6 0 0 0 12 3Z"/></svg></span><span class="sl">팁</span><b style="font-size:1.05rem">필수 태그는 무엇인가요?</b><span class="ss">문제를 저장할 때 그 그룹에서 하나 이상 골랐는지 확인해 줍니다</span></div>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden">
+    <div class="spread" style="padding:1.2rem 1.4rem .8rem"><div><h3 style="margin:0">태그 그룹</h3><span class="hint">↑↓로 순서를 바꿀 수 있어요 · 하위 태그를 누르면 그 태그가 붙은 문제를 봅니다</span></div><span class="hint" id="tgroup-total"></span></div>
+    <div style="overflow-x:auto"><table class="tbl" id="tgroup-table"></table></div>
+  </div>
+  <div class="card">
+    <div class="spread" style="margin-bottom:.6rem"><h3 style="margin:0">그룹에 없는 태그 <span class="hint" style="font-weight:500">문제에 직접 적은 태그 · AI가 붙인 표시(#검수주의 등)</span></h3><span class="hint" id="freetag-total"></span></div>
+    <div id="freetag-list"></div>
+  </div>
+</section>
+
+<!-- ───────────────── 변형문항 생성 내역 ───────────────── -->
+<section class="view" id="view-twinhist">
+  <div class="vhead"><div><h2 class="vt">변형문항 생성 내역</h2>
+    <p class="vd">쌍둥이·유사 변형을 <b>언제, 어떤 원본으로, 몇 문제를, 어떤 설정으로</b> 만들었는지 모아 둔 곳입니다. 여기서 바로 교재·모의고사·학습지로 다시 묶을 수 있어요.</p></div>
+    <button class="btn" onclick="go('db')">👯 원본 골라 새로 만들기</button></div>
+  <div class="grid4" style="margin-bottom:1.1rem">
+    <div class="stat si"><span class="sic "><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></svg></span><span class="sl">생성 횟수</span><b id="st-th-runs">0</b><span class="ss">쌍둥이·변형을 만든 횟수</span></div>
+    <div class="stat si"><span class="sic b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span><span class="sl">만든 문제</span><b id="st-th-made">0</b><span class="ss">쌍둥이 + 유사 변형</span></div>
+    <div class="stat si"><span class="sic y"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5Z"/><path d="M8 7h7"/></svg></span><span class="sl">사용한 원본</span><b id="st-th-srcs">0</b><span class="ss">변형의 바탕이 된 문제</span></div>
+    <div class="stat si"><span class="sic p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span class="sl">이번 달</span><b id="st-th-month">0</b><span class="ss">이번 달에 만든 문제</span></div>
+  </div>
+  <div class="card">
+    <div class="row" style="margin-bottom:.9rem">
+      <input id="th-q" placeholder="출처·번호·요청으로 찾기 (예: 10월, 11번, 실생활)" style="flex:1;min-width:220px">
+      <select id="th-period" style="width:auto"><option value="">전체 기간</option><option value="7">최근 7일</option><option value="30">최근 30일</option><option value="month">이번 달</option></select>
+      <select id="th-kind" style="width:auto"><option value="">쌍둥이·변형 전체</option><option value="쌍둥이">쌍둥이가 있는 내역</option><option value="변형">변형이 있는 내역</option></select>
+    </div>
+    <div id="th-list"></div>
+  </div>
+  <div id="th-bar" class="th-bar" style="display:none"></div>
+</section>
+
 
 <!-- ───────────────── 문제 등록 ───────────────── -->
 <section class="view" id="view-add">
@@ -584,7 +755,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
         <button data-tab="unit" class="active">단원</button>
         <button data-tab="src">출처</button>
         <button data-tab="mine">나만의</button>
-        <button data-tab="date">📅 날짜</button>
+        <button data-tab="date">날짜</button>
       </div>
       <div id="tree-body"></div>
       <button class="btn ghost sm" style="width:100%" onclick="resetFilters()">선택 해제</button>
@@ -619,7 +790,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
           <button class="btn ghost sm" onclick="resetFilters()">필터 초기화</button>
           <button class="btn ghost sm" onclick="findDuplicates()">중복 검사</button>
         </div>
-        <div id="batch-banner" style="display:none;margin-bottom:.5rem;padding:.6rem .8rem;background:#eef6f0;border:1px solid #cfe3d6;border-radius:10px"></div>
+        <div id="batch-banner" style="display:none;margin-bottom:.5rem;padding:.6rem .8rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px"></div>
         <div class="row" style="margin-bottom:.3rem">
           <span class="hint">📌 내 검색 필터:</span>
           <span id="preset-list"></span>
@@ -956,7 +1127,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
         <button class="btn danger sm" onclick="pdfedClearPage()">이 페이지 영역 지우기</button>
         <button class="btn gold" onclick="pdfedFinish()" id="pdfed-finish">완료 — 문항 추출</button>
       </div>
-      <div id="pdfed-solinfo" class="hint" style="display:none;margin-bottom:.4rem;padding:.45rem .6rem;background:#eef6f0;border:1px solid #cfe3d6;border-radius:8px"></div>
+      <div id="pdfed-solinfo" class="hint" style="display:none;margin-bottom:.4rem;padding:.45rem .6rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px"></div>
       <p class="hint" style="margin-bottom:.4rem">파란 박스가 인식된 문항 영역입니다. <b>박스 안을 드래그 = 이동</b> · <b>가장자리를 드래그 = 크기 조절</b>(위쪽 포함) · <b>빈 곳 드래그 = 새 영역</b> · 번호 수정·삭제는 오른쪽 목록에서.</p>
       <div style="display:grid;grid-template-columns:minmax(0,1fr) 215px;gap:.8rem;align-items:start">
         <div id="pdfed-wrap" style="position:relative;border:1px solid var(--line);border-radius:8px;overflow:hidden;cursor:crosshair;user-select:none">
@@ -973,7 +1144,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 </div>
 
 <div id="toast"></div>
-<div id="ai-stopbar" style="display:none;position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:60;background:#23321f;color:#fff;padding:.5rem .9rem;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.3);align-items:center;gap:.7rem">
+<div id="ai-stopbar" style="display:none;position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:60;background:#111827;color:#fff;padding:.5rem .9rem;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.3);align-items:center;gap:.7rem">
   <span id="ai-stopbar-label">AI 작업 중…</span>
   <button class="btn danger sm" onclick="aiBatchCancel()">⏹ 중지</button>
 </div>
@@ -1231,8 +1402,9 @@ const state = {
   page: 1, searchMode: 'kw', treeTab: 'unit', filterTag: null,
   imgHashCache: new Map(), lastChecked: null
 };
-const VIEW_TITLES = {dashboard:'대시보드', tags:'태그 관리 · 단원태그', add:'문제 DB 관리 · 문제 등록',
-  gen:'문제 DB 관리 · AI 문제 생성', db:'문제 DB 관리 · 문제 검색·작업', sheet:'학습지 생성·관리', data:'백업·데이터'};
+const VIEW_TITLES = {dashboard:'대시보드', tags:'태그 관리 · 단원태그', srctags:'태그 관리 · 출처태그', mytags:'태그 관리 · 나만의태그',
+  add:'문제 DB 관리 · 문제 등록', gen:'AI 작업 · AI 문제 생성', twinhist:'AI 작업 · 변형문항 생성 내역',
+  db:'문제 DB 관리 · 문제 검색·작업', sheet:'문제 DB 관리 · 학습지 생성·관리', data:'백업·데이터'};
 const GRADES = ['미지정','초등','중1','중2','중3','고1','고2','고3','N수'];
 const $ = s=>document.querySelector(s);
 const $$ = s=>Array.from(document.querySelectorAll(s));
@@ -1263,18 +1435,247 @@ function toggleSidebar(force){
 function go(view){
   $$('#sbnav button').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
   $$('.view').forEach(v=>v.classList.toggle('active', v.id==='view-'+view));
-  $('#topbar-title').textContent = VIEW_TITLES[view]||'';
+  const tt = String(VIEW_TITLES[view]||'').split(' · ');           // '태그 관리 | 단원태그' 식 제목
+  $('#topbar-title').innerHTML = tt.length > 1 ? `<span class="crumb-a">${esc(tt[0])}</span><span class="crumb-sep"></span><span>${esc(tt.slice(1).join(' · '))}</span>` : esc(tt[0]);
+  $$('#sbnav .ng').forEach(g=>{ if(g.querySelector(`button[data-view="${view}"]`)) g.classList.remove('closed'); });
   if(view==='db') renderDB();
   if(view==='sheet') renderSheet();
   if(view==='dashboard') renderDash();
   if(view==='tags') renderTags();
+  if(view==='srctags') renderSrcTags();
+  if(view==='mytags') renderMyTags();
+  if(view==='twinhist') renderTwinHist();
   persistCart();
   toggleSidebar(false);
   window.scrollTo({top:0});
 }
 $('#sbnav').addEventListener('click', e=>{
-  const b = e.target.closest('button'); if(b) go(b.dataset.view);
+  const h = e.target.closest('.ng-head'); if(h){ h.parentElement.classList.toggle('closed'); return; }
+  const b = e.target.closest('button[data-view]'); if(b) go(b.dataset.view);
 });
+
+
+/* ═══════════════ 출처태그: 출처 유형 → 출처 이름 → 연도 ═══════════════ */
+const SRC_TYPES_BASE = ['기출','교재','학교','자작','AI변형','기타'];
+function srcTypeList(){
+  let extra = []; try{ extra = JSON.parse(localStorage.getItem('sp-lab-srctypes')||'[]'); }catch(e){}
+  const used = state.problems.map(p=>p.srcType).filter(Boolean);
+  return [...new Set([...SRC_TYPES_BASE, ...extra, ...used])];
+}
+function addSrcType(){
+  const n = (prompt('새 출처 유형 이름 (예: 학원 자체, 사설 모의고사)')||'').trim(); if(!n) return;
+  let extra = []; try{ extra = JSON.parse(localStorage.getItem('sp-lab-srctypes')||'[]'); }catch(e){}
+  if(!extra.includes(n) && !SRC_TYPES_BASE.includes(n)){ extra.push(n); localStorage.setItem('sp-lab-srctypes', JSON.stringify(extra)); }
+  state.srcSel = { type:n, name:null }; renderSrcTags(); fillSrcTypeSelects(); toast('출처 유형을 추가했습니다.');
+}
+function fillSrcTypeSelects(){
+  const sel = $('#f-srctype'); if(!sel) return; const cur = sel.value;
+  sel.innerHTML = srcTypeList().filter(t=>t!=='AI변형').map(t=>`<option>${esc(t)}</option>`).join(''); if(cur) sel.value = cur;
+}
+function renderSrcTags(){
+  state.srcSel = state.srcSel || { type:null, name:null };
+  const types = srcTypeList(), byType = new Map(), named = new Set();
+  for(const p of state.problems){ const t = p.srcType || '기타'; byType.set(t, (byType.get(t)||0)+1); if(p.srcName) named.add(t+'\u0001'+p.srcName); }
+  if(!state.srcSel.type || !types.includes(state.srcSel.type)) state.srcSel.type = types.find(t=>byType.get(t)) || types[0];
+  $('#st-srctypes').textContent = types.filter(t=>byType.get(t)).length;
+  $('#st-srcnames').textContent = new Set(state.problems.map(p=>p.srcName).filter(Boolean)).size;
+  $('#srct-cnt').textContent = types.length+'개';
+  $('#srct-list').innerHTML = types.map(t=>`<div class="col-item ${t===state.srcSel.type?'sel':''}" data-st="${esc(t)}"><span>${esc(t)}</span><span class="n">${byType.get(t)||0}</span></div>`).join('');
+  const T = state.srcSel.type, inT = state.problems.filter(p=>(p.srcType||'기타')===T);
+  const byName = new Map(); inT.forEach(p=>{ const n = p.srcName || ''; byName.set(n, (byName.get(n)||0)+1); });
+  const names = [...byName.entries()].sort((a,b)=>b[1]-a[1]);
+  if(state.srcSel.name != null && !byName.has(state.srcSel.name)) state.srcSel.name = null;
+  $('#srcn-cnt').textContent = names.filter(([n])=>n).length+'개';
+  $('#srcn-list').innerHTML = names.length ? names.map(([n,c])=>`<div class="col-item ${n===state.srcSel.name?'sel':''}" data-sn="${esc(n)}"><span>${n ? esc(n) : '<span class="hint">(출처 이름 없음)</span>'}</span><span class="n">${c}</span></div>`).join('')
+    : '<div class="colmuted">이 유형의 문제가 없습니다.</div>';
+  const N = state.srcSel.name, box = $('#srcy-list');
+  if(N == null){ $('#srcy-cnt').textContent = ''; box.innerHTML = '<div class="colmuted">출처 이름을 고르세요.</div>'; return; }
+  const ps = inT.filter(p=>(p.srcName||'')===N), byY = new Map(); ps.forEach(p=>{ const y = p.srcYear || '연도 없음'; byY.set(y, (byY.get(y)||0)+1); });
+  $('#srcy-cnt').textContent = ps.length+'문제';
+  box.innerHTML = [...byY.entries()].sort((a,b)=>String(b[0]).localeCompare(String(a[0]))).map(([y,c])=>`<div class="col-item" style="cursor:default"><span>${esc(y)}</span><span class="n">${c}</span></div>`).join('')
+    + `<div style="padding:.7rem;display:flex;flex-direction:column;gap:.35rem">
+      <button class="btn sm" onclick="srcGoDB()">🔍 이 출처 문제 보기</button>
+      ${N ? `<button class="btn ghost sm" onclick="srcRename()">✎ 이름 바꾸기 · 합치기</button>` : ''}
+      <button class="btn ghost sm" onclick="srcChangeType()">⇄ 출처 유형 바꾸기</button>
+      ${N ? `<button class="btn danger sm" onclick="srcClear()">🗑 출처 이름 지우기</button>` : ''}</div>`;
+}
+document.addEventListener('click', e=>{
+  const t = e.target.closest('#srct-list [data-st]'); if(t){ state.srcSel = { type:t.dataset.st, name:null }; renderSrcTags(); return; }
+  const n = e.target.closest('#srcn-list [data-sn]'); if(n){ state.srcSel.name = n.dataset.sn; renderSrcTags(); }
+});
+function srcProblems(){ const { type, name } = state.srcSel; return state.problems.filter(p=>(p.srcType||'기타')===type && (p.srcName||'')===(name||'')); }
+function srcGoDB(){ const n = state.srcSel.name; go('db'); resetFilters(); if(n){ $('#filter-src').value = n; } renderDB(); }
+async function srcRename(){
+  const old = state.srcSel.name, nn = (prompt(`'${old}' 의 새 이름\n(이미 있는 이름을 쓰면 그 출처로 합쳐집니다)`, old)||'').trim();
+  if(!nn || nn === old) return;
+  const ps = srcProblems(); for(const p of ps){ p.srcName = nn; p.updatedAt = Date.now(); await saveProblem(p); }
+  state.srcSel.name = nn; renderSrcTags(); toast(`✎ ${ps.length}문제의 출처를 '${nn}'(으)로 바꿨습니다.`);
+}
+async function srcChangeType(){
+  const list = srcTypeList(), nt = (prompt('바꿀 출처 유형을 적으세요:\n'+list.join(' · '), state.srcSel.type)||'').trim();
+  if(!nt || nt === state.srcSel.type) return;
+  const ps = srcProblems(); for(const p of ps){ p.srcType = nt; p.updatedAt = Date.now(); await saveProblem(p); }
+  state.srcSel.type = nt; renderSrcTags(); toast(`⇄ ${ps.length}문제를 '${nt}' 유형으로 옮겼습니다.`);
+}
+async function srcClear(){
+  const ps = srcProblems(); if(!confirm(`'${state.srcSel.name}' 출처 이름을 ${ps.length}문제에서 지울까요? (문제는 그대로 남습니다)`)) return;
+  for(const p of ps){ p.srcName = ''; p.updatedAt = Date.now(); await saveProblem(p); }
+  state.srcSel.name = null; renderSrcTags(); toast('출처 이름을 지웠습니다.');
+}
+
+/* ═══════════════ 나만의태그: 태그 그룹(단일/복수·필수) + 그룹에 없는 태그 ═══════════════ */
+function tagGroups(){ try{ const a = JSON.parse(localStorage.getItem('sp-lab-taggroups')||'[]'); return Array.isArray(a) ? a : []; }catch(e){ return []; } }
+function saveTagGroups(a){ localStorage.setItem('sp-lab-taggroups', JSON.stringify(a)); }
+function tagCounts(){ const m = new Map(); for(const p of state.problems) for(const t of (p.tags||[])) m.set(t, (m.get(t)||0)+1); return m; }
+function renderMyTags(){
+  const G = tagGroups(), cnt = tagCounts();
+  $('#st-tgroups').textContent = G.length; $('#st-titems').textContent = G.reduce((a,g)=>a+(g.items||[]).length, 0);
+  $('#tgroup-total').textContent = '총 '+G.length+'개';
+  $('#tgroup-table').innerHTML = `<tr><th style="width:70px"></th><th>이름</th><th>입력 방식</th><th>필수</th><th>하위 태그</th><th style="width:120px"></th></tr>`
+    + (G.length ? G.map((g,k)=>`<tr>
+      <td><button class="btn ghost sm" ${k?'':'disabled'} onclick="moveTagGroup(${k},-1)" title="위로">↑</button> <button class="btn ghost sm" ${k<G.length-1?'':'disabled'} onclick="moveTagGroup(${k},1)" title="아래로">↓</button></td>
+      <td><b>${esc(g.name)}</b></td>
+      <td><span class="pillc ${g.mode==='multi'?'b':''}">${g.mode==='multi'?'복수 선택':'단일 선택'}</span></td>
+      <td>${g.required ? '<span style="color:var(--green);font-weight:700">✓ 필수</span>' : '<span class="hint">선택</span>'}</td>
+      <td>${(g.items||[]).map(t=>`<span class="pillc clk tgi-chip" onclick="tagGoDB('${esc(t)}')" title="이 태그가 붙은 문제 ${cnt.get(t)||0}개 보기">${esc(t)}${cnt.get(t)?` <span class="hint" style="margin-left:.25rem">${cnt.get(t)}</span>`:''}</span>`).join('') || '<span class="hint">하위 태그 없음</span>'}</td>
+      <td style="white-space:nowrap"><button class="btn ghost sm" onclick="editTagGroup(${k})">✎ 수정</button> <button class="btn danger sm" onclick="delTagGroup(${k})">🗑</button></td></tr>`).join('')
+    : `<tr><td colspan="6" style="text-align:center;padding:2rem"><span class="hint">아직 태그 그룹이 없습니다.</span><br><button class="btn ghost sm" style="margin-top:.6rem" onclick="addTagGroupExamples()">예시 그룹 넣기 (문항형식 · 출제의도)</button></td></tr>`);
+  const inG = new Set(G.flatMap(g=>g.items||[]));
+  const free = [...cnt.entries()].filter(([t])=>!inG.has(t)).sort((a,b)=>b[1]-a[1]);
+  $('#freetag-total').textContent = free.length+'개';
+  $('#freetag-list').innerHTML = free.length ? `<table class="tbl"><tr><th>태그</th><th>문제 수</th><th style="width:300px"></th></tr>${free.map(([t,n])=>`<tr><td><span class="tag user">#${esc(t)}</span></td><td>${n}</td>
+      <td style="white-space:nowrap"><button class="btn ghost sm" onclick="tagGoDB('${esc(t)}')">🔍 보기</button> <button class="btn ghost sm" onclick="tagRename('${esc(t)}')">✎ 이름 바꾸기·합치기</button> <button class="btn danger sm" onclick="tagRemoveAll('${esc(t)}')">🗑 모두 지우기</button></td></tr>`).join('')}</table>`
+    : '<div class="hint">그룹에 없는 태그가 없습니다.</div>';
+}
+function tagGoDB(t){ go('db'); resetFilters(); state.filterTag = t; renderDB(); }
+function moveTagGroup(k, d){ const G = tagGroups(); const [g] = G.splice(k, 1); G.splice(k+d, 0, g); saveTagGroups(G); renderMyTags(); }
+function delTagGroup(k){ const G = tagGroups(); if(!confirm(`'${G[k].name}' 그룹을 지울까요? (문제에 붙은 태그는 그대로 남습니다)`)) return; G.splice(k, 1); saveTagGroups(G); renderMyTags(); }
+function addTagGroupExamples(){
+  const G = tagGroups();
+  G.push({ name:'문항형식', mode:'multi', required:false, items:['객관식','단답형','서술형','증명형','진위형'] });
+  G.push({ name:'출제의도', mode:'single', required:false, items:['개념 확인','계산','추론','문제해결','킬러'] });
+  saveTagGroups(G); renderMyTags(); toast('예시 그룹을 넣었습니다 — [✎ 수정]으로 바꿔 쓰세요.');
+}
+function editTagGroup(k){
+  const G = tagGroups(), g = k >= 0 ? G[k] : { name:'', mode:'single', required:false, items:[] };
+  const m = $('#modal-body');
+  m.innerHTML = `<button class="close" onclick="closeModal()">✕</button><h3>${k >= 0 ? '태그 그룹 수정' : '새 태그 그룹'}</h3>
+    <div class="field"><label>그룹 이름</label><input id="tg-name" value="${esc(g.name)}" placeholder="예: 문항형식, 출제의도, 오답 유형"></div>
+    <div class="field"><label>입력 방식</label><div class="row">
+      <label style="font-weight:600;display:flex;gap:.35rem;align-items:center;margin:0"><input type="radio" name="tg-mode" value="single" style="width:auto" ${g.mode!=='multi'?'checked':''}> 단일 선택 (하나만)</label>
+      <label style="font-weight:600;display:flex;gap:.35rem;align-items:center;margin:0"><input type="radio" name="tg-mode" value="multi" style="width:auto" ${g.mode==='multi'?'checked':''}> 복수 선택 (여러 개)</label></div></div>
+    <div class="field"><label style="display:flex;gap:.35rem;align-items:center;margin:0"><input type="checkbox" id="tg-req" style="width:auto" ${g.required?'checked':''}> 필수 — 문제를 저장할 때 이 그룹에서 하나 이상 골랐는지 확인</label></div>
+    <div class="field"><label>하위 태그 (쉼표 또는 줄바꿈으로 구분)</label><textarea id="tg-items" style="min-height:90px" placeholder="객관식, 단답형, 서술형">${esc((g.items||[]).join(', '))}</textarea></div>
+    <div class="row"><button class="btn" onclick="saveTagGroup(${k})">저장</button><button class="btn ghost" onclick="closeModal()">취소</button></div>`;
+  $('#modal-bg').classList.add('show');
+}
+function saveTagGroup(k){
+  const name = $('#tg-name').value.trim(); if(!name){ toast('그룹 이름을 적어 주세요.'); return; }
+  const items = [...new Set($('#tg-items').value.split(/[,\n]/).map(x=>x.trim().replace(/^#/,'')).filter(Boolean))];
+  const g = { name, mode: (document.querySelector('input[name="tg-mode"]:checked')||{}).value === 'multi' ? 'multi' : 'single', required: $('#tg-req').checked, items };
+  const G = tagGroups(); if(k >= 0) G[k] = g; else G.push(g); saveTagGroups(G);
+  closeModal(); renderMyTags(); toast('태그 그룹을 저장했습니다.');
+}
+async function tagRename(t){
+  const nn = (prompt(`'#${t}' 의 새 이름 (이미 있는 태그 이름이면 합쳐집니다)`, t)||'').trim().replace(/^#/,''); if(!nn || nn === t) return;
+  let n = 0;
+  for(const p of state.problems) if((p.tags||[]).includes(t)){ p.tags = [...new Set(p.tags.map(x=>x===t ? nn : x))]; p.updatedAt = Date.now(); await saveProblem(p); n++; }
+  const G = tagGroups(); G.forEach(g=>{ g.items = [...new Set((g.items||[]).map(x=>x===t ? nn : x))]; }); saveTagGroups(G);
+  renderMyTags(); toast(`✎ ${n}문제의 #${t} → #${nn}`);
+}
+async function tagRemoveAll(t){
+  const ps = state.problems.filter(p=>(p.tags||[]).includes(t)); if(!confirm(`#${t} 를 ${ps.length}문제에서 지울까요?`)) return;
+  for(const p of ps){ p.tags = p.tags.filter(x=>x!==t); p.updatedAt = Date.now(); await saveProblem(p); }
+  renderMyTags(); toast(`#${t} 를 지웠습니다.`);
+}
+/* 문제 상세: 태그 그룹 버튼 → 나만의 태그 칸(#e-tags)에 반영 */
+function detailTagGroupsHTML(p){
+  const G = tagGroups(); if(!G.length) return '';
+  const has = new Set(p.tags||[]);
+  return `<div class="field" id="e-tgroups">${G.map((g,k)=>`<div class="row" style="gap:.3rem;margin-bottom:.3rem"><span class="hint" style="min-width:5.5rem;font-weight:700">${esc(g.name)}${g.required?' <span style="color:var(--danger)">*</span>':''}</span>
+    ${(g.items||[]).map(t=>`<button type="button" class="btn sm ${has.has(t)?'':'ghost'}" data-tg="${k}" data-tv="${esc(t)}" onclick="detailTagToggle(this)">${esc(t)}</button>`).join('')}</div>`).join('')}</div>`;
+}
+function detailTagToggle(btn){
+  const G = tagGroups(), g = G[+btn.dataset.tg], v = btn.dataset.tv, el = $('#e-tags');
+  let tags = el.value.split(',').map(x=>x.trim()).filter(Boolean);
+  const on = !tags.includes(v);
+  if(g && g.mode !== 'multi') tags = tags.filter(x=>!(g.items||[]).includes(x));
+  tags = on ? [...tags, v] : tags.filter(x=>x!==v);
+  el.value = [...new Set(tags)].join(', ');
+  $$('#e-tgroups button[data-tg="'+btn.dataset.tg+'"]').forEach(b=>b.classList.toggle('ghost', !tags.includes(b.dataset.tv)));
+}
+function missingRequiredGroups(tags){ const set = new Set(tags); return tagGroups().filter(g=>g.required && !(g.items||[]).some(t=>set.has(t))).map(g=>g.name); }
+
+/* ═══════════════ 변형문항 생성 내역: 문제 기록(twinOf·batch)에서 모아 보여 줌 + 실행 설정(이 기기) ═══════════════ */
+function twinRunMeta(){ try{ return JSON.parse(localStorage.getItem('sp-lab-twinruns')||'{}') || {}; }catch(e){ return {}; } }
+function saveTwinRunMeta(batch, meta){ const m = twinRunMeta(); m[batch] = meta; const keys = Object.keys(m); if(keys.length > 300) delete m[keys[0]]; localStorage.setItem('sp-lab-twinruns', JSON.stringify(m)); }
+function twinRuns(){
+  const by = new Map();
+  for(const p of state.problems){ if(!p.twinOf) continue; const k = batchKeyOf(p); if(!by.has(k)) by.set(k, []); by.get(k).push(p); }
+  const meta = twinRunMeta();
+  return [...by.entries()].map(([key, kids])=>{
+    const at = Math.min(...kids.map(p=>p.createdAt||0)), end = Math.max(...kids.map(p=>p.createdAt||0));
+    const srcIds = [...new Set(kids.map(p=>p.twinOf))], srcs = srcIds.map(id=>state.problems.find(p=>p.id===id)).filter(Boolean).sort((a,b)=>origNoKey(a)-origNoKey(b));
+    return { key, name: kids[0].batchName || '쌍둥이·변형', at, end, kids, srcIds, srcs,
+      nT: kids.filter(p=>p.twinKind==='쌍둥이').length, nV: kids.filter(p=>p.twinKind==='변형').length,
+      style: (kids.find(p=>p.twinStyle)||{}).twinStyle || '', meta: meta[key] || null };
+  }).sort((a,b)=>b.at-a.at);
+}
+function renderTwinHist(){
+  const all = twinRuns(), now = Date.now(), m0 = new Date(); m0.setDate(1); m0.setHours(0,0,0,0);
+  $('#st-th-runs').textContent = all.length;
+  $('#st-th-made').textContent = all.reduce((a,r)=>a+r.kids.length, 0);
+  $('#st-th-srcs').textContent = new Set(all.flatMap(r=>r.srcIds)).size;
+  $('#st-th-month').textContent = all.reduce((a,r)=>a+r.kids.filter(p=>(p.createdAt||0)>=m0.getTime()).length, 0);
+  const q = ($('#th-q').value||'').trim().toLowerCase(), per = $('#th-period').value, kind = $('#th-kind').value;
+  const list = all.filter(r=>{
+    if(per === 'month' && r.at < m0.getTime()) return false;
+    if(per && per !== 'month' && r.at < now - (+per)*86400000) return false;
+    if(kind === '쌍둥이' && !r.nT) return false; if(kind === '변형' && !r.nV) return false;
+    if(q){ const hay = [r.name, r.style, ...r.srcs.map(s=>(s.srcName||'')+' '+(s.origNo||'')+'번 '+(s.question||'').slice(0,60))].join(' ').toLowerCase(); if(!hay.includes(q)) return false; }
+    return true;
+  });
+  state.thSel = (state.thSel || []).filter(k=>all.some(r=>r.key===k));
+  const w = t=>{ const d = new Date(t); return `${d.getFullYear()}. ${d.getMonth()+1}. ${d.getDate()}. (${'일월화수목금토'[d.getDay()]}) ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
+  const DIFF = { same:'원본과 같게', easier:'조금 쉽게', harder:'조금 어렵게' };
+  $('#th-list').innerHTML = list.length ? list.map(r=>{
+    const M = r.meta, o = M && M.opts || {};
+    const set = [ (o.twin != null || o.variant != null) ? `원본당 쌍둥이 ${o.twin||0} · 변형 ${o.variant||0}` : '', o.diff ? '난이도 '+(DIFF[o.diff]||o.diff) : '',
+      M && M.ms ? '걸린 시간 '+Math.max(1, Math.round(M.ms/60000))+'분' : '', M && M.repaired ? '바로잡음 '+M.repaired : '', M && M.rejected ? '버리고 다시 '+M.rejected : '' ].filter(Boolean).join(' · ');
+    const sel = state.thSel.includes(r.key);
+    return `<div class="th-run ${sel?'sel':''}"><div class="th-ck"><input type="checkbox" ${sel?'checked':''} onchange="thToggle('${esc(r.key)}', this.checked)"></div>
+      <div class="th-when">🕒 ${w(r.at)}</div>
+      <div class="th-name">${esc(r.name)} <span class="pillc g">쌍둥이 ${r.nT}</span><span class="pillc b">변형 ${r.nV}</span><span class="pillc">원본 ${r.srcIds.length}</span></div>
+      <div>${r.srcs.slice(0, 12).map(s=>`<span class="pillc clk" onclick="openDetail('${s.id}')" title="${esc(stripBoxMarks(s.question||'').slice(0,80))}">${s.origNo ? esc(s.origNo)+'번' : '원본'}${s.srcName ? ' · '+esc(s.srcName.slice(0,14)) : ''}</span>`).join('')}${r.srcs.length > 12 ? `<span class="hint"> 외 ${r.srcs.length-12}개</span>` : ''}</div>
+      <div><div class="th-meta">${set || '<span class="hint">설정 기록 없음(다른 기기·맥에서 만든 내역)</span>'}${r.style ? ` · ✍ 요청: ${esc(r.style.slice(0,80))}` : ''}</div>
+        <div class="th-acts"><button class="btn sm" onclick="twinBookToSheet('${esc(r.key)}')">📚 원본 + 쌍둥이·변형으로 교재</button>
+          <button class="btn ghost sm" onclick="thToSheet(['${esc(r.key)}'], false)">🧺 만든 문제만 담기</button>
+          <button class="btn ghost sm" onclick="twinShowGroups('${esc(r.key)}')">👯 원본별로 보기</button>
+          <button class="btn ghost sm" onclick="openTwinMaker(${esc(JSON.stringify(r.srcIds))})">↻ 이 원본으로 더 만들기</button></div></div></div>`;
+  }).join('') : `<div class="empty">${all.length ? '조건에 맞는 내역이 없습니다.' : '아직 만든 쌍둥이·변형이 없습니다. 문제 검색에서 원본을 고르고 [👯 쌍둥이·변형]을 눌러 보세요.'}</div>`;
+  const bar = $('#th-bar');
+  if(state.thSel.length){
+    const n = all.filter(r=>state.thSel.includes(r.key)).reduce((a,r)=>a+r.kids.length, 0);
+    bar.style.display = 'flex';
+    bar.innerHTML = `<b>선택한 내역 ${state.thSel.length}개 · 만든 문제 ${n}개</b><span style="flex:1"></span>
+      <button class="btn sm" onclick="thToSheet(state.thSel, true)">📚 원본 + 쌍둥이·변형으로 교재·모의고사</button>
+      <button class="btn ghost sm" onclick="thToSheet(state.thSel, false)">🧺 만든 문제만 담기</button>
+      <button class="btn ghost sm" onclick="state.thSel=[];renderTwinHist()">선택 해제</button>`;
+  } else bar.style.display = 'none';
+}
+['th-q','th-period','th-kind'].forEach(id=>{ const el = document.getElementById(id); if(el) el.addEventListener(id==='th-q'?'input':'change', ()=>renderTwinHist()); });
+function thToggle(k, on){ state.thSel = state.thSel || []; state.thSel = on ? [...new Set([...state.thSel, k])] : state.thSel.filter(x=>x!==k); renderTwinHist(); }
+function thToSheet(keys, withOrig){
+  const runs = twinRuns().filter(r=>keys.includes(r.key)).sort((a,b)=>a.at-b.at);
+  const ids = [];
+  for(const r of runs){ const part = withOrig ? twinBookIds(r.key) : twinBookIds(r.key).filter(id=>r.kids.some(p=>p.id===id)); part.forEach(id=>{ if(!ids.includes(id)) ids.push(id); }); }
+  if(!ids.length) return;
+  if(state.cart.length && !ids.every(id=>state.cart.includes(id)) && !confirm(`이미 담은 문제 ${state.cart.length}개가 있습니다.\n비우고 ${ids.length}문항으로 바꿀까요?`)) return;
+  state.cart = ids; persistCart();
+  $('#s-title').value = runs.length === 1 ? (runs[0].name||'').replace(/ · \d+\/\d+( \d+:\d+)?$/, '') : '쌍둥이·변형 모음';
+  state.thSel = []; go('sheet');
+  toast(`${withOrig ? '📚 원본 → 쌍둥이 → 변형 순서로' : '🧺 만든 문제'} ${ids.length}문항을 담았습니다 — [교재 HTML] · [모의고사(A3)] · [학습지] 중 고르세요`);
+}
 
 /* ═══════════════ 단원 셀렉트 ═══════════════ */
 function fillSubjectSelect(sel, withEmpty){
@@ -1395,12 +1796,12 @@ function renderTags(){
 
   // 출처태그 / 나만의태그 요약
   const srcCnt = countBy(p=>p.srcName);
-  $('#srctag-list').innerHTML = srcCnt.size
+  if($('#srctag-list')) $('#srctag-list').innerHTML = srcCnt.size
     ? [...srcCnt.entries()].sort((a,b)=>b[1]-a[1]).map(([s,n])=>`<span class="tag src">${esc(s)} · ${n}문제</span>`).join('')
     : '아직 출처가 등록된 문제가 없습니다.';
   const userCnt = new Map();
   for(const p of state.problems) for(const t of (p.tags||[])) userCnt.set(t,(userCnt.get(t)||0)+1);
-  $('#usertag-list').innerHTML = userCnt.size
+  if($('#usertag-list')) $('#usertag-list').innerHTML = userCnt.size
     ? [...userCnt.entries()].sort((a,b)=>b[1]-a[1]).map(([t,n])=>`<span class="tag user">#${esc(t)} · ${n}문제</span>`).join('')
     : '아직 나만의 태그가 없습니다.';
 }
@@ -2310,7 +2711,7 @@ async function openPdfEditor(res, opts){
   wrap.innerHTML = PDFED.pages.map(pg=>
     `<div class="pdfed-thumb m-${pg.mode} ${pg.selected?'sel':''}" data-i="${pg.idx}" ${pg.srcName?`title="${esc(pg.srcName)}"`:''}>
       <span class="pmode">${{prob:'문제',sol:'해설',skip:'제외'}[pg.mode]}</span>
-      <div class="pno">${pg.idx+1}${pg.srcName?`<span style="font-size:.62rem;color:#8a857a"> ${esc(pg.srcName.replace(/\.pdf$/i,'').slice(0,8))}</span>`:''}</div><img alt="p${pg.idx+1}">
+      <div class="pno">${pg.idx+1}${pg.srcName?`<span style="font-size:.62rem;color:#9ca3af"> ${esc(pg.srcName.replace(/\.pdf$/i,'').slice(0,8))}</span>`:''}</div><img alt="p${pg.idx+1}">
     </div>`).join('');
   pdfedSelCount();
   const gen = PDFED.renderGen = (PDFED.renderGen||0)+1;      // 새 PDF를 열면 이전 렌더 루프 무효화
@@ -3460,7 +3861,7 @@ function problemCardHTML(p, idx){
       <b class="pc-no"># ${no??''}</b>
       ${sim}
       ${(p.solution||p.answer)?'<span class="tag" style="background:#e4f2e8;color:var(--ok)">해설</span>':''}
-      ${p.reviewed?'':'<span class="tag" style="background:#faf0dc;color:#7a5c1e">미검수</span>'}
+      ${p.reviewed?'':'<span class="tag" style="background:#fff7ed;color:#7a5c1e">미검수</span>'}
       ${p.twinKind?`<span class="twin-badge ${p.twinKind==='변형'?'var':''}" title="원본 문제에서 만든 ${esc(p.twinKind)} 문제">👯 ${esc(p.twinKind)} ${p.twinNo||''}${p.origNo?' · 원본 '+esc(p.origNo)+'번':''}</span>`:''}
       <span style="flex:1"></span>
       <button class="btn ${inCart?'gold':'ghost'} sm" onclick="toggleCart('${p.id}')">${inCart?'담김 ✓':'담기'}</button>
@@ -3971,12 +4372,13 @@ function openDetail(id){
       <div class="field"><label>중단원</label><select id="e-section"></select></div>
     </div>
     <div class="grid4">
-      <div class="field"><label>출처 유형</label><select id="e-srctype">${['기출','교재','학교','자작','기타', ...(p.srcType && !['기출','교재','학교','자작','기타'].includes(p.srcType) ? [p.srcType] : [])].map(s=>`<option ${p.srcType===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="field"><label>출처 유형</label><select id="e-srctype">${[...new Set([...srcTypeList(), ...(p.srcType ? [p.srcType] : [])])].map(s=>`<option ${p.srcType===s?'selected':''}>${s}</option>`).join('')}</select></div>
       <div class="field"><label>출처 이름</label><input id="e-srcname" value="${esc(p.srcName)}"></div>
       <div class="field"><label>연도</label><input id="e-srcyear" value="${esc(p.srcYear)}"></div>
       <div class="field"><label>학년</label><select id="e-grade">${GRADES.map(g=>`<option ${(p.grade||'미지정')===g?'selected':''}>${g}</option>`).join('')}</select></div>
     </div>
     <div class="field"><label>나만의 태그 (쉼표 구분)</label><input id="e-tags" value="${esc((p.tags||[]).join(', '))}"></div>
+    ${detailTagGroupsHTML(p)}
     <div class="field"><label style="display:flex;align-items:center;gap:.4rem;margin:0">
       <input type="checkbox" id="e-reviewed" style="width:auto" ${p.reviewed?'checked':''}> 검수 완료 (교사 확인)</label></div>
     ${hasImg(p)?`<div class="pimgs" id="detail-imgs" style="margin-bottom:.4rem"><span class="hint">그림 불러오는 중…</span></div>
@@ -4030,10 +4432,12 @@ function twinRelHTML(p){ // 상세 화면: 원본 ↔ 쌍둥이·변형 바로 �
     + (p.twinOf && p.ideas && p.ideas.length ? `<div class="hint">💡 이 문제 아이디어: ${p.ideas.map((x,k)=>'①②③④⑤⑥'[k]+' '+esc(x)).join(' · ')}</div>` : '')
     + (p.ideaChange ? `<div class="hint" style="color:#8a4fd8">🔀 바뀐 아이디어: ${esc(p.ideaChange)}</div>` : '')
     + (p.twinStyle ? `<div class="hint">✍ 강사 요청: ${esc(p.twinStyle)}</div>` : '');
-  return `<div style="margin-bottom:.6rem;padding:.45rem .6rem;background:#f4f6fb;border-radius:10px"><div class="row" style="gap:.35rem">${parts.join(' <span style="color:#c9c3b5">|</span> ')}</div>${ideaHtml}</div>`;
+  return `<div style="margin-bottom:.6rem;padding:.45rem .6rem;background:#f4f6fb;border-radius:10px"><div class="row" style="gap:.35rem">${parts.join(' <span style="color:#d1d5db">|</span> ')}</div>${ideaHtml}</div>`;
 }
 async function saveDetail(id){
   const p = state.problems.find(x=>x.id===id); if(!p) return;
+  { const miss = missingRequiredGroups($('#e-tags').value.split(',').map(s=>s.trim()).filter(Boolean));
+    if(miss.length && !confirm(`필수 태그 그룹에서 고르지 않았습니다: ${miss.join(', ')}\n그래도 저장할까요?`)) return; }
   p.question = $('#e-question').value.trim();
   p.choices = $('#e-choices').value.split('\n').map(s=>s.trim()).filter(Boolean);
   p.answer = $('#e-answer').value.trim();
@@ -7233,6 +7637,8 @@ async function startTwinMaker(){
   catch(e){ toast('⚠ 쌍둥이·변형 만들기 중단: '+(e.message||e)); }
   finally{ TWIN_LIVE.stopped = !!(AI_BATCH.cancel || (res && res.stopped)); AI_BATCH.running = false; AI_BATCH.cancel = false; AI_BATCH.ctrl = null; TWIN_LIVE.done = true; TWIN_LIVE.result = res; clearInterval(TWIN_LIVE.timer); twinLiveRender(); }
   if(!res) return;
+  try{ saveTwinRunMeta(res.batch, { opts: { twin: opts.twin, variant: opts.variant, diff: opts.diff, verify: opts.verify, concurrency: opts.concurrency, style: opts.style||'' },
+    ms: Date.now() - (TWIN_LIVE.t0||Date.now()), saved: res.saved.length, repaired: res.repaired, rejected: res.rejected, short: res.short, filled: res.filled||0, model: aiSettings().figModel, srcN: sources.length, at: Date.now() }); }catch(e){}
   logJob('쌍둥이·변형', res.batchName, `${res.saved.length}문항`+(res.repaired?` · 수리 ${res.repaired}`:'')+(res.rejected?` · 버림 ${res.rejected}`:'')+(res.short?` · 못 만듦 ${res.short}`:'')+(res.filled?` · 원본 채움 ${res.filled}`:'')+(res.fail?` · 실패 ${res.fail}`:''));
   refreshCounts();
   if(res.saved.length) twinShowGroups(res.batch); else go('db');
@@ -7471,7 +7877,7 @@ function renderSheet(){
         <div class="pmeta"><span class="tag">${esc([p.subject,p.chapter,p.section].filter(Boolean).join(' › ')||'미분류')}</span>
         <span class="tag diff">${'●'.repeat(p.difficulty||3)}</span>
         ${(p.solution||'').trim()?'<span class="tag" style="background:#e4f2e8;color:var(--ok)">해설</span>':''}
-        ${p.reviewed?'':'<span class="tag" style="background:#faf0dc;color:#7a5c1e">미검수</span>'}</div>
+        ${p.reviewed?'':'<span class="tag" style="background:#fff7ed;color:#7a5c1e">미검수</span>'}</div>
       </div>
       <div class="mv">
         <input type="number" min="0" step="0.5" value="${state.points[p.id]!=null?state.points[p.id]:''}" placeholder="배점"
@@ -7644,7 +8050,7 @@ async function buildHtmlExport(mode, list){ // mode: 'sheet' 학습지 | 'book' 
 
   const probArt = (p,n)=>`
 <article class="prob" id="q${n}" data-id="${esc(p.id)}" data-subject="${esc(p.subject||'')}" data-chapter="${esc(p.chapter||'')}" data-section="${esc(p.section||'')}" data-grade="${esc(p.grade||'')}" data-difficulty="${p.difficulty||3}" data-answer="${esc(p.answer||'')}">
-<div class="phead"><span class="qnum">${n}.</span>${p.twinKind?`<span class="twinmark" style="font-size:.72em;border:1px solid #9bb8a6;color:#2f6b47;border-radius:99px;padding:0 .45em;margin-right:.35em">${esc(p.twinKind)}${p.origNo?' · '+esc(p.origNo)+'번':''}</span>`:''}${pts(p)!=null?`<span class="pt">[${pts(p)}점]</span>`:''}<span class="diff">${'●'.repeat(p.difficulty||3)}${'○'.repeat(Math.max(0,5-(p.difficulty||3)))}</span><button class="sbtn noprint" onclick="tgSol(${n})">정답·해설</button></div>
+<div class="phead"><span class="qnum">${n}.</span>${p.twinKind?`<span class="twinmark" style="font-size:.72em;border:1px solid #86efac;color:#2f6b47;border-radius:99px;padding:0 .45em;margin-right:.35em">${esc(p.twinKind)}${p.origNo?' · '+esc(p.origNo)+'번':''}</span>`:''}${pts(p)!=null?`<span class="pt">[${pts(p)}점]</span>`:''}<span class="diff">${'●'.repeat(p.difficulty||3)}${'○'.repeat(Math.max(0,5-(p.difficulty||3)))}</span><button class="sbtn noprint" onclick="tgSol(${n})">정답·해설</button></div>
 <div class="pbody">${htmlProblemBody(p, imgsMap.get(p.id), withMeta)}</div>
 <div class="sol" id="sol${n}">${htmlSolutionBody(p, solMap.get(p.id))}</div>
 </article>`;
@@ -7702,7 +8108,7 @@ async function buildHtmlExport(mode, list){ // mode: 'sheet' 학습지 | 'book' 
 *{box-sizing:border-box} .katex-mathml{display:none}
 body{margin:0;background:#f3f1ec;color:var(--ink);font:15px/1.65 'Noto Sans KR','Malgun Gothic',sans-serif}
 .page{max-width:840px;margin:0 auto;padding:20px 16px 60px;background:#fff;min-height:100vh;box-shadow:0 0 14px rgba(0,0,0,.07)}
-.bar{position:sticky;top:0;z-index:5;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;background:#23321f;color:#fff;padding:.55rem .9rem;border-radius:0 0 10px 10px;margin:0 0 1rem}
+.bar{position:sticky;top:0;z-index:5;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;background:#111827;color:#fff;padding:.55rem .9rem;border-radius:0 0 10px 10px;margin:0 0 1rem}
 .bar b{margin-right:auto} .bar button{border:1px solid #ffffff55;background:transparent;color:#fff;border-radius:7px;padding:.3rem .7rem;cursor:pointer}
 .bar button.pr{background:#c9a227;border-color:#c9a227;color:#22201a;font-weight:700}
 .bar label{display:flex;gap:.3rem;align-items:center;font-size:.85rem}
@@ -9173,6 +9579,7 @@ function dashGo(f){
   state.problems = light;
   state.worksheets = await DB.getAll('worksheets');
   setTimeout(()=>figRerenderSolids().catch(()=>{}), 2500);
+  try{ fillSrcTypeSelects(); }catch(e){}
   try{ $('#fig-style').value = styleLast('fig'); renderStylePresets('fig', 'fig-style', 'fig-style-presets'); }catch(e){}            // 예전 방식 원기둥·원뿔 그림 → 정확한 투영으로 다시 그림
   // 과거 AI 변환이 남긴 리터럴 \n(₩n으로 보임)을 1회 자동 복구
   (async ()=>{
