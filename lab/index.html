@@ -1274,23 +1274,19 @@ const PRESET_CURRICULUM = {
     "확률과 통계":["자료의 정리","도수분포표와 상대도수","경우의 수와 확률","확률","대푯값과 산포도","상자그림과 산점도"]}
 };
 // 스터디피크 마스터 유형표(lab/units-sp.js)가 더하는 과목·중단원 — 초등 수학(대분류 > 소분류) 등
-if(window.SP_MASTER_CURR) for(const [s, chs] of Object.entries(window.SP_MASTER_CURR)){
-  const S = PRESET_CURRICULUM[s] = PRESET_CURRICULUM[s] || {};
-  for(const [c, xs] of Object.entries(chs)){ const C = S[c] = S[c] || []; xs.forEach(x=>{ if(!C.includes(x)) C.push(x); }); }
+function mergeCurriculum(dst, src){                                // 과목 › 대단원 › [중단원] 트리에 없는 것만 더함 → 더한 개수
+  let n = 0;
+  for(const [s, chs] of Object.entries(src || {})){
+    const S = dst[s] = dst[s] || {};
+    for(const [c, xs] of Object.entries(chs || {})){ const C = S[c] = S[c] || []; for(const x of xs || []) if(!C.includes(x)){ C.push(x); n++; } }
+  }
+  return n;
 }
+mergeCurriculum(PRESET_CURRICULUM, window.SP_MASTER_CURR);
 let CURRICULUM = loadCurriculum();
 // 프리셋이 확장되면 사용자가 저장해 둔 교육과정에도 새 과목·단원을 합쳐 준다(사용자 추가분은 그대로 유지)
-(function mergePresetIntoCurriculum(){
-  let changed = false;
-  for(const [s, chs] of Object.entries(PRESET_CURRICULUM)){
-    if(!CURRICULUM[s]){ CURRICULUM[s] = JSON.parse(JSON.stringify(chs)); changed = true; continue; }
-    for(const [c, sects] of Object.entries(chs)){
-      if(!CURRICULUM[s][c]){ CURRICULUM[s][c] = sects.slice(); changed = true; continue; }
-      for(const sec of sects) if(!CURRICULUM[s][c].includes(sec)){ CURRICULUM[s][c].push(sec); changed = true; }
-    }
-  }
-  if(changed && localStorage.getItem('sp-lab-curriculum')) saveCurriculum();
-})();
+// 프리셋이 확장되면 사용자가 저장해 둔 교육과정에도 새 과목·단원을 합쳐 준다(사용자 추가분은 그대로 유지)
+if(mergeCurriculum(CURRICULUM, PRESET_CURRICULUM) && localStorage.getItem('sp-lab-curriculum')) saveCurriculum();
 function loadCurriculum(){
   try{
     const raw = localStorage.getItem('sp-lab-curriculum');
@@ -1475,7 +1471,9 @@ const $ = s=>document.querySelector(s);
 const $$ = s=>Array.from(document.querySelectorAll(s));
 const uid = ()=> Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const CTRL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;  // PDF 추출물의 제어문자 → 파일 깨짐 방지
-const esc = s=> String(s||'').replace(CTRL_RE,'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc = s=> String(s||'').replace(CTRL_RE,'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// onclick="f('${escJs(x)}')" 용: HTML 이 &#39; 를 ' 로 되돌린 뒤에도 JS 문자열 밖으로 못 나가게 JS 이스케이프를 먼저
+const escJs = s=> esc(String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\r?\n/g,'\\n'));
 
 function toast(msg){
   const t=$('#toast'); t.textContent=msg; t.style.display='block';
@@ -1499,11 +1497,12 @@ function toggleSidebar(force){
 }
 /* 접근성: 이름표 없는 입력칸에 이름 붙이기 — .field 안 <label> 은 그 칸과 연결, 나머지 select 는 첫 항목('과목 전체' 등)으로 */
 function a11yLabels(root){
-  (root || document).querySelectorAll('.field').forEach(f=>{
+  root = root || document;
+  root.querySelectorAll('.field').forEach(f=>{
     const lab = f.querySelector(':scope > label'), inp = f.querySelector(':scope > input[id], :scope > select[id], :scope > textarea[id]');
     if(lab && inp && !lab.htmlFor) lab.htmlFor = inp.id;
   });
-  (root || document).querySelectorAll('select:not([aria-label]), input:not([aria-label]):not([type=hidden]), textarea:not([aria-label])').forEach(el=>{
+  root.querySelectorAll('select:not([aria-label]), input:not([aria-label]):not([type=hidden]), textarea:not([aria-label])').forEach(el=>{
     if(el.labels && el.labels.length) return;
     const name = el.tagName === 'SELECT' ? (el.options[0] && el.options[0].textContent.trim()) : (el.placeholder || el.title || '');
     if(name) el.setAttribute('aria-label', name.slice(0, 60));
@@ -1512,7 +1511,6 @@ function a11yLabels(root){
 function go(view){
   $$('#sbnav button').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
   $$('.view').forEach(v=>v.classList.toggle('active', v.id==='view-'+view));
-  try{ a11yLabels($('#view-'+view)); }catch(e){}
   const tt = String(VIEW_TITLES[view]||'').split(' · ');           // '태그 관리 | 단원태그' 식 제목
   $('#topbar-title').innerHTML = tt.length > 1 ? `<span class="crumb-a">${esc(tt[0])}</span><span class="crumb-sep"></span><span>${esc(tt.slice(1).join(' · '))}</span>` : esc(tt[0]);
   $$('#sbnav .ng').forEach(g=>{ if(g.querySelector(`button[data-view="${view}"]`)) g.classList.remove('closed'); });
@@ -1526,6 +1524,7 @@ function go(view){
   persistCart();
   toggleSidebar(false);
   window.scrollTo({top:0});
+  try{ a11yLabels($('#view-'+view)); }catch(e){}                   // 화면을 그린 뒤에 이름표
 }
 $('#sbnav').addEventListener('click', e=>{
   const h = e.target.closest('.ng-head'); if(h){ h.parentElement.classList.toggle('closed'); return; }
@@ -1615,14 +1614,14 @@ function renderMyTags(){
       <td><b>${esc(g.name)}</b></td>
       <td><span class="pillc ${g.mode==='multi'?'b':''}">${g.mode==='multi'?'복수 선택':'단일 선택'}</span></td>
       <td>${g.required ? '<span style="color:var(--green);font-weight:700">✓ 필수</span>' : '<span class="hint">선택</span>'}</td>
-      <td>${(g.items||[]).map(t=>`<span class="pillc clk tgi-chip" onclick="tagGoDB('${esc(t)}')" title="이 태그가 붙은 문제 ${cnt.get(t)||0}개 보기">${esc(t)}${cnt.get(t)?` <span class="hint" style="margin-left:.25rem">${cnt.get(t)}</span>`:''}</span>`).join('') || '<span class="hint">하위 태그 없음</span>'}</td>
+      <td>${(g.items||[]).map(t=>`<span class="pillc clk tgi-chip" onclick="tagGoDB('${escJs(t)}')" title="이 태그가 붙은 문제 ${cnt.get(t)||0}개 보기">${esc(t)}${cnt.get(t)?` <span class="hint" style="margin-left:.25rem">${cnt.get(t)}</span>`:''}</span>`).join('') || '<span class="hint">하위 태그 없음</span>'}</td>
       <td style="white-space:nowrap"><button class="btn ghost sm" onclick="editTagGroup(${k})">✎ 수정</button> <button class="btn danger sm" onclick="delTagGroup(${k})">🗑</button></td></tr>`).join('')
     : `<tr><td colspan="6" style="text-align:center;padding:2rem"><span class="hint">아직 태그 그룹이 없습니다.</span><br><button class="btn ghost sm" style="margin-top:.6rem" onclick="addTagGroupExamples()">예시 그룹 넣기 (문항형식 · 출제의도)</button></td></tr>`);
   const inG = new Set(G.flatMap(g=>g.items||[]));
   const free = [...cnt.entries()].filter(([t])=>!inG.has(t)).sort((a,b)=>b[1]-a[1]);
   $('#freetag-total').textContent = free.length+'개';
   $('#freetag-list').innerHTML = free.length ? `<table class="tbl"><tr><th>태그</th><th>문제 수</th><th style="width:300px"></th></tr>${free.map(([t,n])=>`<tr><td><span class="tag user">#${esc(t)}</span></td><td>${n}</td>
-      <td style="white-space:nowrap"><button class="btn ghost sm" onclick="tagGoDB('${esc(t)}')">🔍 보기</button> <button class="btn ghost sm" onclick="tagRename('${esc(t)}')">✎ 이름 바꾸기·합치기</button> <button class="btn danger sm" onclick="tagRemoveAll('${esc(t)}')">🗑 모두 지우기</button></td></tr>`).join('')}</table>`
+      <td style="white-space:nowrap"><button class="btn ghost sm" onclick="tagGoDB('${escJs(t)}')">🔍 보기</button> <button class="btn ghost sm" onclick="tagRename('${escJs(t)}')">✎ 이름 바꾸기·합치기</button> <button class="btn danger sm" onclick="tagRemoveAll('${escJs(t)}')">🗑 모두 지우기</button></td></tr>`).join('')}</table>`
     : '<div class="hint">그룹에 없는 태그가 없습니다.</div>';
 }
 function tagGoDB(t){ go('db'); resetFilters(); state.filterTag = t; renderDB(); }
@@ -1721,14 +1720,14 @@ function renderTwinHist(){
     const set = [ (o.twin != null || o.variant != null) ? `원본당 쌍둥이 ${o.twin||0} · 변형 ${o.variant||0}` : '', o.diff ? '난이도 '+(DIFF[o.diff]||o.diff) : '',
       M && M.ms ? '걸린 시간 '+Math.max(1, Math.round(M.ms/60000))+'분' : '', M && M.repaired ? '바로잡음 '+M.repaired : '', M && M.rejected ? '버리고 다시 '+M.rejected : '' ].filter(Boolean).join(' · ');
     const sel = state.thSel.includes(r.key);
-    return `<div class="th-run ${sel?'sel':''}"><div class="th-ck"><input type="checkbox" ${sel?'checked':''} onchange="thToggle('${esc(r.key)}', this.checked)"></div>
+    return `<div class="th-run ${sel?'sel':''}"><div class="th-ck"><input type="checkbox" ${sel?'checked':''} onchange="thToggle('${escJs(r.key)}', this.checked)"></div>
       <div class="th-when">🕒 ${w(r.at)}</div>
       <div class="th-name">${esc(r.name)} <span class="pillc g">쌍둥이 ${r.nT}</span><span class="pillc b">변형 ${r.nV}</span><span class="pillc">원본 ${r.srcIds.length}</span></div>
       <div>${r.srcs.slice(0, 12).map(s=>`<span class="pillc clk" onclick="openDetail('${s.id}')" title="${esc(stripBoxMarks(s.question||'').slice(0,80))}">${s.origNo ? esc(s.origNo)+'번' : '원본'}${s.srcName ? ' · '+esc(s.srcName.slice(0,14)) : ''}</span>`).join('')}${r.srcs.length > 12 ? `<span class="hint"> 외 ${r.srcs.length-12}개</span>` : ''}</div>
       <div><div class="th-meta">${set || '<span class="hint">설정 기록 없음(다른 기기·맥에서 만든 내역)</span>'}${r.style ? ` · ✍ 요청: ${esc(r.style.slice(0,80))}` : ''}</div>
-        <div class="th-acts"><button class="btn sm" onclick="twinBookToSheet('${esc(r.key)}')">📚 원본 + 쌍둥이·변형으로 교재</button>
-          <button class="btn ghost sm" onclick="thToSheet(['${esc(r.key)}'], false)">🧺 만든 문제만 담기</button>
-          <button class="btn ghost sm" onclick="twinShowGroups('${esc(r.key)}')">👯 원본별로 보기</button>
+        <div class="th-acts"><button class="btn sm" onclick="twinBookToSheet('${escJs(r.key)}')">📚 원본 + 쌍둥이·변형으로 교재</button>
+          <button class="btn ghost sm" onclick="thToSheet(['${escJs(r.key)}'], false)">🧺 만든 문제만 담기</button>
+          <button class="btn ghost sm" onclick="twinShowGroups('${escJs(r.key)}')">👯 원본별로 보기</button>
           <button class="btn ghost sm" onclick="openTwinMaker(${esc(JSON.stringify(r.srcIds))})">↻ 이 원본으로 더 만들기</button></div></div></div>`;
   }).join('') : `<div class="empty">${all.length ? '조건에 맞는 내역이 없습니다.' : '아직 만든 쌍둥이·변형이 없습니다. 문제 검색에서 원본을 고르고 [👯 쌍둥이·변형]을 눌러 보세요.'}</div>`;
   const bar = $('#th-bar');
@@ -1901,10 +1900,11 @@ function parseCsv(text){
   if(f !== '' || row.length){ row.push(f); rows.push(row); }
   return rows.filter(r=>r.some(x=>String(x).trim()));
 }
-function downloadText(name, text, type){
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿'+text], { type: type || 'text/csv;charset=utf-8' })); a.download = name;
-  document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+function downloadBlob(name, blob){
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
+function downloadText(name, text, type){ downloadBlob(name, new Blob(['﻿'+text], { type: type || 'text/csv;charset=utf-8' })); }
 function unitsRows(){
   const rows = [], U = unitsDB();
   for(const s of Object.keys(CURRICULUM)) for(const c of Object.keys(CURRICULUM[s])) for(const x of (CURRICULUM[s][c]||[])){
@@ -1927,7 +1927,7 @@ function unitsMergeRows(rows){ // 없는 과목·대단원·중단원은 단원 
   const U = unitsDB(); let added = 0, cur = false;
   for(const r of rows){
     const [s, c, x, sub, t, d] = r.map(v=>String(v||'').trim());
-    if(!s || !c) continue;
+    if(!s || !c || [s, c, x, sub, t].some(BAD_KEY)) continue;
     if(!CURRICULUM[s]){ CURRICULUM[s] = {}; cur = true; }
     if(!CURRICULUM[s][c]){ CURRICULUM[s][c] = []; cur = true; }
     if(!x) continue;
@@ -1959,13 +1959,9 @@ function unitsApplySp(){
   if(!confirm(`스터디피크 마스터 유형표(초 ${c.초등||0} · 중 ${c.중등||0} · 고 ${c.고등||0}개 유형)로 소단원·유형을 맞출까요?\n\n· 표에 있는 중단원 ${n}곳의 소단원·유형·상세유형이 스터디피크 표 그대로 바뀝니다.\n· 직접 만든 다른 중단원, 이미 문제에 붙은 태그는 그대로 둡니다.`)) return;
   const U = unitsDB();
   for(const [k, v] of Object.entries(P)) U[k] = v;
-  let addC = 0;
-  for(const [s, chs] of Object.entries(window.SP_MASTER_CURR || {})){
-    const S = CURRICULUM[s] = CURRICULUM[s] || {};
-    for(const [ch, xs] of Object.entries(chs)){ const C = S[ch] = S[ch] || []; xs.forEach(x=>{ if(!C.includes(x)){ C.push(x); addC++; } }); }
-  }
+  const addC = mergeCurriculum(CURRICULUM, window.SP_MASTER_CURR);
   if(addC) saveCurriculum();
-  saveUnits(); renderTags(); if(typeof refreshUnitSelects === 'function') refreshUnitSelects();
+  saveUnits(); renderTags(); refreshUnitSelects();
   toast(`스터디피크 유형표로 맞췄습니다 — 중단원 ${n}곳` + (addC ? `, 새 중단원 ${addC}개(초등 수학 등)` : ''));
 }
 /* 랩 세분류(lab/units-db.js — 상세유형까지) 합치기: 없는 항목만 더한다 */
@@ -2299,7 +2295,7 @@ $('#f-images').addEventListener('change', async e=>{
 });
 function renderPendingImages(){
   $('#f-images-preview').innerHTML = state.pendingImages.map((d,i)=>
-    `<span style="position:relative;display:inline-block"><img src="${d}" alt="첨부 이미지">
+    `<span style="position:relative;display:inline-block"><img src="${esc(d)}" alt="첨부 이미지">
      <button class="btn danger sm" style="position:absolute;top:2px;right:2px;padding:0 .35rem" onclick="state.pendingImages.splice(${i},1);renderPendingImages()">×</button></span>`).join('');
 }
 
@@ -2728,7 +2724,7 @@ async function parsePDF(file){
   if(!window.pdfjsLib) throw new Error('PDF 구성요소가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.');
   if(!pdfjsLib.GlobalWorkerOptions.workerSrc)
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  const pdf = await pdfjsLib.getDocument({data: await file.arrayBuffer()}).promise;
+  const pdf = await pdfjsLib.getDocument({data: await file.arrayBuffer(), isEvalSupported: false}).promise;   // CVE-2024-4367 (악성 글꼴) 차단
   // 1차 분석: 페이지별 텍스트 아이템과 문항 번호 앵커
   const pages = [];
   let anchorTotal = 0, bodyTotal = 0;
@@ -2737,7 +2733,7 @@ async function parsePDF(file){
     const vp = page.getViewport({scale:1});
     const tc = await page.getTextContent();
     const items = tc.items.map(it=>({str:it.str, x:it.transform[4], y:it.transform[5], w:it.width||0, h:Math.abs(it.transform[3])||it.height||0}));
-    const pg = {page, w:vp.width, h:vp.height, items, anchors:[], bodyLen:0, text:''};
+    const pg = {page, w:vp.width, h:vp.height, items, anchors:[], bodyLen:0, text:'', capture: !!file.isCapture};   // 📋 캡처로 만든 PDF
     pg.anchors = collectAnchors(items, vp.width, vp.height);
     for(const it of items){
       const s = it.str.trim();
@@ -2966,7 +2962,9 @@ function detectRegionsByPixels(canvas, pgW, pgH, pageIdx, startNum, opts){
   const W = canvas.width, H = canvas.height;
   const img = ctx.getImageData(0,0,W,H).data;
   const sx = W/pgW;                                       // canvas px per page unit
-  const dark = (x,y)=>{ const i=(y*W+x)*4; return (0.299*img[i]+0.587*img[i+1]+0.114*img[i+2]) < 190; };
+  const ink = new Uint8Array(W*H);                        // 어두운 픽셀 표 — 한 번만 계산
+  for(let k=0, i=0; k<ink.length; k++, i+=4) ink[k] = (299*img[i]+587*img[i+1]+114*img[i+2]) < 190000 ? 1 : 0;
+  const dark = (x,y)=>ink[y*W+x] === 1;
   // 단(컬럼) 감지: 세로 투영에서 가운데 넓은 흰 띠
   const colCount = new Float32Array(W);
   for(let x=0;x<W;x+=1){
@@ -2975,11 +2973,11 @@ function detectRegionsByPixels(canvas, pgW, pgH, pageIdx, startNum, opts){
     colCount[x]=c;
   }
   let gapStart=-1, bestGap=null;
-  for(let x=Math.floor(W*0.35); x<W*0.65; x++){
-    if(colCount[x]<=1){ if(gapStart<0) gapStart=x; }
+  const gEnd = Math.floor(W*0.65);
+  for(let x=Math.floor(W*0.35); x<=gEnd; x++){                // 끝(gEnd)은 잉크로 쳐서 마지막 띠도 같은 규칙으로 닫음
+    if(x<gEnd && colCount[x]<=1){ if(gapStart<0) gapStart=x; }
     else { if(gapStart>=0 && x-gapStart > W*0.02 && (!bestGap || x-gapStart > bestGap[1]-bestGap[0])) bestGap=[gapStart,x]; gapStart=-1; }
   }
-  if(gapStart>=0 && Math.floor(W*0.65)-gapStart > W*0.02) bestGap=[gapStart, Math.floor(W*0.65)];
   if(bestGap){                                              // 진짜 2단이면 양쪽 모두 글이 빽빽 — 짧은 줄 뒤 오른쪽 빈 띠는 단 사이가 아님
     let lr = 0, rr = 0;
     for(let y=Math.floor(H*0.04); y<H*0.96; y+=2){
@@ -2990,9 +2988,9 @@ function detectRegionsByPixels(canvas, pgW, pgH, pageIdx, startNum, opts){
     }
     if(Math.min(lr, rr) < Math.max(lr, rr)*0.4) bestGap = null;
   }
-  const L = capture ? 0 : Math.floor(W*0.03), R = capture ? W : Math.floor(W*0.97);
+  const [L, R, top, bot] = capture ? [0, W, 0, H] : [Math.floor(W*0.03), Math.floor(W*0.97), Math.floor(H*0.04), Math.floor(H*0.95)];   // 캡처는 머리말 여백 없음
   const colRanges = bestGap ? [[L, bestGap[0]], [bestGap[1], R]] : [[L, R]];
-  const top = capture ? 0 : Math.floor(H*0.04), bot = capture ? H : Math.floor(H*0.95);
+  const median = arr=>{ const v = arr.slice().sort((p,q)=>p-q); return v[Math.floor(v.length/2)]; };
   const PAD = Math.max(2, Math.round(4*sx));
   const out = []; let num = startNum;
   const push = (x0, x1, a, b)=>{                            // 캔버스 좌표 → 페이지 좌표 (여유 PAD)
@@ -3021,7 +3019,7 @@ function detectRegionsByPixels(canvas, pgW, pgH, pageIdx, startNum, opts){
     }
     const ls = lines.filter(ln=>ln.left >= 0 && (ln.h >= 3 || ln.right-ln.left > 6*sx));
     if(!ls.length) continue;
-    const hs = ls.map(ln=>ln.h).sort((p,q)=>p-q), hMed = hs[Math.floor(hs.length/2)];
+    const hMed = median(ls.map(ln=>ln.h));
     const textLike = ln=>ln.h <= hMed*2.2;
     const minL = Math.min(...ls.filter(textLike).map(ln=>ln.left));
     const tol = Math.max(3, Math.round((x1-x0)*0.012));
@@ -3044,8 +3042,8 @@ function detectRegionsByPixels(canvas, pgW, pgH, pageIdx, startNum, opts){
       groups = [ls];                                          // 캡처: 번호 모양을 못 찾으면 한 장 = 한 문제
     } else {
       // 스캔 페이지: 가로 여백으로 경계 (≈14pt, 줄 간격이 넓은 큰 글씨면 보통 줄 간격의 1.8배 이상)
-      const gaps = ls.slice(1).map((ln, i)=>ln.a - ls[i].b).sort((p,q)=>p-q);
-      const GAP = Math.max(10, Math.round(14*sx), gaps.length ? gaps[Math.floor(gaps.length/2)]*1.8 : 0);
+      const gaps = ls.slice(1).map((ln, i)=>ln.a - ls[i].b);
+      const GAP = Math.max(10, Math.round(14*sx), gaps.length ? median(gaps)*1.8 : 0);
       let g = [ls[0]];
       for(let i=1; i<ls.length; i++){ if(ls[i].a - ls[i-1].b > GAP){ groups.push(g); g = []; } g.push(ls[i]); }
       groups.push(g);
@@ -3359,7 +3357,7 @@ async function pdfedDetectPage(pg, rerender){
   }
   if(!regs.length){
     const c = await pdfedPixelCanvas(pg);
-    regs = detectRegionsByPixels(c, pg.w, pg.h, pg.idx, PDFED.nextNum, { capture: PASTE.pdfNames.has(pdfedSrcOf(pg.idx)) });
+    regs = detectRegionsByPixels(c, pg.w, pg.h, pg.idx, PDFED.nextNum, { capture: pg.capture });
   }
   regs.forEach(r=>{ r.kind = pg.mode==='sol' ? 'sol' : 'prob'; });   // 해설 페이지의 영역은 해설 조각
   PDFED.regions = PDFED.regions.filter(r=>r.page!==pg.idx).concat(regs);
@@ -4032,7 +4030,7 @@ $('#bulk-files').addEventListener('change', e=>{
 });
 /* ── 📋 캡처 이미지 붙여넣기: Ctrl+V 한 이미지(·이미지 파일)를 모아 두었다가 → 한 장씩 페이지인 PDF로 만들어 영역 인식 에디터로
    (스캔 PDF와 같은 길: 문항 영역 자동 인식 → 이미지 문항 → AI 텍스트 변환) */
-const PASTE = { imgs: [], pdfNames: new Set() };   // pdfNames: 캡처로 만든 PDF 이름(영역 인식이 캡처용으로 동작)
+const PASTE = { imgs: [] };
 function addPastedImage(dataURL, name){
   PASTE.imgs.push({ src: dataURL, name: name || ('캡처 '+(PASTE.imgs.length+1)) });
   renderPasteTray();
@@ -4086,7 +4084,7 @@ async function pasteTrayOpen(){
   const name = `캡처 ${d.getMonth()+1}-${d.getDate()} ${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}.pdf`;
   try{
     const f = await imagesToPdfFile(PASTE.imgs.map(x=>x.src), name);
-    PASTE.pdfNames.add(name);
+    f.isCapture = true;                                       // 영역 인식이 캡처용으로 동작
     PASTE.imgs = []; renderPasteTray();
     await handleUploadFiles([f], '#bulk-text');
   }catch(e){ toast('⚠ 붙여넣은 이미지를 처리하지 못했습니다: '+(e.message||e)); }
@@ -4145,9 +4143,9 @@ function renderBatchBanner(){
   el.style.display = 'block';
   el.innerHTML = `<div class="spread"><span>📦 <b>${esc(b.name)}</b> — ${list.length}문항 (원래 번호 순)`
     +(miss.length?` · <span style="color:var(--danger)">빠진 번호: ${miss.map(n=>n+'번').join(', ')}</span>`:'')+`</span>
-    <span class="row">${list.some(p=>p.twinOf) ? `<button class="btn gold sm" onclick="twinBookToSheet('${esc(key)}')">📚 원본 + 쌍둥이·변형으로 교재 만들기</button>` : ''}
-    <button class="btn ${list.some(p=>p.twinOf)?'ghost':'gold'} sm" onclick="batchToSheet('${esc(key)}')">🧺 이 ${list.length}문항으로 학습지·교재·모의고사 만들기</button>
-    ${list.some(p=>p.twinOf) ? '' : `<button class="btn ghost sm" onclick="openTwinMaker(batchProblems('${esc(key)}').map(p=>p.id))">👯 이 묶음으로 쌍둥이·변형 만들기</button>`}
+    <span class="row">${list.some(p=>p.twinOf) ? `<button class="btn gold sm" onclick="twinBookToSheet('${escJs(key)}')">📚 원본 + 쌍둥이·변형으로 교재 만들기</button>` : ''}
+    <button class="btn ${list.some(p=>p.twinOf)?'ghost':'gold'} sm" onclick="batchToSheet('${escJs(key)}')">🧺 이 ${list.length}문항으로 학습지·교재·모의고사 만들기</button>
+    ${list.some(p=>p.twinOf) ? '' : `<button class="btn ghost sm" onclick="openTwinMaker(batchProblems('${escJs(key)}').map(p=>p.id))">👯 이 묶음으로 쌍둥이·변형 만들기</button>`}
     <button class="btn ghost sm" onclick="$('#filter-batch').value='';state.page=1;renderDB()">묶음 보기 해제</button></span></div>`;
 }
 function batchToSheet(key){
@@ -4256,7 +4254,7 @@ function problemCardHTML(p, idx){
       ${sim}
       ${(p.solution||p.answer)?'<span class="tag" style="background:#e4f2e8;color:var(--ok)">해설</span>':''}
       ${p.reviewed?'':'<span class="tag" style="background:#fff7ed;color:#7a5c1e">미검수</span>'}
-      ${p.twinKind?`<span class="twin-badge ${p.twinKind==='변형'?'var':''}" title="원본 문제에서 만든 ${esc(p.twinKind)} 문제">👯 ${esc(p.twinKind)} ${p.twinNo||''}${p.origNo?' · 원본 '+esc(p.origNo)+'번':''}</span>`:''}
+      ${p.twinKind?`<span class="twin-badge ${p.twinKind==='변형'?'var':''}" title="원본 문제에서 만든 ${esc(p.twinKind)} 문제">👯 ${esc(p.twinKind)} ${esc(p.twinNo||'')}${p.origNo?' · 원본 '+esc(p.origNo)+'번':''}</span>`:''}
       <span style="flex:1"></span>
       <button class="btn ${inCart?'gold':'ghost'} sm" onclick="toggleCart('${p.id}')">${inCart?'담김 ✓':'담기'}</button>
     </div>
@@ -4355,16 +4353,17 @@ function renderTwinGroups(list){
     else cards.push(`<div class="pcard tg-orig"><div class="hint">원본이 삭제되었습니다</div></div>`);
     cards.push('<div class="tg-arrow">➜</div>');
     ch.forEach(c=>{ shown.push(c); cards.push(problemCardHTML(c, idx++)); });
+    const hj = escJs(h);
     const ids = [h, ...ch.map(c=>c.id)].filter(id=>byId.has(id)), selN = ids.filter(id=>state.cart.includes(id)).length;
     return `<div class="tgroup" style="grid-column:1/-1"><div class="tg-head"><span class="tg-no">${o && o.origNo ? esc(o.origNo)+'번' : '원본'}</span>
       <span>${esc(o ? (o.srcName||'') : '')}</span><span class="hint">쌍둥이 ${nT} · 변형 ${nV}</span>
       <span class="tg-sel ${selN?'on':''}">선택 ${selN}/${ids.length}</span><span style="flex:1"></span>
       <span class="tg-btns">
-        <button class="btn ${selN===ids.length?'gold':'ghost'} sm" onclick="twinSelect('${h}','all',true)" title="원본 → 쌍둥이 → 변형 순서로 모두 담기">☑ 모두 선택</button>
-        ${nT?`<button class="btn ghost sm" onclick="twinSelect('${h}','twin',true)">쌍둥이만</button>`:''}
-        ${nV?`<button class="btn ghost sm" onclick="twinSelect('${h}','var',true)">변형만</button>`:''}
-        <button class="btn ghost sm" onclick="twinSelect('${h}','all',false)" ${selN?'':'disabled'}>☐ 모두 해제</button>
-        <button class="btn ghost sm" onclick="${o?`openTwinMaker(['${h}'])`:''}" ${o?'':'disabled'}>👯 더 만들기</button></span></div>
+        <button class="btn ${selN===ids.length?'gold':'ghost'} sm" onclick="twinSelect('${hj}','all',true)" title="원본 → 쌍둥이 → 변형 순서로 모두 담기">☑ 모두 선택</button>
+        ${nT?`<button class="btn ghost sm" onclick="twinSelect('${hj}','twin',true)">쌍둥이만</button>`:''}
+        ${nV?`<button class="btn ghost sm" onclick="twinSelect('${hj}','var',true)">변형만</button>`:''}
+        <button class="btn ghost sm" onclick="twinSelect('${hj}','all',false)" ${selN?'':'disabled'}>☐ 모두 해제</button>
+        <button class="btn ghost sm" onclick="${o?`openTwinMaker(['${hj}'])`:''}" ${o?'':'disabled'}>👯 더 만들기</button></span></div>
       <div class="tg-row">${cards.join('')}</div></div>`;
   }).join('');
   const looseHtml = loose.length ? `<div class="hint" style="grid-column:1/-1;margin:.4rem 0">쌍둥이·변형이 없는 문제 ${loose.length}개${loose.length>30?' (앞 30개만 표시)':''}</div>` + loose.slice(0, 30).map(p=>{ shown.push(p); return problemCardHTML(p, idx++); }).join('') : '';
@@ -4823,11 +4822,11 @@ function openDetail(id){
   $('#modal-bg').classList.add('show');
   detailPreview(); ['e-question','e-choices','e-answer'].forEach(k=>$('#'+k).addEventListener('input', ()=>{ clearTimeout(state._prevT); state._prevT = setTimeout(detailPreview, 250); }));
   if(hasImg(p)) imagesOf(p).then(imgs=>{
-    const pv = $('#e-prev-imgs'); if(pv) pv.innerHTML = imgs.map(d=>`<img src="${d}" style="max-height:180px" alt="문제 그림">`).join('');
+    const pv = $('#e-prev-imgs'); if(pv) pv.innerHTML = imgs.map(d=>`<img src="${esc(d)}" style="max-height:180px" alt="문제 그림">`).join('');
     const el = $('#detail-imgs');
     if(el) el.innerHTML = imgs.map((d,k)=> figSpecOf(p, k)
-      ? `<figure style="margin:0;display:inline-block;text-align:center"><img src="${d}" style="max-height:200px" alt="문제 그림"><figcaption><button class="btn ghost sm" onclick="openFigSpecForProblem('${p.id}', ${k})">📐 설계도 고치기</button></figcaption></figure>`
-      : `<img src="${d}" style="max-height:200px" alt="문제 그림">`).join('') || '<span class="hint">그림 없음</span>';
+      ? `<figure style="margin:0;display:inline-block;text-align:center"><img src="${esc(d)}" style="max-height:200px" alt="문제 그림"><figcaption><button class="btn ghost sm" onclick="openFigSpecForProblem('${p.id}', ${k})">📐 설계도 고치기</button></figcaption></figure>`
+      : `<img src="${esc(d)}" style="max-height:200px" alt="문제 그림">`).join('') || '<span class="hint">그림 없음</span>';
   });
   solImgOf(p).then(d=>{ const el = $('#e-solimg'); if(el && d){ el.src = d; el.style.display='block'; } });
 }
@@ -4844,11 +4843,11 @@ function twinRelHTML(p){ // 상세 화면: 원본 ↔ 쌍둥이·변형 바로 �
   const parts = [];
   if(p.twinOf){
     const o = state.problems.find(x=>x.id===p.twinOf);
-    parts.push(`<span class="hint">이 문제는</span> <span class="tag" style="background:#2c5fd8;color:#fff">${esc(p.twinKind||'')} ${p.twinNo||''}</span> <span class="hint">· 원본:</span> `
+    parts.push(`<span class="hint">이 문제는</span> <span class="tag" style="background:#2c5fd8;color:#fff">${esc(p.twinKind||'')} ${esc(p.twinNo||'')}</span> <span class="hint">· 원본:</span> `
       + (o ? `<button class="btn ghost sm" onclick="openDetail('${o.id}')">${o.origNo ? esc(o.origNo)+'번 · ' : ''}${esc(stripBoxMarks(o.question||'').replace(/\$/g,'').replace(/\s+/g,' ').slice(0,26))}…</button>` : '<span class="hint">(삭제됨)</span>'));
   }
   const kids = state.problems.filter(x=>x.twinOf===p.id);
-  if(kids.length) parts.push(`<span class="hint">이 문제로 만든 문제:</span> ` + kids.map(k=>`<button class="btn ghost sm" onclick="openDetail('${k.id}')">${esc(k.twinKind||'')} ${k.twinNo||''}</button>`).join(' '));
+  if(kids.length) parts.push(`<span class="hint">이 문제로 만든 문제:</span> ` + kids.map(k=>`<button class="btn ghost sm" onclick="openDetail('${k.id}')">${esc(k.twinKind||'')} ${esc(k.twinNo||'')}</button>`).join(' '));
   if(!p.twinOf) parts.push(`<button class="btn ghost sm" onclick="closeModal();openTwinMaker(['${p.id}'])">👯 이 문제로 쌍둥이·변형 만들기</button>`);
   const o = p.twinOf ? state.problems.find(x=>x.id===p.twinOf) : null, srcIdeas = (o && o.ideas) || (!p.twinOf && p.ideas) || null;
   const ideaHtml = (srcIdeas && srcIdeas.length ? `<div class="hint" style="margin-top:.3rem">💡 원본 풀이 아이디어: ${srcIdeas.map((x,k)=>'①②③④⑤⑥'[k]+' '+esc(x)).join(' · ')}</div>` : '')
@@ -5716,13 +5715,27 @@ function imgedApplyRotate(deg){
 }
 function imgedBakeRotate(){ IMGED.rotStarted = false; IMGED.rotBase = null; const r=$('#imged-rot'); if(r) r.value = 0; toast('기울기 보정을 적용했습니다.'); }
 /* ── AI 벡터 복원: Claude가 그림을 보고 SVG로 깨끗하게 다시 그림 (서버 불필요, 사용자 API 키) ── */
-function sanitizeSvg(svg){ // script·이벤트핸들러·외부참조 제거 — 따옴표 없는 속성값도 처리
-  return String(svg)
+function sanitizeSvg(svg){ // script·이벤트 핸들러·애니메이션(set/animate)·외부·javascript 링크 제거 — 정규식으로 1차, DOM 으로 2차
+  const out = String(svg)
     .replace(/<script[\s\S]*?(<\/script\s*>|$)/gi,'')
-    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,'')
-    .replace(/\s(xlink:)?href\s*=\s*("(?!#)[^"]*"|'(?!#)[^']*'|(?!["'#])[^\s>]+)/gi,'')
-    .replace(/<(image|foreignObject|iframe)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,'')
-    .replace(/<(image|foreignObject|iframe)\b[^>]*\/?>/gi,'');
+    .replace(/[\s/"']on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,' ')
+    .replace(/[\s/"'](xlink:)?href\s*=\s*("(?!#)[^"]*"|'(?!#)[^']*'|(?!["'#])[^\s>]+)/gi,' ')
+    .replace(/<(image|foreignObject|iframe|animate\w*|set|handler|listener)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,'')
+    .replace(/<(image|foreignObject|iframe|animate\w*|set|handler|listener)\b[^>]*\/?>/gi,'');
+  if(typeof DOMParser === 'undefined') return out;
+  try{
+    const doc = new DOMParser().parseFromString(out, 'image/svg+xml');
+    if(doc.getElementsByTagName('parsererror').length || !doc.documentElement || doc.documentElement.nodeName.toLowerCase() !== 'svg') return out;
+    const BAD = /^(script|foreignobject|iframe|image|animate\w*|set|handler|listener)$/i;
+    for(const el of [...doc.getElementsByTagName('*')]){
+      if(BAD.test(el.localName)){ el.remove(); continue; }
+      for(const a of [...el.attributes]){
+        const n = a.name.toLowerCase(), v = a.value.replace(/[\s\u0000-\u001f]/g, '').toLowerCase();
+        if(n.startsWith('on') || ((n === 'href' || n.endsWith(':href')) && !a.value.startsWith('#')) || /javascript:|vbscript:|data:text/.test(v)) el.removeAttribute(a.name);
+      }
+    }
+    return new XMLSerializer().serializeToString(doc.documentElement);
+  }catch(e){ return out; }
 }
 /* 그림 설계도 형식 안내 — 그림 다시 그리기(AI가 원본을 읽음)와 문제 생성(AI가 새로 설계)이 함께 쓴다 */
 const FIG_GRAPH_GUIDE = '{"kind":"graph","x":[xmin,xmax],"y":[ymin,ymax],'
@@ -8365,24 +8378,30 @@ function lmsTag(p, sub, type){                                     // 지문 태
   const want = LMS_SUBJ_GRADE[p.subject];
   return tags.includes(want) ? want : tags[0];
 }
-function lmsCandidates(p){                                          // 이 문제 단원의 마스터 (소분류, 유형) 후보
+function lmsCandidates(p){                                          // 이 문제 단원의 마스터 (소분류, 유형) 후보 — 중단원 → 대단원 → 과목 순으로 넓힘
+  const memoKey = [lmsLevel(p), p.subject, p.chapter, p.section].join('|');
+  if(LMS.candMemo && LMS.candMemo.has(memoKey)) return LMS.candMemo.get(memoKey);
   const U = window.SP_MASTER_UNITS || {}, out = [], seen = new Set();
   const add = node=>{ for(const [sub, types] of Object.entries(node || {})) for(const t of Object.keys(types)){
     if(!lmsLookup(p, sub, t)) continue;
     const k = lmsKey(sub, t); if(!seen.has(k)){ seen.add(k); out.push([sub, t]); } } };
-  if(p.subject && p.chapter && p.section) add(U[ukey(p.subject, p.chapter, p.section)]);
-  if(!out.length && p.subject && p.chapter) Object.keys(U).filter(k=>k.startsWith(p.subject+'|'+p.chapter+'|')).forEach(k=>add(U[k]));
-  if(!out.length && p.subject) Object.keys(U).filter(k=>k.startsWith(p.subject+'|')).forEach(k=>add(U[k]));
+  const prefixes = [p.subject && p.chapter && p.section && ukey(p.subject, p.chapter, p.section), p.subject && p.chapter && p.subject+'|'+p.chapter+'|', p.subject && p.subject+'|'];
+  for(const pre of prefixes.filter(Boolean)){
+    Object.keys(U).filter(k=>k === pre || (pre.endsWith('|') && k.startsWith(pre))).forEach(k=>add(U[k]));
+    if(out.length) break;
+  }
+  (LMS.candMemo = LMS.candMemo || new Map()).set(memoKey, out);
   return out;
 }
-const LMS_CIRC = '①②③④⑤⑥⑦⑧⑨⑩';
+const LMS_CIRC = '①②③④⑤⑥⑦⑧⑨⑩', LMS_CIRC_RE = new RegExp('[' + LMS_CIRC + ']', 'g'), circNo = c=>LMS_CIRC.indexOf(c) + 1;
+const lmsDiff = p=>Math.min(5, Math.max(1, p.difficulty || 3));
 function lmsAnswerOf(p){                                            // → { kind, count, choice, short, err, warn }
   const choices = (p.choices || []).filter(Boolean);
   let n = choices.length >= 2 ? choices.length : 0;
-  if(!n){ const used = [...new Set(String(p.question||'').match(/[①②③④⑤⑥⑦⑧⑨⑩]/g) || [])]; if(used.length >= 3) n = Math.max(...used.map(c=>LMS_CIRC.indexOf(c)+1)); }
+  if(!n){ const used = [...new Set(String(p.question||'').match(LMS_CIRC_RE) || [])]; if(used.length >= 3) n = Math.max(...used.map(circNo)); }
   const ans = String(p.answer || '').trim();
   if(n){
-    let nums = (ans.match(/[①②③④⑤⑥⑦⑧⑨⑩]/g) || []).map(c=>LMS_CIRC.indexOf(c)+1);
+    let nums = (ans.match(LMS_CIRC_RE) || []).map(circNo);
     if(!nums.length && /^\s*\d+(\s*[,，、\s]\s*\d+)*\s*$/.test(ans)){ const xs = ans.split(/[,，、\s]+/).filter(Boolean).map(Number); if(xs.every(x=>x>=1 && x<=n)) nums = xs; }
     if(!nums.length && ans){                                        // 정답이 값으로 적혀 있으면 선택지에서 찾기
       const norm = s=>String(s).replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '').replace(/[\s$]/g, '');
@@ -8402,7 +8421,7 @@ function lmsAnswerOf(p){                                            // → { kin
 }
 function lmsPtsInText(p){ const m = String(p.question||'').match(/\[\s*(\d+(?:\.\d+)?)\s*점\s*\]/); return m ? +m[1] : null; }
 function lmsDefaultGrade(p, pts){
-  let g = 'ABCDE'[Math.min(5, Math.max(1, p.difficulty || 3)) - 1];
+  let g = 'ABCDE'[lmsDiff(p) - 1];
   if(pts === 2) g = g <= 'B' ? 'A' : 'B';
   if(pts === 4 && g < 'C') g = 'C';
   return g;
@@ -8420,7 +8439,7 @@ function lmsOpen(){
   const list = cartProblems();
   if(!list.length){ toast('담긴 문제가 없습니다.'); return; }
   let saved = lsJson('sp-lab-lms', {}); if(!saved || typeof saved !== 'object') saved = {};
-  LMS.byId = null; LMS.token = (LMS.token || 0) + 1;
+  LMS.byId = new Map(state.problems.map(p=>[p.id, p])); LMS.candMemo = new Map(); LMS.token = (LMS.token || 0) + 1;
   const suneung = list.some(p=>lmsPtsInText(p) != null);
   const orig = list.map(p=>String(p.origNo || '').trim()), origOk = orig.every(Boolean) && new Set(orig).size === orig.length;
   LMS.opt = { title: $('#s-title').value || '수학 시험', subj: saved.subj || '수학', mins: '', author: saved.author || '지영T',
@@ -8435,8 +8454,9 @@ function lmsOpen(){
   lmsApplyPts(); lmsRender();
 }
 function lmsProblem(r){
-  if(!LMS.byId || LMS.byId.size !== state.problems.length) LMS.byId = new Map(state.problems.map(p=>[p.id, p]));
-  return LMS.byId.get(r.id) || {};
+  let p = LMS.byId && LMS.byId.get(r.id);
+  if(!p){ p = state.problems.find(x=>x.id === r.id); if(p && LMS.byId) LMS.byId.set(r.id, p); }
+  return p || {};
 }
 function lmsApplyPts(){                                             // 배점 방식 → 문항별 점수 기본값
   const mode = LMS.opt.pts, N = LMS.rows.length;
@@ -8445,9 +8465,9 @@ function lmsApplyPts(){                                             // 배점 �
     if(mode === 'orig') r.pts = state.points[r.id] != null ? state.points[r.id] : lmsPtsInText(p);
     else if(mode === 'even'){ const base = Math.floor(100/N), extra = 100 - base*N; r.pts = base + (i >= N - extra ? 1 : 0); }
     else if(mode === 'manual') r.pts = state.points[r.id] != null ? state.points[r.id] : r.pts;
-    if(r.gradeSet && r.gradeKind === LMS.opt.kind) return;
-    r.gradeSet = false;
-    r.grade = LMS.opt.kind === 'suneung' ? lmsDefaultGrade(p, r.pts != null ? r.pts : lmsPtsInText(p)) : String(Math.min(5, Math.max(1, p.difficulty || 3)));
+    if(r.gradeKind === LMS.opt.kind) return;                        // 직접 고른 등급은 유지
+    r.gradeKind = null;
+    r.grade = LMS.opt.kind === 'suneung' ? lmsDefaultGrade(p, r.pts != null ? r.pts : lmsPtsInText(p)) : String(lmsDiff(p));
   });
   lmsAllocate();
 }
@@ -8496,12 +8516,13 @@ function lmsCheck(){                                                // → { row
     if(r.ans.warn) add(warn, r, r.ans.warn);
     if(r.unsure) add(warn, r, '검토요망 — AI 추천' + (r.why ? ': '+r.why : ''));
     if(LMS.opt.pts && !(r.pts > 0)) add(rowErr, r, '점수 없음');
-    if(+LMS.opt.mins > 0 && !(r.secs > 0)) add(rowErr, r, '풀이시간 없음');
+    if(lmsMins() && !(r.secs > 0)) add(rowErr, r, '풀이시간 없음');
   }
   const T = lmsMins() * 60, sum = LMS.rows.reduce((s, r)=>s + (r.secs || 0), 0);
   if(T && sum !== T) global.push(`권장풀이시간 합계 ${lmsFmtT(sum)} ≠ 시험 시간 ${lmsFmtT(T)} — [⏱ 다시 배분]`);
   return { rowErr, warn, global };
 }
+const lmsFixList = c=>[...c.global, ...(c.rowErr.size ? [c.rowErr.size + '개 문항(빨간 표시)'] : [])].join(' / ');
 function lmsMins(){ const m = +LMS.opt.mins; return m > 0 && Number.isInteger(m) ? m : 0; }
 function lmsSet(k, v){
   LMS.opt[k] = v;
@@ -8509,47 +8530,50 @@ function lmsSet(k, v){
   if(k === 'noMode'){ lmsRender(); return; }
   if(k === 'pts' || k === 'kind'){ lmsApplyPts(); lmsRender(); return; }
   if(k === 'mins'){ lmsAllocate(); lmsRender(); return; }
-  lmsSummary();
+  lmsSummary(false);                                                // 제목·과목·작성자: 문항별 상태는 그대로
 }
+const lmsSaveRow = (r, patch)=>remapProblems(p=>p.id === r.id, patch);   // 고른 값은 문제 DB에도
+const lmsExtraKeys = r=>r.extra.map(([s, t])=>lmsKey(s, t));
 async function lmsPickType(i, v){
   const r = LMS.rows[i], c = v === '' ? null : (r.cands || [])[+v]; if(v !== '' && !c) return;
   const [sub, type] = c || ['', ''];
   r.sub = sub; r.type = type; r.unsure = false; r.why = '';
-  if(sub) await remapProblems(p=>p.id === r.id, { subsection: sub, utype: type, udetail: '' });   // 문제 DB에도 태그
+  if(sub) await lmsSaveRow(r, { subsection: sub, utype: type, udetail: '' });
   lmsRender();
 }
 async function lmsExtra(i, v, del){                                 // 복합 유형(추가 분류 행)
   const r = LMS.rows[i];
   if(del != null) r.extra.splice(del, 1);
   else if(v !== ''){ const c = (r.cands || [])[+v]; if(!c) return; const [s, t] = c; if(!r.extra.some(([a, b])=>a === s && b === t) && !(s === r.sub && t === r.type)) r.extra.push([s, t]); }
-  await remapProblems(p=>p.id === r.id, { utypeExtra: r.extra.map(([s, t])=>lmsKey(s, t)) });
+  await lmsSaveRow(r, { utypeExtra: lmsExtraKeys(r) });
   lmsRender();
 }
 async function lmsSetAnswer(i, v){
   const r = LMS.rows[i];
-  await remapProblems(p=>p.id === r.id, { answer: String(v||'').trim() });
+  await lmsSaveRow(r, { answer: String(v||'').trim() });
   r.ans = lmsAnswerOf(lmsProblem(r)); lmsRender();
 }
 function lmsSetPts(i, v){ const r = LMS.rows[i], n = parseFloat(v); r.pts = isNaN(n) ? null : n; setPoint(r.id, r.pts != null ? String(r.pts) : ''); lmsSummary(); }
-function lmsSetGrade(i, v){ const r = LMS.rows[i]; r.grade = v; r.gradeSet = true; r.gradeKind = LMS.opt.kind; lmsAllocate(); lmsRender(); }
+function lmsSetGrade(i, v){ const r = LMS.rows[i]; r.grade = v; r.gradeKind = LMS.opt.kind; lmsAllocate(); lmsRender(); }
 function lmsSetTime(i, v){
   const r = LMS.rows[i], s = lmsParseT(v);
   if(s == null || s <= 0){ r.lock = false; } else { r.secs = s; r.lock = true; }
   lmsAllocate(); lmsRender();
 }
 function lmsRebalance(){ LMS.rows.forEach(r=>{ r.lock = false; }); lmsAllocate(); lmsRender(); }
-function lmsTypeOptions(r, cur){                                    // 옵션 값 = r.cands 의 번호 (유형 이름을 값에 넣지 않음)
-  const p = lmsProblem(r), cands = r.cands = lmsCandidates(p);
+function lmsTypeOptions(r){                                         // → { html, cur } — 옵션 값 = r.cands 의 번호 (유형 이름을 값에 넣지 않음)
+  const p = lmsProblem(r), cands = r.cands = lmsCandidates(p).slice();
   if(r.sub && !cands.some(([s, t])=>s === r.sub && t === r.type) && lmsLookup(p, r.sub, r.type)) cands.unshift([r.sub, r.type]);
   const bySub = new Map(); cands.forEach(([s, t], k)=>{ if(!bySub.has(s)) bySub.set(s, []); bySub.get(s).push([t, k]); });
-  return [...bySub].map(([s, ts])=>`<optgroup label="${esc(s)}">${ts.map(([t, k])=>`<option value="${k}" ${cur && cur[0] === s && cur[1] === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
+  return { cur: cands.findIndex(([s, t])=>s === r.sub && t === r.type),
+    html: [...bySub].map(([s, ts])=>`<optgroup label="${esc(s)}">${ts.map(([t, k])=>`<option value="${k}">${esc(t)}</option>`).join('')}</optgroup>`).join('') };
 }
 function lmsRender(){
   const m = $('#modal-body'), o = LMS.opt, su = o.kind === 'suneung';
   const sel = (k, opts)=>`<select onchange="lmsSet('${k}',this.value)">${opts.map(([v, t])=>`<option value="${v}" ${String(o[k]) === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
-  const gradeSel = (r, i)=>su
-    ? `<select style="min-width:58px" title="${esc((LMS_GRADES[r.grade]||[])[1]||'')}" onchange="lmsSetGrade(${i},this.value)">${Object.keys(LMS_GRADES).map(g=>`<option ${r.grade === g ? 'selected' : ''} title="${esc(LMS_GRADES[g][1])}">${g}</option>`).join('')}</select>`
-    : `<select style="min-width:84px" onchange="lmsSetGrade(${i},this.value)">${[1,2,3,4,5].map(d=>`<option value="${d}" ${r.grade === String(d) ? 'selected' : ''}>${'●'.repeat(d)}</option>`).join('')}</select>`;
+  const gradeOpts = su ? Object.entries(LMS_GRADES).map(([g, [, t]])=>[g, g, t]) : [1,2,3,4,5].map(d=>[String(d), '●'.repeat(d), '']);
+  const gradeSel = (r, i)=>`<select style="min-width:${su ? 58 : 84}px" title="${esc(su ? (LMS_GRADES[r.grade]||[])[1]||'' : '')}" onchange="lmsSetGrade(${i},this.value)">`
+    + gradeOpts.map(([v, label, t])=>`<option value="${v}" ${r.grade === v ? 'selected' : ''} ${t ? `title="${esc(t)}"` : ''}>${label}</option>`).join('') + '</select>';
   m.innerHTML = `
     <button class="close" onclick="closeModal()">✕</button>
     <h3 style="margin-bottom:.3rem">📊 스터디피크 LMS 업로드 엑셀 <span class="hint" style="font-weight:400">시험 양식(ExamTemplate) · 문항 ${LMS.rows.length}개</span></h3>
@@ -8578,15 +8602,16 @@ function lmsRender(){
     <div style="max-height:56vh;overflow:auto;border:1px solid var(--line);border-radius:10px">
     <table class="lms-tbl"><thead><tr><th>#</th><th>문항</th><th>대분류 · 소분류 › 유형</th><th>정답</th><th>점수</th><th>${su ? '등급' : '난도'}</th><th>풀이시간</th><th>상태</th></tr></thead><tbody>
     ${LMS.rows.map((r, i)=>{
-      const p = lmsProblem(r), L = r.sub ? lmsLookup(p, r.sub, r.type) : null;
+      const p = lmsProblem(r), L = r.sub ? lmsLookup(p, r.sub, r.type) : null, T = lmsTypeOptions(r);
+      const qText = mathSafeSlice(stripBoxMarks(p.question || (hasImg(p) ? '(그림 문항)' : '')), 70), unitPath = [p.subject, p.chapter, p.section].filter(Boolean).join(' › ') || '단원 미지정';
       const a = r.ans, aTxt = a.err ? '' : a.kind === '단답형' ? `단답형 · ${esc(String(a.short))}` : `${a.kind} · ${esc(String(a.choice))}번 / ${a.count}지`;
       return `<tr data-i="${i}" id="lms-r${i}">
         <td>${esc(lmsNo(r))}</td>
-        <td style="max-width:260px"><div class="lms-q">${esc(mathSafeSlice(stripBoxMarks(p.question || (hasImg(p) ? '(그림 문항)' : '')), 70))}</div><div class="hint">${esc([p.subject, p.chapter, p.section].filter(Boolean).join(' › ') || '단원 미지정')}</div></td>
+        <td style="max-width:260px"><div class="lms-q">${esc(qText)}</div><div class="hint">${esc(unitPath)}</div></td>
         <td style="min-width:250px"><div class="hint" style="font-weight:700;color:var(--green-2)">${L ? esc(L[0]) + ' · ' + esc(lmsTag(p, r.sub, r.type)) : '대분류 —'}</div>
-          <select onchange="lmsPickType(${i},this.value)" style="max-width:300px"><option value="">(유형 고르기)</option>${lmsTypeOptions(r, r.sub ? [r.sub, r.type] : null)}</select>
+          <select onchange="lmsPickType(${i},this.value)" style="max-width:300px"><option value="">(유형 고르기)</option>${T.cur >= 0 ? T.html.replace(`<option value="${T.cur}">`, `<option value="${T.cur}" selected>`) : T.html}</select>
           ${r.extra.map(([s, t], k)=>`<div class="hint">＋ ${esc(s)} › ${esc(t)} <a href="#" onclick="lmsExtra(${i},null,${k});return false">빼기</a></div>`).join('')}
-          ${r.sub ? `<select class="lms-extra" onchange="lmsExtra(${i},this.value)" style="max-width:300px;font-size:.75rem"><option value="">＋ 복합 유형 추가</option>${lmsTypeOptions(r, null)}</select>` : ''}</td>
+          ${r.sub ? `<select class="lms-extra" onchange="lmsExtra(${i},this.value)" style="max-width:300px;font-size:.75rem"><option value="">＋ 복합 유형 추가</option>${T.html}</select>` : ''}</td>
         <td>${a.err ? `<input placeholder="정답 (예: ④ / 12)" style="width:110px" onchange="lmsSetAnswer(${i},this.value)">` : `<span>${aTxt}</span>`}</td>
         <td><input type="number" min="0" step="0.5" style="width:62px" value="${r.pts != null ? r.pts : ''}" onchange="lmsSetPts(${i},this.value)"></td>
         <td>${gradeSel(r, i)}</td>
@@ -8598,17 +8623,17 @@ function lmsRender(){
   renderMath(m.querySelector('tbody'));
   lmsSummary();
 }
-function lmsSummary(){
+function lmsSummary(rows = true){
   const c = lmsCheck(), el = $('#lms-summary'); if(!el) return;
-  LMS.rows.forEach((r, i)=>{
+  if(rows) LMS.rows.forEach((r, i)=>{
     const td = document.querySelector(`#lms-r${i} .lms-st`); if(!td) return;
     const e = c.rowErr.get(r) || [], w = c.warn.get(r) || [];
     td.innerHTML = e.length ? `<span style="color:#dc2626;font-weight:700">⚠ ${esc(e.join(' · '))}</span>` : w.length ? `<span style="color:#b45309">검토요망 · ${esc(w.join(' · '))}</span>` : '<span style="color:var(--green)">✓</span>';
   });
   const sumT = LMS.rows.reduce((s, r)=>s + (r.secs || 0), 0), sumP = LMS.rows.reduce((s, r)=>s + (r.pts || 0), 0);
-  const nErr = [...c.rowErr.values()].length;
-  el.innerHTML = `시간 합계 <b>${lmsFmtT(sumT)}</b>${+LMS.opt.mins ? ' / ' + lmsFmtT(LMS.opt.mins*60) : ''} · 점수 합계 <b>${sumP}</b>점`
-    + (c.global.length || nErr ? ` · <span style="color:#dc2626;font-weight:700">고칠 것: ${esc([...c.global, ...(nErr ? [nErr + '개 문항'] : [])].join(' / '))}</span>` : ' · <span style="color:var(--green);font-weight:700">✓ 다운로드 준비 완료</span>');
+  const fix = lmsFixList(c);
+  el.innerHTML = `시간 합계 <b>${lmsFmtT(sumT)}</b>${lmsMins() ? ' / ' + lmsFmtT(lmsMins()*60) : ''} · 점수 합계 <b>${sumP}</b>점`
+    + (fix ? ` · <span style="color:#dc2626;font-weight:700">고칠 것: ${esc(fix)}</span>` : ' · <span style="color:var(--green);font-weight:700">✓ 다운로드 준비 완료</span>');
 }
 async function lmsAiFill(){                                         // 유형이 빈 문항만: 그 단원의 마스터 후보 안에서 고르게
   const todo = LMS.rows.filter(r=>!r.sub || !lmsLookup(lmsProblem(r), r.sub, r.type));
@@ -8633,7 +8658,7 @@ async function lmsAiFill(){                                         // 유형이
       if(!pick){ fail++; return; }
       r.sub = pick[0]; r.type = pick[1]; r.unsure = res.sure === false; r.why = String(res.why || '').slice(0, 40);
       r.extra = (Array.isArray(res.also) ? res.also : []).map(k=>cands[(+k || 0) - 1]).filter(Boolean).filter(([s, t])=>!(s === r.sub && t === r.type)).slice(0, 2);
-      await remapProblems(x=>x.id === r.id, { subsection: r.sub, utype: r.type, udetail: '', utypeExtra: r.extra.map(([s, t])=>lmsKey(s, t)) });
+      await lmsSaveRow(r, { subsection: r.sub, utype: r.type, udetail: '', utypeExtra: lmsExtraKeys(r) });
       done++;
     }catch(e){ if(!AI_BATCH.cancel){ fail++; r.why = String(e.message || e).slice(0, 60); } }
     const l = $('#lms-ai-state'); if(l) l.textContent = `🤖 유형 고르는 중… ${done + fail}/${todo.length}`;
@@ -8653,7 +8678,7 @@ async function lmsAiFill(){                                         // 유형이
    스타일: text = 텍스트(@), time = mm:ss, st 'h1'·'hg'·'hi' = 굵게 + 채움(E8EEF5·D9E1F2·FCE4D6) ── */
 function xlsxColName(c){ let s = ''; c++; while(c){ const m = (c-1) % 26; s = String.fromCharCode(65+m) + s; c = Math.floor((c-1)/26); } return s; }
 async function xlsxBlob(sheets){
-  const xe = s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const xe = xesc, XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
   const sst = [], sIdx = new Map();
   const si = v=>{ v = String(v); if(!sIdx.has(v)){ sIdx.set(v, sst.length); sst.push(v); } return sIdx.get(v); };
   const XF = { text:1, time:2, h1:3, hg:4, hi:5 };
@@ -8664,7 +8689,7 @@ async function xlsxBlob(sheets){
       const cells = row.map((c, ci)=>{
         if(!c || c.v == null || c.v === '') return '';
         maxC = Math.max(maxC, ci + 1);
-        const ref = xlsxColName(ci) + (ri + 1), st = XF[c.st || (c.t === 'text' || c.t === 'time' ? c.t : '')];
+        const ref = xlsxColName(ci) + (ri + 1), st = XF[c.st || c.t];
         const sa = st ? ` s="${st}"` : '';
         if(c.t === 'n') return `<c r="${ref}"${sa}><v>${+c.v}</v></c>`;
         if(c.t === 'time') return `<c r="${ref}"${sa}><v>${+c.v / 86400}</v></c>`;
@@ -8673,19 +8698,19 @@ async function xlsxBlob(sheets){
       return cells ? `<row r="${ri + 1}">${cells}</row>` : '';
     }).join('');
     const cols = Object.entries(sh.widths || {}).map(([L, w])=>{ let n = 0; for(const ch of L) n = n*26 + ch.charCodeAt(0) - 64; return `<col min="${n}" max="${n}" width="${w}" customWidth="1"/>`; }).join('');
-    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:${xlsxColName(Math.max(0, maxC-1))}${Math.max(1, sh.rows.length)}"/>${cols ? `<cols>${cols}</cols>` : ''}<sheetData>${body}</sheetData></worksheet>`;
+    return `${XML}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:${xlsxColName(Math.max(0, maxC-1))}${Math.max(1, sh.rows.length)}"/>${cols ? `<cols>${cols}</cols>` : ''}<sheetData>${body}</sheetData></worksheet>`;
   };
   const zip = new JSZip(), n = sheets.length;
-  zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+  zip.file('[Content_Types].xml', XML + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
     + sheets.map((_, k)=>`<Override PartName="/xl/worksheets/sheet${k+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')
     + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>');
-  zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
-  zip.file('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((sh, k)=>`<sheet name="${xe(sh.name)}" sheetId="${k+1}"${sh.hidden ? ' state="hidden"' : ''} r:id="rId${k+1}"/>`).join('')}</sheets></workbook>`);
-  zip.file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+  zip.file('_rels/.rels', XML + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+  zip.file('xl/workbook.xml', `${XML}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((sh, k)=>`<sheet name="${xe(sh.name)}" sheetId="${k+1}"${sh.hidden ? ' state="hidden"' : ''} r:id="rId${k+1}"/>`).join('')}</sheets></workbook>`);
+  zip.file('xl/_rels/workbook.xml.rels', XML + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
     + sheets.map((_, k)=>`<Relationship Id="rId${k+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${k+1}.xml"/>`).join('')
     + `<Relationship Id="rId${n+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId${n+2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>`);
   const fill = rgb=>`<fill><patternFill patternType="solid"><fgColor rgb="FF${rgb}"/><bgColor indexed="64"/></patternFill></fill>`;
-  zip.file('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="mm:ss"/></numFmts>'
+  zip.file('xl/styles.xml', XML + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="mm:ss"/></numFmts>'
     + '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
     + `<fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>${fill('E8EEF5')}${fill('D9E1F2')}${fill('FCE4D6')}</fills>`
     + '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
@@ -8693,7 +8718,7 @@ async function xlsxBlob(sheets){
     + '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="1" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="1" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs>'
     + '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
   sheets.forEach((sh, k)=>zip.file(`xl/worksheets/sheet${k+1}.xml`, sheetXml(sh)));
-  zip.file('xl/sharedStrings.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sst.length}" uniqueCount="${sst.length}">${sst.map(x=>`<si><t xml:space="preserve">${xe(x)}</t></si>`).join('')}</sst>`);
+  zip.file('xl/sharedStrings.xml', `${XML}<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sst.length}" uniqueCount="${sst.length}">${sst.map(x=>`<si><t xml:space="preserve">${xe(x)}</t></si>`).join('')}</sst>`);
   return zip.generateAsync({ type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', compression:'DEFLATE' });
 }
 const LMS_LOOKUP_COLS = {                                           // v3 템플릿의 숨김 _Lookup 시트 값
@@ -8738,17 +8763,16 @@ async function lmsDownload(){
   if(c.global.length || c.rowErr.size){
     lmsSummary();
     const first = LMS.rows.find(r=>c.rowErr.has(r)); if(first){ const el = $('#lms-r' + LMS.rows.indexOf(first)); if(el) el.scrollIntoView({ block:'center' }); }
-    toast('⚠ 고칠 것이 있습니다 — ' + [...c.global, ...(c.rowErr.size ? [c.rowErr.size + '개 문항(빨간 표시)'] : [])].join(' / '));
+    toast('⚠ 고칠 것이 있습니다 — ' + lmsFixList(c));
     return;
   }
   if(!window.JSZip){ toast('구성요소(JSZip)가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
   const blob = await xlsxBlob(lmsWorkbook());
   const d = new Date(), z = n=>String(n).padStart(2, '0');
   const name = `StudyPeak_ExamTemplate_${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.xlsx`;   // LMS 업로드 파일명은 영문
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
-  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-  LMS.lastBlob = blob; LMS.lastName = name;
-  const nw = [...c.warn.values()].length;
+  downloadBlob(name, blob);
+  LMS.lastName = name;
+  const nw = c.warn.size;
   toast(`📥 ${name} — 문항 ${LMS.rows.length}개` + (nw ? ` · 검토요망 ${nw}개는 업로드 전에 확인하세요` : ''));
 }
 /* 조건 기반 자동 구성: 부족하면 부족 수량을 그대로 보고 */
@@ -8879,11 +8903,11 @@ async function katexCssInline(){ // 내보내는 파일에 KaTeX CSS를 직접 �
 }
 function htmlProblemBody(p, imgs, withMeta){ // 질문 본문: [박스]→테두리, [그림]→원위치 이미지, 선택지
   const im = (imgs||[]).slice();
-  const img = ()=>{ const d=im.shift(); return d?`<img class="fig" src="${d}" alt="그림">`:''; };
+  const img = ()=>{ const d=im.shift(); return d?`<img class="fig" src="${esc(d)}" alt="그림">`:''; };
   let h = splitBoxBlocks(p.question).map(b=> b.box
     ? `<div class="condbox">${b.lines.map(l=>IMG_SLOT_RE.test(l)?img():mathToHtml(l)).join('<br>')}</div>`
     : b.lines.map(l=>IMG_SLOT_RE.test(l)?img():`<span>${mathToHtml(l)} </span>`).join('')).join('');
-  h += im.map(d=>`<img class="fig" src="${d}" alt="그림">`).join('');
+  h += im.map(d=>`<img class="fig" src="${esc(d)}" alt="그림">`).join('');
   if(p.choices && p.choices.length)
     h += `<div class="choices">${p.choices.map(c=>`<span>${mathToHtml(c)}</span>`).join('&nbsp;&nbsp; ')}</div>`;
   if(withMeta && p.srcName)
@@ -9922,12 +9946,28 @@ async function exportJSON(){
   a.click(); URL.revokeObjectURL(a.href);
   toast(`백업 완료 — 문제 ${cnt.toLocaleString('ko-KR')}개`+(inclImg?' (이미지 포함)':' (이미지 제외)'));
 }
+/* 가져온 문제의 필드를 앱이 만드는 모양으로만 남긴다 (그림 = data:image base64, 숫자 = 숫자, id 류 = [\w.-], 태그 = 글자 배열) */
+const IMG_DATA_RE = /^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/;
+function sanitizeImportedProblem(p){
+  p.images = (Array.isArray(p.images) ? p.images : []).filter(d=>typeof d === 'string' && IMG_DATA_RE.test(d));
+  if(p.solImg && !(typeof p.solImg === 'string' && IMG_DATA_RE.test(p.solImg))) p.solImg = '';
+  for(const k of ['twinOf', 'batch']) if(p[k] != null) p[k] = String(p[k]).replace(/[^\w.:|-]/g, '');
+  if(p.twinNo != null) p.twinNo = parseInt(p.twinNo, 10) || 0;
+  p.difficulty = Math.min(5, Math.max(1, parseInt(p.difficulty, 10) || 3));
+  p.tags = Array.isArray(p.tags) ? p.tags.filter(t=>typeof t === 'string') : [];
+  for(const k of ['answer','solution','subject','chapter','section','subsection','utype','udetail','srcName','origNo','grade','twinKind'])
+    if(p[k] != null && typeof p[k] !== 'string') p[k] = String(p[k]);
+  if(p.choices != null) p.choices = Array.isArray(p.choices) ? p.choices.map(String) : [];
+  return p;
+}
+const BAD_KEY = k=>k === '__proto__' || k === 'constructor' || k === 'prototype';
 async function importBackupData(data){ // 백업 JSON 객체를 현재 DB에 합침(같은 id는 덮어씀). 개수 반환
   if(!data || !Array.isArray(data.problems)) throw new Error('형식 오류');
   let n=0;
   for(const p of data.problems){
     if(p&&p.id&&typeof p.question==='string'){
       p.id = String(p.id).replace(/[^\w.-]/g,'') || (uid()+n);   // 조작된 id로 인한 HTML 주입 차단
+      sanitizeImportedProblem(p);                                  // 남이 준 백업 파일: 그림·번호·태그 값 검사
       // 이미지 제외 백업을 복원해도 DB에 이미 있는 이미지·해설 이미지는 지우지 않는다
       if(!(p.images && p.images.length) || !p.solImg){
         const full = await DB.get('problems', p.id).catch(()=>null);
@@ -9946,10 +9986,12 @@ async function importBackupData(data){ // 백업 JSON 객체를 현재 DB에 합
   }
   if(data.curriculum && typeof data.curriculum==='object'){
     for(const [s,chs] of Object.entries(data.curriculum)){
+      if(BAD_KEY(s) || !chs || typeof chs !== 'object') continue;
       if(!CURRICULUM[s]) CURRICULUM[s] = {};
-      for(const [c,sects] of Object.entries(chs||{})){
+      for(const [c,sects] of Object.entries(chs)){
+        if(BAD_KEY(c) || !Array.isArray(sects)) continue;
         if(!CURRICULUM[s][c]) CURRICULUM[s][c] = [];
-        for(const sec of (sects||[])) if(!CURRICULUM[s][c].includes(sec)) CURRICULUM[s][c].push(sec);
+        for(const sec of sects) if(typeof sec === 'string' && !CURRICULUM[s][c].includes(sec)) CURRICULUM[s][c].push(sec);
       }
     }
     saveCurriculum(); refreshUnitSelects();
@@ -10548,7 +10590,7 @@ function renderDashContinue(){
   const kidsOf = new Map(); P.forEach(p=>{ if(p.twinOf) kidsOf.set(p.twinOf, (kidsOf.get(p.twinOf)||0)+1); });
   const rows = batchList().slice(0, 5).map(b=>{
     const list = batchProblems(b.key), isTwin = list.some(p=>p.twinOf), hasKids = list.some(p=>kidsOf.has(p.id));
-    const k = esc(b.key);
+    const k = escJs(b.key);
     return `<div class="bt"><span style="flex:1;min-width:12rem">${isTwin?'👯':'📦'} <b>${esc(b.name)}</b> <span class="hint">${list.length}문항${hasKids?' · 쌍둥이·변형 있음':''}</span></span>
       <button class="btn ghost sm" onclick="dashGo({batch:'${k}'})">보기</button>
       <button class="btn ghost sm" onclick="batchToSheet('${k}')">🧺 학습지·모의고사로</button>
