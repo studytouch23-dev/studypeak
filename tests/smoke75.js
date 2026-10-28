@@ -14,7 +14,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   page.on('dialog', d => d.accept());
 
   const r = await page.evaluate(async () => {
-    localStorage.setItem('sp-lab-apikey', 'sk-ant-api03-test');
+    localStorage.removeItem('sp-lab-apikey');                        // 열자마자 자동 채우기는 아래에서 따로 확인
     const base = { solution:'s', grade:'', srcType:'기출', srcName:'L', difficulty:3, tags:[], reviewed:true, images:[], choices:[], createdAt:1, updatedAt:1 };
     const C5 = ['① 1','② 2','③ 3','④ 4','⑤ 5'];
     const ps = [
@@ -45,7 +45,8 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     out.l4 = [LMS.rows[3].ans.kind, LMS.rows[3].ans.short, (await DB.get('problems','L4')).answer];
     // AI 채우기 (후보 안에서만)
     let prompt = '';
-    window.aiJsonCall = async content => { prompt = content.map(c => c.text || '').join(''); return { pick: 1, also: [2], sure: false, why: '일반항 공식' }; };
+    window.aiJsonCall = async content => { prompt = content.map(c => c.text || '').join(''); return { items: [{ key:'A', pick: 1, also: [2], sure: false, why: '일반항 공식' }] }; };
+    localStorage.setItem('sp-lab-apikey', 'sk-ant-api03-test');
     await lmsAiFill();
     const r3 = LMS.rows[2];
     out.ai = { sub: r3.sub, type: r3.type, extra: r3.extra, unsure: r3.unsure, cand: /\[후보\]\n1\. 등차수열과 등비수열 › 등차수열의 일반항/.test(prompt) && !/미적분/.test(prompt),

@@ -190,6 +190,19 @@ if(EACH){
       await page.evaluate(() => { go('add'); setAddMode('bulk'); });
       await page.click('button[onclick="saveBulk()"]');
       await page.waitForFunction(() => state.bulkDrafts.length === 0, null, { timeout: 120000 });
+      // 스터디피크 유형(소분류·유형) 자동 분류 — API 방식은 랩이 저장 직후 알아서, Max 방식은 같은 함수에 이 컴퓨터의 Claude Code 를 연결
+      if(MAX){
+        process.stdout.write('  🏷 스터디피크 유형 분류 중…   \r');
+        const st = await page.evaluate(async (n) => {
+          const list = state.problems.slice(-n).filter(p => !spTypeOk(p));
+          const keep = window.aiJsonCall;
+          window.aiJsonCall = async content => window.__maxAsk(content.filter(c => c.type === 'text').map(c => c.text).join('\n'));
+          try{ return spTypeSummary(await spTypeClassify(list)); } finally { window.aiJsonCall = keep; }
+        }, await page.evaluate(b => state.problems.length - b, before)).catch(e => '⚠ 유형 분류 실패: ' + (e.message||e).split('\n')[0]);
+        console.log('  ' + st);
+      }else{
+        await page.waitForFunction(() => !AI_BATCH.running, null, { timeout: TIMEOUT_MIN*60000 }).catch(()=>{});
+      }
       await waitSynced(page);
       const after = await page.evaluate(() => state.problems.length);
       totalAdded += after - before;
