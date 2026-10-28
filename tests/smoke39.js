@@ -42,7 +42,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     retry: aiPrompt('', ['수식 문법 오류 $x^^2$']),
   }));
   check('전사 프롬프트엔 분류표·단원 칸 없음', !pr.t.includes('분류표') && !pr.t.includes('"subject"') && !pr.t.includes('"difficulty"'));
-  check('분류 프롬프트: 분류표 + 문항 번호', pr.c.includes('분류표') && pr.c.includes('#0\n등차수열') && pr.c.includes('#3\n로그'));
+  check('분류 프롬프트: 분류표 + 문항 꼬리표(번호와 헷갈리지 않게 A, B…)', pr.c.includes('분류표') && pr.c.includes('[문항 A]\n등차수열') && pr.c.includes('[문항 B]\n로그') && !pr.c.includes('#3\n'));
   check('재판독 프롬프트에 문제 목록 포함', pr.retry.includes('[재확인 요청]') && pr.retry.includes('$x^^2$'));
 
   // ── 3) 실제 변환 루프 (스텁 AI) ──
