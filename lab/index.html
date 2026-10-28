@@ -134,7 +134,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 @media(max-width:980px){.db-layout{grid-template-columns:1fr}}
 .tagtree{padding:.7rem}
 .tagtree .tabs3{display:flex;gap:.25rem;margin-bottom:.6rem}
-.tagtree .tabs3 button{flex:1;border:1px solid var(--line);background:#fff;border-radius:8px;padding:.35rem 0;font-size:.82rem;font-weight:700;color:var(--muted)}
+.tagtree .tabs3 button{flex:1;border:1px solid var(--line);background:#fff;border-radius:8px;padding:.35rem 0;font-size:.78rem;white-space:nowrap;font-weight:700;color:var(--muted)}
 .tagtree .tabs3 button.active{background:var(--green);border-color:var(--green);color:#fff}
 .titem{display:flex;align-items:center;gap:.4rem;padding:.38rem .5rem;border-radius:7px;font-size:.85rem;cursor:pointer}
 .titem:hover{background:#f3f5f0}
@@ -581,6 +581,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
         <button data-tab="unit" class="active">단원</button>
         <button data-tab="src">출처</button>
         <button data-tab="mine">나만의</button>
+        <button data-tab="date">📅 날짜</button>
       </div>
       <div id="tree-body"></div>
       <button class="btn ghost sm" style="width:100%" onclick="resetFilters()">선택 해제</button>
@@ -608,6 +609,8 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
           <select id="filter-diff"><option value="">난이도 전체</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
           <select id="filter-src"><option value="">출처 전체</option></select>
           <select id="filter-batch" title="한 번에 등록한 묶음(모의고사 한 세트 등)"><option value="">등록 묶음 전체</option></select>
+          <select id="filter-date" title="문제를 올린(만든) 날짜로 찾기"><option value="">📅 올린 날짜 전체</option></select>
+          <span id="filter-range" class="row" style="display:none;gap:.3rem;align-items:center"><input type="date" id="filter-from" style="width:auto"> ~ <input type="date" id="filter-to" style="width:auto"></span>
           <select id="sort"><option value="new">최신순</option><option value="old">오래된순</option><option value="diff-desc">난이도 높은순</option><option value="diff-asc">난이도 낮은순</option></select>
           <label style="margin:0;display:flex;align-items:center;gap:.3rem;font-weight:600;font-size:.85rem" title="원본 문제와 그 문제로 만든 쌍둥이·변형을 한 줄로 묶어 보기"><input type="checkbox" id="db-twinview" style="width:auto"> 👯 원본별 묶어 보기</label>
           <button class="btn ghost sm" onclick="resetFilters()">필터 초기화</button>
@@ -3283,11 +3286,48 @@ function batchToSheet(key){
   go('sheet');
   toast(`🧺 ${list.length}문항을 원래 번호 순으로 담았습니다 — 아래에서 [모의고사(A3) 한글] · [교재 HTML] · [학습지] 중 고르세요`);
 }
+/* 📅 올린 날짜(createdAt) 필터: 값 = today | yesterday | 7d | 30d | month | d:YYYY-MM-DD | range(직접 기간) → [시작, 끝) ms */
+const dayKey = t=>{ const d = new Date(+t); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+const dayStart = t=>{ const d = new Date(+t); d.setHours(0,0,0,0); return d.getTime(); };
+function dateFilterRange(){
+  const el = $('#filter-date'); const v = el ? el.value : '';
+  const rg = $('#filter-range'); if(rg) rg.style.display = v === 'range' ? 'flex' : 'none';
+  if(!v) return null;
+  const today = dayStart(Date.now()), DAY = 86400000;
+  if(v === 'today') return [today, today + DAY];
+  if(v === 'yesterday') return [today - DAY, today];
+  if(v === '7d') return [today - 6*DAY, today + DAY];
+  if(v === '30d') return [today - 29*DAY, today + DAY];
+  if(v === 'month'){ const d = new Date(); return [new Date(d.getFullYear(), d.getMonth(), 1).getTime(), today + DAY]; }
+  if(v.startsWith('d:')){ const [y,m,d] = v.slice(2).split('-').map(Number); const a = new Date(y, m-1, d).getTime(); return [a, a + DAY]; }
+  if(v === 'range'){
+    const f = $('#filter-from').value, t = $('#filter-to').value;
+    const a = f ? new Date(f+'T00:00:00').getTime() : 0, b = t ? new Date(t+'T00:00:00').getTime() + DAY : Infinity;
+    return (f || t) ? [a, b] : null;
+  }
+  return null;
+}
+function dateFilterLabel(){
+  const el = $('#filter-date'); if(!el || !el.value) return '';
+  if(el.value === 'range') return (($('#filter-from').value||'처음')+' ~ '+($('#filter-to').value||'오늘')).replace(/-/g,'.');
+  const o = el.options[el.selectedIndex]; return o ? o.textContent.replace(/ — \d+문항$/, '')+' 올린 문제' : '';
+}
+function renderDateFilterOptions(){
+  const el = $('#filter-date'); if(!el) return;
+  const cur = el.value, byDay = new Map();
+  for(const p of state.problems){ if(!p.createdAt) continue; const k = dayKey(p.createdAt); byDay.set(k, (byDay.get(k)||0)+1); }
+  const days = [...byDay.entries()].sort((a,b)=>a[0] < b[0] ? 1 : -1).slice(0, 60);
+  const lab = k=>{ const [y,m,d] = k.split('-').map(Number); const w = '일월화수목금토'[new Date(y, m-1, d).getDay()]; return `${y !== new Date().getFullYear() ? y+'. ' : ''}${m}. ${d}. (${w})`; };
+  el.innerHTML = '<option value="">📅 올린 날짜 전체</option><option value="today">오늘</option><option value="yesterday">어제</option><option value="7d">최근 7일</option><option value="30d">최근 30일</option><option value="month">이번 달</option><option value="range">기간 직접 선택…</option>'
+    + (days.length ? '<optgroup label="날짜별 (올린 문제 수)">'+days.map(([k,n])=>`<option value="d:${k}">${lab(k)} — ${n}문항</option>`).join('')+'</optgroup>' : '');
+  el.value = cur; if(el.value !== cur && cur.startsWith('d:')){ el.add(new Option(cur.slice(2), cur)); el.value = cur; }
+}
 function problemsFiltered(){
   const q = $('#q').value.trim().toLowerCase();
   const fs = $('#filter-subject').value, fc = $('#filter-chapter').value,
         fd = $('#filter-diff').value, fsrc = $('#filter-src').value, fg = $('#filter-grade').value,
         fr = $('#filter-reviewed').value, fbatch = ($('#filter-batch')||{}).value || '';
+  const dateR = dateFilterRange();
   let list = state.problems.filter(p=>{
     if(fs && p.subject!==fs) return false;
     if(fc && p.chapter!==fc) return false;
@@ -3296,6 +3336,7 @@ function problemsFiltered(){
     if(fd && String(p.difficulty)!==fd) return false;
     if(fsrc && p.srcName!==fsrc) return false;
     if(fbatch && batchKeyOf(p)!==fbatch) return false;
+    if(dateR && !((p.createdAt||0) >= dateR[0] && (p.createdAt||0) < dateR[1])) return false;
     if(state.filterTag && !(p.tags||[]).includes(state.filterTag)) return false;
     if(state.dashFilter === 'noSol' && (p.solution || p.answer)) return false;
     if(state.dashFilter === 'check' && !(p.tags||[]).some(t=>t==='검수주의' || t==='검산불일치' || t==='검산확인')) return false;
@@ -3379,6 +3420,7 @@ function renderDB(){
   const fb = $('#filter-batch'), curB = fb.value;
   fb.innerHTML = '<option value="">등록 묶음 전체</option>'+batchList().slice(0, 60).map(b=>`<option value="${esc(b.key)}">${esc(b.name)} (${b.n})</option>`).join('');
   fb.value = curB;
+  renderDateFilterOptions();
   renderBatchBanner();
   const fs = $('#filter-subject').value, fchap = $('#filter-chapter'); const curC = fchap.value;
   const chaps = fs ? Object.keys(CURRICULUM[fs]||{}) : [...new Set(state.problems.map(p=>p.chapter).filter(Boolean))];
@@ -3397,7 +3439,7 @@ function renderDB(){
   const wrap = $('#plist');
   $('#db-count').textContent = state.lastResults
     ? `유사 검색 결과 ${list.length}건 — 전체로 돌아가려면 [필터 초기화]`
-    : (state.dashFilter ? (state.dashFilter === 'noSol' ? '📝 정답·해설 없는 문제만 · ' : '⚠ 수식·정답 확인 필요만 · ') : '') + `${list.length}건 / 전체 ${state.problems.length}건` + (pages>1?` · ${state.page}/${pages} 페이지`:'');
+    : (dateFilterRange() ? '📅 '+dateFilterLabel()+' · ' : '') + (state.dashFilter ? (state.dashFilter === 'noSol' ? '📝 정답·해설 없는 문제만 · ' : '⚠ 수식·정답 확인 필요만 · ') : '') + `${list.length}건 / 전체 ${state.problems.length}건` + (pages>1?` · ${state.page}/${pages} 페이지`:'');
   if($('#db-twinview') && $('#db-twinview').checked && !state.lastResults){ renderTwinGroups(list); return; }
   wrap.innerHTML = pageList.length
     ? pageList.map((p,i)=>problemCardHTML(p, (state.page-1)*PAGE+i)).join('')
@@ -3544,6 +3586,14 @@ function renderTree(){
     h = bySrc.size ? [...bySrc.entries()].sort((a,b)=>b[1]-a[1]).map(([s,n])=>
       `<div class="titem ${fsrc===s?'sel':''}" data-t="src" data-v="${esc(s)}"><span>${esc(s)}</span><span class="n">${n}</span></div>`).join('')
       : '<div class="hint" style="padding:.5rem">출처가 등록된 문제가 없습니다.</div>';
+  } else if(state.treeTab==='date'){
+    const byDay = new Map();
+    for(const p of state.problems){ if(!p.createdAt) continue; const k = dayKey(p.createdAt); byDay.set(k, (byDay.get(k)||0)+1); }
+    const cur = $('#filter-date').value;
+    h = byDay.size ? [...byDay.entries()].sort((a,b)=>a[0] < b[0] ? 1 : -1).map(([k,n])=>{
+        const [y,m,d] = k.split('-').map(Number), w = '일월화수목금토'[new Date(y, m-1, d).getDay()];
+        return `<div class="titem ${cur==='d:'+k?'sel':''}" data-t="date" data-v="${k}"><span>${y !== new Date().getFullYear() ? y+'. ' : ''}${m}. ${d}. (${w})</span><span class="n">${n}</span></div>`; }).join('')
+      : '<div class="hint" style="padding:.5rem">올린 문제가 없습니다.</div>';
   } else {
     const byTag = new Map();
     for(const p of state.problems) for(const t of (p.tags||[])) byTag.set(t,(byTag.get(t)||0)+1);
@@ -3573,6 +3623,7 @@ $('#tree-body').addEventListener('click', e=>{
   }
   if(t==='src'){ $('#filter-src').value = $('#filter-src').value===v ? '' : v; }
   if(t==='mine'){ state.filterTag = state.filterTag===v ? null : v; }
+  if(t==='date'){ const el = $('#filter-date'); if(el.value === 'd:'+v) el.value = ''; else { if(![...el.options].some(o=>o.value==='d:'+v)) el.add(new Option(v, 'd:'+v)); el.value = 'd:'+v; } }
   state.page = 1; state.lastResults = null;
   renderDB();
 });
@@ -3635,7 +3686,7 @@ function savePreset(){
   const ps = getPresets();
   ps.push({name, f:{q:$('#q').value, subject:$('#filter-subject').value, chapter:$('#filter-chapter').value,
     grade:$('#filter-grade').value, reviewed:$('#filter-reviewed').value, diff:$('#filter-diff').value,
-    src:$('#filter-src').value, tag:state.filterTag||''}});
+    src:$('#filter-src').value, tag:state.filterTag||'', date:$('#filter-date').value, from:$('#filter-from').value, to:$('#filter-to').value}});
   localStorage.setItem('sp-lab-presets', JSON.stringify(ps.slice(0,20)));
   renderPresets();
   toast('검색 필터를 저장했습니다.');
@@ -3659,6 +3710,8 @@ function applyPreset(i){
   $('#filter-diff').value = p.f.diff||'';
   $('#filter-src').value = p.f.src||'';
   state.filterTag = p.f.tag||null;
+  $('#filter-from').value = p.f.from||''; $('#filter-to').value = p.f.to||'';
+  { const el = $('#filter-date'), v = p.f.date||''; if(v && ![...el.options].some(o=>o.value===v)) el.add(new Option(v.replace(/^d:/,''), v)); el.value = v; }
   state.lastResults = null; state.page = 1;
   renderDB();
 }
@@ -3670,10 +3723,11 @@ function delPreset(i){
 function resetFilters(){
   $('#q').value=''; $('#filter-subject').value=''; $('#filter-chapter').value='';
   $('#filter-diff').value=''; $('#filter-src').value=''; $('#filter-grade').value=''; $('#filter-reviewed').value=''; $('#filter-batch').value=''; $('#db-twinview').checked = false;
+  $('#filter-date').value=''; $('#filter-from').value=''; $('#filter-to').value='';
   state.lastResults = null; state.filterTag = null; state.dashFilter = null; state.page = 1;
   renderDB();
 }
-['filter-subject','filter-chapter','filter-grade','filter-reviewed','filter-diff','filter-src','filter-batch','sort','db-twinview'].forEach(id=>
+['filter-subject','filter-chapter','filter-grade','filter-reviewed','filter-diff','filter-src','filter-batch','filter-date','filter-from','filter-to','sort','db-twinview'].forEach(id=>
   $('#'+id).addEventListener('change', ()=>{ state.page=1; renderDB(); }));
 async function toggleReviewed(id){
   const p = state.problems.find(x=>x.id===id); if(!p) return;
