@@ -37,7 +37,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     return { out,
       noScript: !/<script/i.test(out), noOn: !/on\w+\s*=/i.test(out),
       noExt: !out.includes('evil.com'), noImg: !/<image|<foreignObject/i.test(out),
-      keepLocal: out.includes("href='#ok'"), keepRect: out.includes('<rect') && out.includes('<text') };
+      keepLocal: /href=["']#ok["']/.test(out), keepRect: out.includes('<rect') && out.includes('<text') };
   });
   check('sanitizeSvg: script/on*/외부링크/image 제거', san.noScript && san.noOn && san.noExt && san.noImg, san.out.slice(0,120));
   check('sanitizeSvg: 로컬참조·도형·텍스트 유지', san.keepLocal && san.keepRect);
