@@ -320,6 +320,8 @@ function build(rows){
   const CURR = {};                        // 새로 생기는 과목·중단원 (초등 수학 등)
   const miss = [], unused = new Set(Object.keys(ROUTES));
   const put = (pathStr, sub, type)=>{
+    const [S, C, X] = pathStr.split('>');                  // 담는 중단원은 교육과정에도 (없으면 랩이 더함 — 이미 있으면 그대로)
+    const ch = ((CURR[S] = CURR[S] || {})[C] = CURR[S][C] || []); if(!ch.includes(X)) ch.push(X);
     const k = pathStr.split('>').join('|');
     const n = UNITS[k] = UNITS[k] || {};
     (n[sub] = n[sub] || {})[type] = [];
@@ -327,10 +329,7 @@ function build(rows){
   for(const r of rows){
     if(r.lv === '초등'){
       const grades = [...new Set(r.tag.split('/').map(t=>t.split('.')[0]).filter(Boolean))];
-      const sect = r.sub;
-      ((CURR['초등 수학'] = CURR['초등 수학'] || {})[r.cat] = CURR['초등 수학'][r.cat] || []);
-      if(!CURR['초등 수학'][r.cat].includes(sect)) CURR['초등 수학'][r.cat].push(sect);
-      for(const g of grades) put(p('초등 수학', r.cat, sect), g+'학년', r.type);
+      for(const g of grades) put(p('초등 수학', r.cat, r.sub), g+'학년', r.type);
       continue;
     }
     const key = (r.lv === '중등' ? '중등' : r.tag) + '|' + r.sub;
@@ -369,8 +368,6 @@ if(require.main === module){
     process.exit(1);
   }
   const cnt = { 초등:0, 중등:0, 고등:0 }; rows.forEach(r=>cnt[r.lv]++);
-  // 공통수학1 에 '이차방정식' 중단원이 없어 새로 만든다(풀이·활용 유형용)
-  (CURR[C1] = CURR[C1] || {})['방정식과 부등식'] = ['이차방정식'];
   const out = `/* 자동 생성 파일 — 고치지 말 것. 원본: tools/data/studypeak-master.md, 생성: node tools/build-sp-units.js
  * 스터디피크 수학 마스터 유형표(초 ${cnt.초등} · 중 ${cnt.중등} · 고 ${cnt.고등} 유형)를 랩 단원 체계에 맞춰 나눈 것.
  * SP_MASTER_UNITS: '과목|대단원|중단원' → { 소단원(=스터디피크 소분류, 초등은 학년): { 유형: [] } } — lab/units-db.js 보다 우선.
@@ -378,7 +375,7 @@ if(require.main === module){
  * SP_MASTER_LOOKUP: '학교급|소분류|유형' → [대분류(Category), 과목/학년 태그('/'로 여럿)] — LMS 엑셀의 대분류·지문 태그용. */
 window.SP_MASTER_COUNTS = ${JSON.stringify(cnt)};
 window.SP_MASTER_CURR = ${JSON.stringify(CURR)};
-window.SP_MASTER_UNITS = ${JSON.stringify(UNITS, null, 0).replace(/\},"/g, '},\n"')};
+window.SP_MASTER_UNITS = ${JSON.stringify(UNITS).replace(/\},"/g, '},\n"')};
 window.SP_MASTER_LOOKUP = ${JSON.stringify(lookup(rows)).replace(/\],"/g, '],\n"')};
 `;
   fs.writeFileSync(OUT, out);

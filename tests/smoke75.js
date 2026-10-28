@@ -14,7 +14,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   page.on('dialog', d => d.accept());
 
   const r = await page.evaluate(async () => {
-    localStorage.setItem('sp-lab-apikey', 'sk-ant-api03-test');
+    localStorage.removeItem('sp-lab-apikey');                        // 열자마자 자동 채우기는 아래에서 따로 확인
     const base = { solution:'s', grade:'', srcType:'기출', srcName:'L', difficulty:3, tags:[], reviewed:true, images:[], choices:[], createdAt:1, updatedAt:1 };
     const C5 = ['① 1','② 2','③ 3','④ 4','⑤ 5'];
     const ps = [
@@ -45,11 +45,32 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     out.l4 = [LMS.rows[3].ans.kind, LMS.rows[3].ans.short, (await DB.get('problems','L4')).answer];
     // AI 채우기 (후보 안에서만)
     let prompt = '';
-    window.aiJsonCall = async content => { prompt = content.map(c => c.text || '').join(''); return { pick: 1, also: [2], sure: false, why: '일반항 공식' }; };
+    window.aiJsonCall = async content => { prompt = content.map(c => c.text || '').join(''); return { items: [{ key:'A', pick: 1, also: [2], sure: false, why: '일반항 공식' }] }; };
+    localStorage.setItem('sp-lab-apikey', 'sk-ant-api03-test');
     await lmsAiFill();
     const r3 = LMS.rows[2];
     out.ai = { sub: r3.sub, type: r3.type, extra: r3.extra, unsure: r3.unsure, cand: /\[후보\]\n1\. 등차수열과 등비수열 › 등차수열의 일반항/.test(prompt) && !/미적분/.test(prompt),
       saved: (await DB.get('problems','L3')).utype, warn: (lmsCheck().warn.get(r3) || []).join() };
+    // 드롭다운으로 유형 고르기·복합 유형 추가 (유형 이름에 특수문자가 있어도 깨지지 않게)
+    lmsRender();
+    const pick = document.querySelector('#lms-r3 select:not(.lms-extra)');
+    const optF = [...pick.options].find(o => o.textContent === 'fｏg=gｏf인 경우');
+    pick.value = optF.value; pick.dispatchEvent(new Event('change')); await new Promise(r => setTimeout(r, 100));
+    const ex = document.querySelector('#lms-r3 select.lms-extra');
+    const optE = [...ex.options].find(o => o.textContent === '합성함수의 함숫값');
+    ex.value = optE.value; ex.dispatchEvent(new Event('change')); await new Promise(r => setTimeout(r, 100));
+    const p4 = await DB.get('problems','L4');
+    out.dd = { sub: LMS.rows[3].sub, type: LMS.rows[3].type, extra: LMS.rows[3].extra, db: [p4.subsection, p4.utype, (p4.utypeExtra||[]).join('|')] };
+    // 등급 직접 고르면 배점을 바꿔도 유지, 점수 지우면 학습지 배점도 지움
+    lmsSetGrade(0, 'F'); lmsSet('pts', 'even'); lmsSet('pts', 'orig');
+    out.keepGrade = LMS.rows[0].grade;
+    lmsSetPts(0, ''); out.clearPts = [LMS.rows[0].pts, state.points.L1]; lmsSetPts(0, '3');
+    // 시간 입력 해석: "90" = 90초, "3" = 3분, "1:03" → 5초 단위
+    out.parseT = [lmsParseT('90'), lmsParseT('3'), lmsParseT('1:03'), lmsParseT('2:30')];
+    // 동그라미 정답이 선택지 수보다 크면 오류
+    out.over = lmsAnswerOf({ choices:['① a','② b','③ c','④ d'], answer:'⑤' }).err || '';
+    // 소수 시험 시간은 막힘
+    lmsSet('mins', '10.5'); out.decMins = lmsCheck().global.some(x => /분 단위 정수/.test(x)); lmsSet('mins', '10');
     // 시간 직접 고치기 → 🔒, 합계 유지
     lmsSetTime(1, '4:00');
     out.lock = { l2: LMS.rows[1].secs, sum: LMS.rows.reduce((s, x) => s + x.secs, 0), five: LMS.rows.every(x => x.secs % 5 === 0) };
@@ -97,6 +118,12 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   check('균일배점 100점 (정수, 합 100)', r.even.reduce((a, b) => a + b, 0) === 100 && r.even.every(Number.isInteger), JSON.stringify(r.even));
   check('표에서 정답 넣기 → 단답형·문제 DB에도 저장', r.l4.join() === '단답형,2,2', JSON.stringify(r.l4));
   check('AI 유형 채우기: 그 단원 후보 안에서만, 복합 유형, 검토요망, DB 저장', r.ai.sub === '등차수열과 등비수열' && r.ai.type === '등차수열의 일반항' && r.ai.extra.length === 1 && r.ai.unsure && r.ai.cand && r.ai.saved === '등차수열의 일반항' && /검토요망/.test(r.ai.warn), JSON.stringify(r.ai));
+  check('드롭다운으로 유형·복합 유형 고르기 → 깨지지 않고 DB 저장', r.dd.type === 'fｏg=gｏf인 경우' && r.dd.sub === '함수' && r.dd.extra.length === 1 && r.dd.extra[0][1] === '합성함수의 함숫값' && r.dd.db[1] === 'fｏg=gｏf인 경우' && r.dd.db[2] === '함수\u0001합성함수의 함숫값', JSON.stringify(r.dd));
+  check('직접 고른 등급은 배점 방식을 바꿔도 유지', r.keepGrade === 'F', r.keepGrade);
+  check('점수 지우면 학습지 배점도 지움', r.clearPts[0] === null && r.clearPts[1] === undefined, JSON.stringify(r.clearPts));
+  check('시간 입력: 90→1:30, 3→3:00, 1:03→1:05(5초 단위)', r.parseT.join() === '90,180,65,150', r.parseT.join());
+  check('정답 ⑤ 인데 선택지 4개 → 오류', /선택지 수\(4개\)보다 큼/.test(r.over), r.over);
+  check('시험 시간이 소수면 막힘', r.decMins);
   check('시간 직접 고치면 고정·나머지가 맞춰 합계 유지', r.lock.l2 === 240 && r.lock.sum === 600 && r.lock.five, JSON.stringify(r.lock));
   check('모두 채우면 오류 없음', r.check.g.length === 0 && r.check.e === 0, JSON.stringify(r.check));
   const x = r.x;

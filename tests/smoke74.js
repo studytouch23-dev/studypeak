@@ -57,7 +57,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     for(let k=0; k<40 && !$('#pdfed-bg').classList.contains('show'); k++) await new Promise(r => setTimeout(r, 150));
     await new Promise(r => setTimeout(r, 300));
     await pdfedToRegions();
-    return { n: PDFED.regions.length, r: PDFED.regions.map(x => [Math.round(x.x), Math.round(x.y), Math.round(x.x + x.w), Math.round(x.y + x.h)].join(',')), names: [...PASTE.pdfNames].length };
+    return { n: PDFED.regions.length, r: PDFED.regions.map(x => [Math.round(x.x), Math.round(x.y), Math.round(x.x + x.w), Math.round(x.y + x.h)].join(',')), names: PDFED.pages.filter(p => p.capture).length };
   }, png);
   check('붙여넣기 → 영역 인식 에디터에서 1문제, 위·왼쪽 안 잘림', ed.n === 1 && ed.names === 1 && /^([0-9]|1[0-8]),[0-2],/.test(ed.r[0]), JSON.stringify(ed));
 
