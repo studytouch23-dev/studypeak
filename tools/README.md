@@ -9,6 +9,7 @@
 | `generate.js` | 유사/신규 문제 생성: 랩의 생성 프롬프트로 Claude Code(Max)가 문제를 만들어 자동 등록·동기화 |
 | `twins.js` | 쌍둥이·유사 변형 문제 일괄 생성: 내 DB 원본(출처·번호·ID로 고름)으로 정답·해설·그림까지 만들고 독립 검산 → 원본과 연결해 새 등록 묶음으로 저장·동기화 (Claude Code = Max) |
 | `graph.js` | 그림 설계도(JSON: 식·좌표) → 정확한 그래프·도형 SVG/PNG, 문항 그림 내려받기(pull)·교체(attach). 설계도 형식은 `.claude/skills/math-graph/SKILL.md` |
+| `build-sp-units.js` | 스터디피크 마스터 유형표(`data/studypeak-master.md`) → `lab/units-sp.js` 생성. 유형표가 바뀌면 md 교체 후 `node tools/build-sp-units.js` (갈 곳 없는 유형이 있으면 실패 → ROUTES 규칙 보충) |
 
 ## 준비 (최초 1회)
 

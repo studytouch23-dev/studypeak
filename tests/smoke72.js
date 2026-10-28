@@ -16,8 +16,10 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
 
   const r = await page.evaluate(async () => {
     const out = {};
-    const U = parseUnitsDSL(window.SP_UNITS_DSL), keys = Object.keys(U);
-    let miss = 0, tot = 0; for(const s of Object.keys(PRESET_CURRICULUM)) for(const c of Object.keys(PRESET_CURRICULUM[s])) for(const x of PRESET_CURRICULUM[s][c]){ tot++; if(!U[ukey(s,c,x)] || !Object.keys(U[ukey(s,c,x)]).length) miss++; }
+    // 이 테스트는 랩 세분류(units-db.js, 상세유형 포함)로 진행 — 스터디피크 유형표 기본값은 smoke73
+    localStorage.setItem('sp-lab-units', JSON.stringify(unitsOwnPreset())); UNITS_CACHE = null;
+    const U = parseUnitsDSL(window.SP_UNITS_DSL), keys = Object.keys(U), M = unitsPreset();
+    let miss = 0, tot = 0; for(const s of Object.keys(PRESET_CURRICULUM)) for(const c of Object.keys(PRESET_CURRICULUM[s])) for(const x of PRESET_CURRICULUM[s][c]){ tot++; if(!M[ukey(s,c,x)] || !Object.keys(M[ukey(s,c,x)]).length) miss++; }
     out.db = { paths: keys.length, tot, miss, alias: JSON.stringify(U[ukey('대수','수열','등차수열')]) === JSON.stringify(U[ukey('수학Ⅰ','수열','등차수열')]),
       ex: U[ukey('수학Ⅰ','수열','등차수열')] && U[ukey('수학Ⅰ','수열','등차수열')]['등차수열'] && U[ukey('수학Ⅰ','수열','등차수열')]['등차수열']['일반항'] };
     // 문제
@@ -36,7 +38,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     out.view = { heads, subs, types, dets, units: $('#tg-units').textContent };
     return out;
   });
-  check('기본 단원 DB: 모든 중단원에 소단원·유형 (2022 과목은 같은 내용 복사)', r.db.miss === 0 && r.db.tot > 250 && r.db.alias && Array.isArray(r.db.ex), JSON.stringify(r.db));
+  check('기본 단원 DB: 모든 중단원에 소단원·유형 (랩 세분류는 2022 과목에 같은 내용 복사)', r.db.miss === 0 && r.db.tot > 250 && r.db.alias && Array.isArray(r.db.ex), JSON.stringify(r.db));
   check('단원태그 화면 5단계 열', r.view.heads.join() === '대단원,중단원,소단원,유형,상세유형', r.view.heads.join());
   check('중단원 → 소단원 → 유형(문제 수) → 상세유형', r.view.subs.includes('등차수열') && r.view.types.includes('일반항:1') && r.view.types.includes('등차중항:1') && r.view.dets.some(d => /^첫째항과 공차:1$/.test(d)), JSON.stringify(r.view));
   check('통계에 깊은 단원까지 셈', +r.view.units > 50, r.view.units);
@@ -65,7 +67,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   check('CSV 내보내기 줄(과목~상세유형)', csv.hasRow);
   check('CSV 불러오기: 새 과목·대단원·중단원까지 만들고 아래 단계 합침(쉼표·따옴표 처리)', csv.newSubj && csv.deep.join() === '구간 나누기' && csv.merged.includes('새 상세') && csv.merged.includes('공차가 음수인 경우') && csv.parsed === 'a|b,c|d / x"y|2|3', JSON.stringify(csv));
   const pre = await page.evaluate(() => { unitsDropPath(ukey('수학Ⅱ','미분','접선의 방정식')); const before = unitSubs('수학Ⅱ','미분','접선의 방정식').length; unitsLoadPreset(); return { before, after: unitSubs('수학Ⅱ','미분','접선의 방정식').length, kept: unitSubs('학원 자체','함수 특강','절댓값, 가우스').length }; });
-  check('기본 DB 합치기: 지운 것만 다시 채우고 내 것은 유지', pre.before === 0 && pre.after > 0 && pre.kept === 1, JSON.stringify(pre));
+  check('랩 세분류 합치기: 지운 것만 다시 채우고 내 것은 유지', pre.before === 0 && pre.after > 0 && pre.kept === 1, JSON.stringify(pre));
 
   // 문제 상세·단건 등록
   const det = await page.evaluate(async () => {

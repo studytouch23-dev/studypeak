@@ -66,7 +66,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
       daesu: Object.keys(PRESET_CURRICULUM['대수']||{}),
       mj2: Object.keys(PRESET_CURRICULUM['미적분Ⅱ']||{}) };
   });
-  check('과목 13개(2022 개정 5과목 추가)', info.nSub===13, info.subs.join(','));
+  check('과목 14개(2022 개정 5과목 + 초등 수학)', info.nSub===14 && info.subs.includes('초등 수학'), info.subs.join(','));
   check('세부 단원 220개 이상', info.sect>=220, info.chap+'대단원 / '+info.sect+'중단원');
   check('공통수학1 행렬 신설', !!info.matrix && info.matrix.length>=3, (info.matrix||[]).join(','));
   check('대수·미적분Ⅱ 구성', info.daesu.length===3 && info.mj2.length===3, info.daesu.join(','));

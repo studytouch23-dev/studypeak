@@ -10,6 +10,7 @@
 <meta property="og:description" content="문제 등록 → 태그 보강 → 의미 검색 → 시험지 출력. 내 브라우저에 저장되는 비공개 수학 문제 연구소.">
 <meta property="og:url" content="https://www.studypeak.co.kr/lab/">
 <script src="units-db.js"></script>
+<script src="units-sp.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
@@ -169,7 +170,7 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
 .subj-chip.sel{border-color:var(--green);background:#f0fdf4;color:var(--green)}
 .subj-chip .mini{background:none;border:0;font-size:.8rem;opacity:.55;padding:0 .1rem}
 .subj-chip .mini:hover{opacity:1}
-.cascade{display:grid;grid-template-columns:repeat(5,minmax(190px,1fr));gap:.7rem;overflow-x:auto;padding-bottom:.3rem}
+.cascade{display:grid;grid-template-columns:minmax(160px,.85fr) minmax(170px,1fr) minmax(170px,1fr) minmax(240px,1.6fr) minmax(170px,1fr);gap:.7rem;overflow-x:auto;padding-bottom:.3rem}
 .cascade .col-box{min-height:340px}
 .cascade .col-item .nm{flex:1;min-width:0;word-break:keep-all}
 .cascade .col-item .chev{color:var(--muted-2);font-size:.8rem}
@@ -557,7 +558,8 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
         <button class="btn ghost sm" onclick="unitsCsvTemplate()">⬇ CSV 양식</button>
         <button class="btn ghost sm" onclick="unitsCsvExport()">⬇ CSV 내보내기</button>
         <button class="btn ghost sm" onclick="$('#units-csv').click()">⬆ CSV 불러오기</button>
-        <button class="btn ghost sm" onclick="unitsLoadPreset()">스터디피크 기본 단원 DB 불러오기</button>
+        <button class="btn sm" onclick="unitsApplySp()" title="스터디피크 마스터 유형표(초·중·고)의 소분류·유형으로 맞춥니다">스터디피크 유형표로 맞추기</button>
+        <button class="btn ghost sm" onclick="unitsLoadPreset()" title="랩이 만든 세분류(상세유형까지)를 없는 항목만 더합니다">랩 세분류(상세유형) 합치기</button>
         <input type="file" id="units-csv" accept=".csv,text/csv" style="display:none" onchange="unitsCsvImport(this.files[0]);this.value=''"></div></div>
     <div class="cascade">
       <div class="col-box">
@@ -1232,7 +1234,7 @@ const PRESET_CURRICULUM = {
     "공간도형과 공간좌표":["공간도형","직선과 평면의 위치 관계","삼수선 정리","정사영","공간좌표","구의 방정식"]},
   "공통수학1": {
     "다항식":["다항식의 연산","항등식과 나머지정리","인수분해"],
-    "방정식과 부등식":["복소수와 그 연산","이차방정식의 판별식","근과 계수의 관계","이차방정식과 이차함수","이차함수의 최대·최소","삼차방정식과 사차방정식","연립이차방정식","연립일차부등식","이차부등식"],
+    "방정식과 부등식":["복소수와 그 연산","이차방정식","이차방정식의 판별식","근과 계수의 관계","이차방정식과 이차함수","이차함수의 최대·최소","삼차방정식과 사차방정식","연립이차방정식","연립일차부등식","이차부등식"],
     "경우의 수":["합의 법칙과 곱의 법칙","순열","조합"],
     "행렬":["행렬의 뜻","행렬의 덧셈·뺄셈과 실수배","행렬의 곱셈"]},
   "공통수학2": {
@@ -1258,6 +1260,11 @@ const PRESET_CURRICULUM = {
     "기하":["기본 도형과 작도","평면도형","다각형의 성질","원과 부채꼴","입체도형의 겉넓이와 부피","삼각형과 사각형의 성질","삼각형의 성질","사각형의 성질","도형의 닮음","닮음의 활용","피타고라스 정리","삼각비","원과 직선","원주각","원의 성질"],
     "확률과 통계":["자료의 정리","도수분포표와 상대도수","경우의 수와 확률","확률","대푯값과 산포도","상자그림과 산점도"]}
 };
+// 스터디피크 마스터 유형표(lab/units-sp.js)가 더하는 과목·중단원 — 초등 수학(대분류 > 소분류) 등
+if(window.SP_MASTER_CURR) for(const [s, chs] of Object.entries(window.SP_MASTER_CURR)){
+  const S = PRESET_CURRICULUM[s] = PRESET_CURRICULUM[s] || {};
+  for(const [c, xs] of Object.entries(chs)){ const C = S[c] = S[c] || []; xs.forEach(x=>{ if(!C.includes(x)) C.push(x); }); }
+}
 let CURRICULUM = loadCurriculum();
 // 프리셋이 확장되면 사용자가 저장해 둔 교육과정에도 새 과목·단원을 합쳐 준다(사용자 추가분은 그대로 유지)
 (function mergePresetIntoCurriculum(){
@@ -1724,7 +1731,8 @@ function thToSheet(keys, withOrig){
 
 
 /* ═══════════════ 단원 5단계: 대단원·중단원(CURRICULUM) + 소단원 → 유형 → 상세유형(UNITS) ═══════════════
-   UNITS = { '과목|대단원|중단원': { 소단원: { 유형: [상세유형, …] } } } — 기본값은 lab/units-db.js 의 스터디피크 단원 DB,
+   UNITS = { '과목|대단원|중단원': { 소단원: { 유형: [상세유형, …] } } } — 기본값은 스터디피크 마스터 유형표(lab/units-sp.js,
+   소단원=스터디피크 소분류·유형=원본 문자열)이고, 표에 없는 중단원만 랩 세분류(lab/units-db.js, 상세유형 포함)로 채운다.
    한 번이라도 고치면 localStorage 'sp-lab-units' 에 저장(계정 설정 동기화에 포함). 문제 필드: subsection·utype·udetail */
 const ukey = (s, c, x)=>s+'|'+c+'|'+x;
 function parseUnitsDSL(text){
@@ -1755,7 +1763,9 @@ function parseUnitsDSL(text){
   return out;
 }
 let UNITS_CACHE = null;
-function unitsPreset(){ return window.SP_UNITS_DSL ? parseUnitsDSL(window.SP_UNITS_DSL) : {}; }
+function unitsOwnPreset(){ return window.SP_UNITS_DSL ? parseUnitsDSL(window.SP_UNITS_DSL) : {}; }
+function unitsSpPreset(){ return JSON.parse(JSON.stringify(window.SP_MASTER_UNITS || {})); }
+function unitsPreset(){ return Object.assign(unitsOwnPreset(), unitsSpPreset()); }
 function unitsDB(){
   if(UNITS_CACHE) return UNITS_CACHE;
   try{ const raw = localStorage.getItem('sp-lab-units'); if(raw){ const o = JSON.parse(raw); if(o && typeof o === 'object'){ UNITS_CACHE = o; return o; } } }catch(e){}
@@ -1916,9 +1926,26 @@ async function unitsCsvImport(file){
   renderTags(); refreshUnitSelects();
   toast(`⬆ CSV ${body.length}줄을 합쳤습니다 — 새 항목 ${n}개 추가`);
 }
+/* 스터디피크 마스터 유형표로 맞추기: 표에 있는 중단원의 소단원·유형을 표 그대로 바꾼다(다른 중단원·문제 태그는 그대로) */
+function unitsApplySp(){
+  const P = unitsSpPreset(), n = Object.keys(P).length, c = window.SP_MASTER_COUNTS || {};
+  if(!n){ toast('스터디피크 유형표 파일(units-sp.js)을 불러오지 못했습니다. 새로고침 후 다시 해 주세요.'); return; }
+  if(!confirm(`스터디피크 마스터 유형표(초 ${c.초등||0} · 중 ${c.중등||0} · 고 ${c.고등||0}개 유형)로 소단원·유형을 맞출까요?\n\n· 표에 있는 중단원 ${n}곳의 소단원·유형·상세유형이 스터디피크 표 그대로 바뀝니다.\n· 직접 만든 다른 중단원, 이미 문제에 붙은 태그는 그대로 둡니다.`)) return;
+  const U = unitsDB();
+  for(const [k, v] of Object.entries(P)) U[k] = v;
+  let addC = 0;
+  for(const [s, chs] of Object.entries(window.SP_MASTER_CURR || {})){
+    const S = CURRICULUM[s] = CURRICULUM[s] || {};
+    for(const [ch, xs] of Object.entries(chs)){ const C = S[ch] = S[ch] || []; xs.forEach(x=>{ if(!C.includes(x)){ C.push(x); addC++; } }); }
+  }
+  if(addC) saveCurriculum();
+  saveUnits(); renderTags(); if(typeof refreshUnitSelects === 'function') refreshUnitSelects();
+  toast(`스터디피크 유형표로 맞췄습니다 — 중단원 ${n}곳` + (addC ? `, 새 중단원 ${addC}개(초등 수학 등)` : ''));
+}
+/* 랩 세분류(lab/units-db.js — 상세유형까지) 합치기: 없는 항목만 더한다 */
 function unitsLoadPreset(){
-  if(!confirm('스터디피크 기본 단원 DB(소단원·유형·상세유형)를 지금 단원 체계에 합칠까요?\n직접 추가·수정한 항목은 그대로 두고, 없는 항목만 더합니다.')) return;
-  const P = unitsPreset(), U = unitsDB(); let added = 0;
+  if(!confirm('랩 세분류 DB(소단원·유형·상세유형)를 지금 단원 체계에 합칠까요?\n직접 추가·수정한 항목과 스터디피크 유형은 그대로 두고, 없는 항목만 더합니다.')) return;
+  const P = unitsOwnPreset(), U = unitsDB(); let added = 0;
   for(const [k, n] of Object.entries(P)){
     const t = U[k] = U[k] || {};
     for(const [sub, types] of Object.entries(n)){
@@ -1926,7 +1953,7 @@ function unitsLoadPreset(){
       for(const [ty, ds] of Object.entries(types)){ if(!t[sub][ty]){ t[sub][ty] = []; added++; } ds.forEach(d=>{ if(!t[sub][ty].includes(d)){ t[sub][ty].push(d); added++; } }); }
     }
   }
-  saveUnits(); renderTags(); toast(`기본 단원 DB를 합쳤습니다 — 새 항목 ${added}개`);
+  saveUnits(); renderTags(); toast(`랩 세분류 DB를 합쳤습니다 — 새 항목 ${added}개`);
 }
 /* 문제 입력 화면: 중단원 다음에 소단원 → 유형 → 상세유형 고르기 */
 function linkDeepSelects(subjSel, chapSel, sectSel, subSel, typeSel, detSel){
