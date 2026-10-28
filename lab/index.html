@@ -345,6 +345,12 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
 .modal{background:#fff;border-radius:14px;max-width:860px;width:100%;padding:1.3rem;margin-bottom:5vh}
 .modal h3{color:var(--green);margin-bottom:.8rem}
 .modal .close{float:right;background:none;border:0;font-size:1.3rem;color:var(--muted)}
+.modal.lms-wide{max-width:1180px}
+.lms-tbl{width:100%;border-collapse:collapse;font-size:.8rem}
+.lms-tbl th{position:sticky;top:0;background:var(--green-50,#f0fdf4);text-align:left;padding:.4rem .45rem;font-weight:700;z-index:1}
+.lms-tbl td{border-top:1px solid var(--line);padding:.4rem .45rem;vertical-align:top}
+.lms-tbl select,.lms-tbl input{padding:.2rem .3rem;font-size:.78rem}
+.lms-q{max-height:3.2em;overflow:hidden}
 
 /* sheet builder */
 .sheet-item{display:flex;gap:.6rem;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:10px;padding:.6rem .7rem;margin-bottom:.5rem}
@@ -965,6 +971,7 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
     <button class="btn gold" id="btn-mock" onclick="downloadMockExam()">📘 모의고사 양식 (수능 A3)</button>
     <button class="btn gold" id="btn-html" onclick="downloadHtmlExport('sheet')">🌐 HTML 학습지</button>
     <button class="btn gold" id="btn-book" onclick="downloadHtmlExport('book')">📚 HTML 교재(책)</button>
+    <button class="btn gold" id="btn-lms" onclick="lmsOpen()" title="스터디피크 LMS에 올리는 시험 양식(ExamTemplate) 엑셀">📊 스터디피크 LMS 엑셀</button>
     <button class="btn" id="btn-print" onclick="printSheet()">🖨 인쇄 / PDF 저장</button>
     <button class="btn ghost" onclick="saveWorksheet()">학습지 구성 저장</button>
   </div>
@@ -4851,7 +4858,7 @@ async function saveDetail(id){
   closeModal(); renderDB(); refreshCounts();
   toast('수정되었습니다.');
 }
-function closeModal(){ $('#modal-bg').classList.remove('show'); }
+function closeModal(){ $('#modal-bg').classList.remove('show'); $('#modal-body').classList.remove('lms-wide'); }
 /* 단축키: 상세 화면에서 ← → 이전/다음 문제, Esc 닫기 (글 쓰는 칸에서는 동작 안 함) */
 document.addEventListener('keydown', e=>{
   if(!$('#modal-bg').classList.contains('show') || e.altKey || e.ctrlKey || e.metaKey) return;
@@ -8312,6 +8319,351 @@ function renderSheet(){
   renderMath($('#sheet-list'));
   renderWorksheetList();
 }
+/* ═══════════════ 스터디피크 LMS 업로드 엑셀 (ExamTemplate) ═══════════════
+   기준: 스터디피크 수학 프로젝트 지침 2026-09-30판 (exam_template 2.xlsx).
+   1행 시험 제목·과목·시험 시간(분) / 2행 값 / 3행 공백 / 문항마다 4행: 그룹 헤더(9열) → 그룹 값 → 문항 헤더(14열) → 문항 값.
+   · 대분류 = 마스터 Category(과목명 아님) — (학교급, 소분류, 유형)으로 SP_MASTER_LOOKUP 역조회. 소분류·유형은 마스터 문자열 그대로.
+   · 복합 유형은 같은 문항 번호로 B·C·D만 채운 행을 더 붙인다. 시작·종료 페이지 셀은 만들지 않는다(빈 셀 자체를 안 만듦).
+   · 정답유형 단일 선택/다중 선택/단답형, 답안개수 객관식=선택지 수·단답형=1, 정답 숫자는 int, 문항 번호는 텍스트(@),
+     권장풀이시간은 시간값 + mm:ss. 난이도 '일반적인 문제', 답안없음 '아니오'.
+   · 시험 시간·배점 방식은 매번 직접 고르게 한다(지침 §6). 시간은 번호 순이 아니라 문항 난도로 배분. */
+const LMS_GROUP_HEAD = ['그룹 순서','대분류','소분류','유형','지문 제목','지문 작성자','지문 태그','시작 페이지','종료 페이지'];
+const LMS_ITEM_HEAD = ['문항 번호','대분류','소분류','유형','정답유형','난이도','권장풀이시간(mm:ss)','답안개수','점수','정답선택지','주관식 정답','비교 유형','단위','답안없음'];
+const LMS_GRADES = { A:[40,'계산형 — 2점, 공식 1회'], B:[85,'기본 — 3점 기본 개념, 경로 하나'], C:[140,'응용 — 3점 응용·4점 하위, 조건 2개'],
+  D:[200,'중상 — 4점 중, 그래프 해석·조건 결합'], E:[330,'준킬러 — 케이스 분류·역추적'], F:[450,'킬러 — 조건에서 구조 역설계'] };
+const LMS_DIFF_W = { 1:0.75, 2:0.9, 3:1, 4:1.2, 5:1.45 };          // 일반 문제: 난도 편차만큼만 완만하게
+const LMS_SUBJ_GRADE = { '공통수학1':'공통수학1','공통수학2':'공통수학2','대수':'대수','미적분Ⅰ':'미적분1','미적분Ⅱ':'미적분2','확률과 통계':'확률과 통계','기하':'기하',
+  '수학(상)':'공통수학1','수학(하)':'공통수학2','수학Ⅰ':'대수','수학Ⅱ':'미적분1','미적분':'미적분2' };
+const LMS = { rows: [], opt: {} };
+const lmsLevel = p=>p.subject === '초등 수학' ? '초등' : p.subject === '중등 수학' ? '중등' : '고등';
+const lmsKey = (sub, type)=>sub + '\u0001' + type;
+function lmsLookup(p, sub, type){ return ((window.SP_MASTER_LOOKUP || {})[lmsLevel(p)+'|'+sub+'|'+type]) || null; }
+function lmsTag(p, sub, type){                                     // 지문 태그 = 과목명(대수·미적분1…)
+  const L = lmsLookup(p, sub, type); if(!L) return '';
+  const tags = String(L[1]).split('/'), lv = lmsLevel(p);
+  if(lv === '중등') return '중' + tags[0];
+  if(lv === '초등') return '초' + String(tags[0]).split('.')[0];
+  const want = LMS_SUBJ_GRADE[p.subject];
+  return tags.includes(want) ? want : tags[0];
+}
+function lmsCandidates(p){                                          // 이 문제 단원의 마스터 (소분류, 유형) 후보
+  const U = window.SP_MASTER_UNITS || {}, out = [], seen = new Set();
+  const add = node=>{ for(const [sub, types] of Object.entries(node || {})) for(const t of Object.keys(types)){
+    if(!lmsLookup(p, sub, t)) continue;
+    const k = lmsKey(sub, t); if(!seen.has(k)){ seen.add(k); out.push([sub, t]); } } };
+  if(p.subject && p.chapter && p.section) add(U[ukey(p.subject, p.chapter, p.section)]);
+  if(!out.length && p.subject && p.chapter) Object.keys(U).filter(k=>k.startsWith(p.subject+'|'+p.chapter+'|')).forEach(k=>add(U[k]));
+  if(!out.length && p.subject) Object.keys(U).filter(k=>k.startsWith(p.subject+'|')).forEach(k=>add(U[k]));
+  return out;
+}
+const LMS_CIRC = '①②③④⑤⑥⑦⑧⑨⑩';
+function lmsAnswerOf(p){                                            // → { kind, count, choice, short, err, warn }
+  const choices = (p.choices || []).filter(Boolean);
+  let n = choices.length >= 2 ? choices.length : 0;
+  if(!n){ const used = [...new Set(String(p.question||'').match(/[①②③④⑤⑥⑦⑧⑨⑩]/g) || [])]; if(used.length >= 3) n = Math.max(...used.map(c=>LMS_CIRC.indexOf(c)+1)); }
+  const ans = String(p.answer || '').trim();
+  if(n){
+    let nums = (ans.match(/[①②③④⑤⑥⑦⑧⑨⑩]/g) || []).map(c=>LMS_CIRC.indexOf(c)+1);
+    if(!nums.length && /^\s*\d+(\s*[,，、\s]\s*\d+)*\s*$/.test(ans)){ const xs = ans.split(/[,，、\s]+/).filter(Boolean).map(Number); if(xs.every(x=>x>=1 && x<=n)) nums = xs; }
+    if(!nums.length && ans){                                        // 정답이 값으로 적혀 있으면 선택지에서 찾기
+      const norm = s=>String(s).replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '').replace(/[\s$]/g, '');
+      const k = choices.findIndex(c=>norm(c) === norm(ans)); if(k >= 0) nums = [k+1];
+    }
+    nums = [...new Set(nums)];
+    if(!nums.length) return { kind:'단일 선택', count:n, err: ans ? `정답 "${ans}"에서 선택지 번호를 못 찾음` : '정답 없음' };
+    if(nums.length === 1) return { kind:'단일 선택', count:n, choice:nums[0] };
+    return { kind:'다중 선택', count:n, choice:nums.join(','), warn:'다중 선택 정답 표기(쉼표) 확인' };
+  }
+  if(!ans) return { kind:'단답형', count:1, err:'정답 없음' };
+  const v = ans.replace(/^\$+|\$+$/g, '').replace(/\s+/g, '');
+  if(/^-?\d+$/.test(v)) return { kind:'단답형', count:1, short: parseInt(v, 10) };
+  return { kind:'단답형', count:1, short: v, warn: /\\/.test(v) ? '수식 정답 — LMS 입력 형식 확인' : '' };
+}
+function lmsPtsInText(p){ const m = String(p.question||'').match(/\[\s*(\d+(?:\.\d+)?)\s*점\s*\]/); return m ? +m[1] : null; }
+function lmsDefaultGrade(p, pts){
+  let g = 'ABCDE'[Math.min(5, Math.max(1, p.difficulty || 3)) - 1];
+  if(pts === 2) g = g <= 'B' ? 'A' : 'B';
+  if(pts === 4 && g < 'C') g = 'C';
+  return g;
+}
+const lmsFmtT = s=>s == null || isNaN(s) ? '' : Math.floor(s/60)+':'+String(Math.round(s%60)).padStart(2, '0');
+function lmsParseT(v){ const m = String(v||'').trim().match(/^(\d+)(?::(\d{1,2}))?$/); return m ? (+m[1])*60 + (+(m[2]||0)) : null; }
+function lmsOpen(){
+  const list = cartProblems();
+  if(!list.length){ toast('담긴 문제가 없습니다.'); return; }
+  let saved = {}; try{ saved = JSON.parse(localStorage.getItem('sp-lab-lms') || '{}') || {}; }catch(e){}
+  const suneung = list.some(p=>lmsPtsInText(p) != null);
+  LMS.opt = { title: $('#s-title').value || '수학 시험', subj: saved.subj || '수학', mins: '', author: saved.author || '지영T',
+    kind: suneung ? 'suneung' : 'general', pts: '' };
+  LMS.rows = list.map((p, i)=>{
+    const ok = p.subsection && p.utype && lmsLookup(p, p.subsection, p.utype);
+    const extra = (p.utypeExtra || []).map(k=>k.split('\u0001')).filter(([s, t])=>lmsLookup(p, s, t));
+    return { id:p.id, no:String(i+1), sub: ok ? p.subsection : '', type: ok ? p.utype : '', extra, ans: lmsAnswerOf(p), pts: null, grade: '', secs: null, lock: false };
+  });
+  const m = $('#modal-body'); m.classList.add('lms-wide');
+  $('#modal-bg').classList.add('show');
+  lmsApplyPts(); lmsRender();
+}
+function lmsProblem(r){ return state.problems.find(p=>p.id === r.id) || {}; }
+function lmsApplyPts(){                                             // 배점 방식 → 문항별 점수 기본값
+  const mode = LMS.opt.pts, N = LMS.rows.length;
+  LMS.rows.forEach((r, i)=>{
+    const p = lmsProblem(r);
+    if(mode === 'orig') r.pts = state.points[r.id] != null ? state.points[r.id] : lmsPtsInText(p);
+    else if(mode === 'even'){ const base = Math.floor(100/N), extra = 100 - base*N; r.pts = base + (i >= N - extra ? 1 : 0); }
+    else if(mode === 'manual') r.pts = state.points[r.id] != null ? state.points[r.id] : r.pts;
+    r.grade = LMS.opt.kind === 'suneung' ? lmsDefaultGrade(p, r.pts != null ? r.pts : lmsPtsInText(p)) : String(Math.min(5, Math.max(1, p.difficulty || 3)));
+  });
+  lmsAllocate();
+}
+function lmsAllocate(){                                             // 난도 가중치로 시험 시간 배분 → 5초 단위, 합계 정확히
+  const T = (+LMS.opt.mins || 0) * 60;
+  const free = LMS.rows.filter(r=>!r.lock);
+  if(!T){ free.forEach(r=>{ r.secs = null; }); return; }
+  const R = T - LMS.rows.filter(r=>r.lock).reduce((s, r)=>s + (r.secs || 0), 0);
+  if(!free.length) return;
+  const su = LMS.opt.kind === 'suneung';
+  const w = r=>su ? (LMS_GRADES[r.grade] || LMS_GRADES.C)[0] : (LMS_DIFF_W[r.grade] || 1);
+  const lo = su ? 40 : 20, hi = su ? 480 : 1e9;
+  let t = new Map(free.map(r=>[r, 0])), fixed = new Map();
+  for(let pass = 0; pass < 12; pass++){                            // 상·하한에 걸린 문항은 고정하고 나머지를 다시 비례 배분
+    const rest = free.filter(r=>!fixed.has(r)), left = R - [...fixed.values()].reduce((s, v)=>s+v, 0);
+    const sw = rest.reduce((s, r)=>s + w(r), 0) || 1;
+    rest.forEach(r=>t.set(r, w(r) / sw * left));
+    let changed = false;
+    rest.forEach(r=>{ const v = t.get(r); if(v < lo){ fixed.set(r, lo); changed = true; } else if(v > hi){ fixed.set(r, hi); changed = true; } });
+    if(!changed) break;
+  }
+  fixed.forEach((v, r)=>t.set(r, v));
+  free.forEach(r=>{ r.secs = Math.max(5, Math.round(t.get(r) / 5) * 5); });
+  let diff = R - free.reduce((s, r)=>s + r.secs, 0);                // 반올림 오차 보정: 무거운 문항부터 5초씩
+  const order = free.slice().sort((a, b)=>w(b) - w(a) || LMS.rows.indexOf(b) - LMS.rows.indexOf(a));
+  for(let k = 0; diff !== 0 && k < 10000; k++){
+    const r = order[k % order.length], step = diff > 0 ? 5 : -5;
+    if(r.secs + step < 5) continue;
+    r.secs += step; diff -= step;
+  }
+}
+function lmsCheck(){                                                // → { rowErr: Map(row → [msg]), global: [msg], warn: Map }
+  const rowErr = new Map(), warn = new Map(), global = [];
+  const add = (mp, r, x)=>{ if(!mp.has(r)) mp.set(r, []); mp.get(r).push(x); };
+  if(!String(LMS.opt.title||'').trim()) global.push('시험 제목을 적어 주세요');
+  if(!(+LMS.opt.mins > 0)) global.push('시험 시간(분)을 적어 주세요');
+  if(!LMS.opt.pts) global.push('배점 방식을 골라 주세요');
+  for(const r of LMS.rows){
+    const p = lmsProblem(r);
+    if(!r.sub || !r.type) add(rowErr, r, '유형 미지정');
+    else if(!lmsLookup(p, r.sub, r.type)) add(rowErr, r, '마스터에 없는 유형');
+    if(r.ans.err) add(rowErr, r, r.ans.err);
+    if(r.ans.warn) add(warn, r, r.ans.warn);
+    if(r.unsure) add(warn, r, '검토요망 — AI 추천' + (r.why ? ': '+r.why : ''));
+    if(LMS.opt.pts && !(r.pts > 0)) add(rowErr, r, '점수 없음');
+    if(+LMS.opt.mins > 0 && !(r.secs > 0)) add(rowErr, r, '풀이시간 없음');
+  }
+  const T = (+LMS.opt.mins || 0) * 60, sum = LMS.rows.reduce((s, r)=>s + (r.secs || 0), 0);
+  if(T && sum !== T) global.push(`권장풀이시간 합계 ${lmsFmtT(sum)} ≠ 시험 시간 ${lmsFmtT(T)} — [⏱ 다시 배분]`);
+  return { rowErr, warn, global };
+}
+function lmsSet(k, v){
+  LMS.opt[k] = v;
+  if(k === 'subj' || k === 'author'){ try{ localStorage.setItem('sp-lab-lms', JSON.stringify({ subj: LMS.opt.subj, author: LMS.opt.author })); }catch(e){} }
+  if(k === 'pts' || k === 'kind'){ lmsApplyPts(); lmsRender(); return; }
+  if(k === 'mins'){ lmsAllocate(); lmsRender(); return; }
+  lmsSummary();
+}
+async function lmsPickType(i, v){
+  const r = LMS.rows[i]; const [sub, type] = v ? v.split('\u0001') : ['', ''];
+  r.sub = sub; r.type = type; r.unsure = false; r.why = '';
+  if(sub) await remapProblems(p=>p.id === r.id, { subsection: sub, utype: type, udetail: '' });   // 문제 DB에도 태그
+  lmsRender();
+}
+async function lmsExtra(i, v, del){                                 // 복합 유형(추가 분류 행)
+  const r = LMS.rows[i];
+  if(del != null) r.extra.splice(del, 1);
+  else if(v){ const [s, t] = v.split('\u0001'); if(!r.extra.some(([a, b])=>a === s && b === t) && !(s === r.sub && t === r.type)) r.extra.push([s, t]); }
+  await remapProblems(p=>p.id === r.id, { utypeExtra: r.extra.map(([s, t])=>lmsKey(s, t)) });
+  lmsRender();
+}
+async function lmsSetAnswer(i, v){
+  const r = LMS.rows[i];
+  await remapProblems(p=>p.id === r.id, { answer: String(v||'').trim() });
+  r.ans = lmsAnswerOf(lmsProblem(r)); lmsRender();
+}
+function lmsSetPts(i, v){ const r = LMS.rows[i], n = parseFloat(v); r.pts = isNaN(n) ? null : n; if(r.pts != null) setPoint(r.id, String(r.pts)); lmsSummary(); }
+function lmsSetGrade(i, v){ LMS.rows[i].grade = v; lmsAllocate(); lmsRender(); }
+function lmsSetTime(i, v){
+  const r = LMS.rows[i], s = lmsParseT(v);
+  if(s == null || s <= 0){ r.lock = false; } else { r.secs = s; r.lock = true; }
+  lmsAllocate(); lmsRender();
+}
+function lmsRebalance(){ LMS.rows.forEach(r=>{ r.lock = false; }); lmsAllocate(); lmsRender(); }
+function lmsTypeOptions(p, cur){
+  const cands = lmsCandidates(p);
+  if(cur && cur[0] && !cands.some(([s, t])=>s === cur[0] && t === cur[1]) && lmsLookup(p, cur[0], cur[1])) cands.unshift(cur);
+  const bySub = new Map(); cands.forEach(([s, t])=>{ if(!bySub.has(s)) bySub.set(s, []); bySub.get(s).push(t); });
+  return [...bySub].map(([s, ts])=>`<optgroup label="${esc(s)}">${ts.map(t=>`<option value="${esc(lmsKey(s, t))}" ${cur && cur[0] === s && cur[1] === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
+}
+function lmsRender(){
+  const m = $('#modal-body'), o = LMS.opt, su = o.kind === 'suneung';
+  const sel = (k, opts)=>`<select onchange="lmsSet('${k}',this.value)">${opts.map(([v, t])=>`<option value="${v}" ${String(o[k]) === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
+  const gradeSel = (r, i)=>su
+    ? `<select style="min-width:58px" title="${esc((LMS_GRADES[r.grade]||[])[1]||'')}" onchange="lmsSetGrade(${i},this.value)">${Object.keys(LMS_GRADES).map(g=>`<option ${r.grade === g ? 'selected' : ''} title="${esc(LMS_GRADES[g][1])}">${g}</option>`).join('')}</select>`
+    : `<select style="min-width:84px" onchange="lmsSetGrade(${i},this.value)">${[1,2,3,4,5].map(d=>`<option value="${d}" ${r.grade === String(d) ? 'selected' : ''}>${'●'.repeat(d)}</option>`).join('')}</select>`;
+  m.innerHTML = `
+    <button class="close" onclick="closeModal()">✕</button>
+    <h3 style="margin-bottom:.3rem">📊 스터디피크 LMS 업로드 엑셀 <span class="hint" style="font-weight:400">시험 양식(ExamTemplate) · 문항 ${LMS.rows.length}개</span></h3>
+    <p class="hint" style="margin-bottom:.7rem">대분류는 스터디피크 마스터 유형표에서 자동으로 찾고, 소분류·유형은 표의 글자 그대로 넣습니다. 고른 유형은 문제 DB에도 저장됩니다.</p>
+    <div class="grid4" style="gap:.5rem">
+      <div class="field"><label>시험 제목</label><input value="${esc(o.title)}" oninput="lmsSet('title',this.value)"></div>
+      <div class="field"><label>과목</label><input value="${esc(o.subj)}" oninput="lmsSet('subj',this.value)"></div>
+      <div class="field"><label>시험 시간(분) <b style="color:var(--danger,#dc2626)">*</b></label><input id="lms-mins" type="number" min="1" value="${esc(o.mins)}" placeholder="예) 100" onchange="lmsSet('mins',this.value)"></div>
+      <div class="field"><label>지문 작성자</label><input value="${esc(o.author)}" oninput="lmsSet('author',this.value)"></div>
+    </div>
+    <div class="row" style="gap:1rem;margin:.2rem 0 .6rem">
+      <span style="font-weight:600">시험 성격 ${sel('kind', [['suneung','수능형 (수능·평가원·학평·사설 모의)'],['general','일반 문제 (개념 TEST·내신·단원평가·과제)']])}</span>
+      <span style="font-weight:600">배점 <b style="color:var(--danger,#dc2626)">*</b> ${sel('pts', [['','— 골라 주세요 —'],['orig','원배점 유지 ([2점]·[3점]·[4점]·학습지 배점칸)'],['even','균일배점 100점'],['manual','직접 입력']])}</span>
+    </div>
+    <div class="row" style="gap:.4rem;margin-bottom:.5rem">
+      <button class="btn ghost sm" onclick="lmsAiFill()">🤖 빈 유형 AI로 채우기</button>
+      <button class="btn ghost sm" onclick="lmsRebalance()" title="손으로 고친 시간도 풀고 난도대로 다시 나눕니다">⏱ 시간 다시 배분</button>
+      <span style="flex:1"></span>
+      <button class="btn gold" onclick="lmsDownload()">📥 엑셀 다운로드</button>
+    </div>
+    <div id="lms-summary" class="hint" style="margin-bottom:.4rem"></div>
+    <div style="max-height:56vh;overflow:auto;border:1px solid var(--line);border-radius:10px">
+    <table class="lms-tbl"><thead><tr><th>#</th><th>문항</th><th>대분류 · 소분류 › 유형</th><th>정답</th><th>점수</th><th>${su ? '등급' : '난도'}</th><th>풀이시간</th><th>상태</th></tr></thead><tbody>
+    ${LMS.rows.map((r, i)=>{
+      const p = lmsProblem(r), L = r.sub ? lmsLookup(p, r.sub, r.type) : null;
+      const a = r.ans, aTxt = a.err ? '' : a.kind === '단답형' ? `단답형 · ${esc(String(a.short))}` : `${a.kind} · ${esc(String(a.choice))}번 / ${a.count}지`;
+      return `<tr data-i="${i}" id="lms-r${i}">
+        <td>${r.no}</td>
+        <td style="max-width:260px"><div class="lms-q">${esc(mathSafeSlice(stripBoxMarks(p.question || (hasImg(p) ? '(그림 문항)' : '')), 70))}</div><div class="hint">${esc([p.subject, p.chapter, p.section].filter(Boolean).join(' › ') || '단원 미지정')}</div></td>
+        <td style="min-width:250px"><div class="hint" style="font-weight:700;color:var(--green-2)">${L ? esc(L[0]) + ' · ' + esc(lmsTag(p, r.sub, r.type)) : '대분류 —'}</div>
+          <select onchange="lmsPickType(${i},this.value)" style="max-width:300px"><option value="">(유형 고르기)</option>${lmsTypeOptions(p, r.sub ? [r.sub, r.type] : null)}</select>
+          ${r.extra.map(([s, t], k)=>`<div class="hint">＋ ${esc(s)} › ${esc(t)} <a href="#" onclick="lmsExtra(${i},null,${k});return false">빼기</a></div>`).join('')}
+          ${r.sub ? `<select class="lms-extra" onchange="lmsExtra(${i},this.value)" style="max-width:300px;font-size:.75rem"><option value="">＋ 복합 유형 추가</option>${lmsTypeOptions(p, null)}</select>` : ''}</td>
+        <td>${a.err ? `<input placeholder="정답 (예: ④ / 12)" style="width:110px" onchange="lmsSetAnswer(${i},this.value)">` : `<span>${aTxt}</span>`}</td>
+        <td><input type="number" min="0" step="0.5" style="width:62px" value="${r.pts != null ? r.pts : ''}" onchange="lmsSetPts(${i},this.value)"></td>
+        <td>${gradeSel(r, i)}</td>
+        <td><input style="width:62px" value="${lmsFmtT(r.secs)}" placeholder="m:ss" onchange="lmsSetTime(${i},this.value)">${r.lock ? ' <span class="hint" title="손으로 고친 시간">🔒</span>' : ''}</td>
+        <td class="lms-st"></td></tr>`;
+    }).join('')}</tbody></table></div>
+    ${su ? `<p class="hint" style="margin-top:.4rem">등급(100분/30문항 기준): ${Object.entries(LMS_GRADES).map(([g, [s, t]])=>`<b>${g}</b> ${lmsFmtT(s)} ${esc(t.split(' — ')[0])}`).join(' · ')} — 시험 시간·문항 수에 맞게 비례 환산, 문항당 0:40~8:00. 시간을 직접 고치면 🔒 고정, 나머지가 맞춰집니다.</p>`
+      : `<p class="hint" style="margin-top:.4rem">일반 문제: 문항 난도(●)대로 완만하게 나눕니다(번호 순 아님). 시간을 직접 고치면 🔒 고정, 나머지가 맞춰집니다.</p>`}`;
+  renderMath(m.querySelector('tbody'));
+  lmsSummary();
+}
+function lmsSummary(){
+  const c = lmsCheck(), el = $('#lms-summary'); if(!el) return;
+  LMS.rows.forEach((r, i)=>{
+    const td = document.querySelector(`#lms-r${i} .lms-st`); if(!td) return;
+    const e = c.rowErr.get(r) || [], w = c.warn.get(r) || [];
+    td.innerHTML = e.length ? `<span style="color:#dc2626;font-weight:700">⚠ ${esc(e.join(' · '))}</span>` : w.length ? `<span style="color:#b45309">검토요망 · ${esc(w.join(' · '))}</span>` : '<span style="color:var(--green)">✓</span>';
+  });
+  const sumT = LMS.rows.reduce((s, r)=>s + (r.secs || 0), 0), sumP = LMS.rows.reduce((s, r)=>s + (r.pts || 0), 0);
+  const nErr = [...c.rowErr.values()].length;
+  el.innerHTML = `시간 합계 <b>${lmsFmtT(sumT)}</b>${+LMS.opt.mins ? ' / ' + lmsFmtT(LMS.opt.mins*60) : ''} · 점수 합계 <b>${sumP}</b>점`
+    + (c.global.length || nErr ? ` · <span style="color:#dc2626;font-weight:700">고칠 것: ${esc([...c.global, ...(nErr ? [nErr + '개 문항'] : [])].join(' / '))}</span>` : ' · <span style="color:var(--green);font-weight:700">✓ 다운로드 준비 완료</span>');
+}
+async function lmsAiFill(){                                         // 유형이 빈 문항만: 그 단원의 마스터 후보 안에서 고르게
+  const todo = LMS.rows.filter(r=>!r.sub || !lmsLookup(lmsProblem(r), r.sub, r.type));
+  if(!todo.length){ toast('모든 문항에 유형이 있습니다.'); return; }
+  if(!aiSettings().key){ toast('API 키가 없습니다 — [백업·데이터 → AI 변환 설정]에서 키를 저장하세요.'); return; }
+  let done = 0, fail = 0;
+  const one = async r=>{
+    const p = lmsProblem(r), cands = lmsCandidates(p);
+    if(!cands.length){ fail++; r.why = '단원(과목)이 없어 후보를 못 찾음'; return; }
+    const content = [];
+    if(hasImg(p)) for(const d of (await imagesOf(p)).slice(0, 1)){ const mm = String(d).match(/^data:(image\/\w+);base64,(.+)$/); if(mm) content.push({ type:'image', source:{ type:'base64', media_type:mm[1], data:mm[2] } }); }
+    content.push({ type:'text', text:
+      '다음 수학 문제의 유형을 [후보] 중에서만 고르세요. 후보에 없는 이름을 만들지 마세요.\n'
+      + '풀이에 꼭 필요한 유형이 둘 이상이면 대표 하나를 pick, 나머지를 also(최대 2개)에 넣으세요. 확신이 없으면 sure를 false로.\n\n'
+      + '[문제]\n' + classifyTextOf(p.question, p.choices) + '\n\n[후보]\n' + cands.map(([s, t], k)=>`${k+1}. ${s} › ${t}`).join('\n')
+      + '\n\nJSON만: {"pick": 후보번호, "also": [후보번호], "sure": true, "why": "20자 이내 이유"}' });
+    try{
+      const res = await aiJsonCall(content, 1200);
+      const pick = cands[(+res.pick || 0) - 1];
+      if(!pick){ fail++; return; }
+      r.sub = pick[0]; r.type = pick[1]; r.unsure = res.sure === false; r.why = String(res.why || '').slice(0, 40);
+      r.extra = (Array.isArray(res.also) ? res.also : []).map(k=>cands[(+k || 0) - 1]).filter(Boolean).filter(([s, t])=>!(s === r.sub && t === r.type)).slice(0, 2);
+      await remapProblems(x=>x.id === r.id, { subsection: r.sub, utype: r.type, udetail: '', utypeExtra: r.extra.map(([s, t])=>lmsKey(s, t)) });
+      done++;
+    }catch(e){ fail++; r.why = String(e.message || e).slice(0, 60); }
+    toast(`🤖 유형 고르는 중… ${done + fail}/${todo.length}`);
+  };
+  for(let k = 0; k < todo.length; k += 3) await Promise.all(todo.slice(k, k + 3).map(one));
+  lmsRender();
+  toast(`🤖 유형 ${done}개를 채웠습니다` + (fail ? ` · ${fail}개 실패 — 직접 골라 주세요` : '') + ' (검토요망 표시는 확인해 주세요)');
+}
+/* ── 최소 xlsx 쓰기: 값이 있는 셀만 만든다(빈 <c/> 없음). 스타일 1 = 텍스트(@), 2 = mm:ss ── */
+function xlsxColName(c){ let s = ''; c++; while(c){ const m = (c-1) % 26; s = String.fromCharCode(65+m) + s; c = Math.floor((c-1)/26); } return s; }
+async function xlsxBlob(sheetName, rows){                           // rows: [[cell|null, …]|null], cell = {v, t:'s'|'n'|'text'|'time'}
+  const xe = s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const sst = [], sIdx = new Map();
+  const si = v=>{ v = String(v); if(!sIdx.has(v)){ sIdx.set(v, sst.length); sst.push(v); } return sIdx.get(v); };
+  let maxC = 0;
+  const body = rows.map((row, ri)=>{
+    if(!row) return '';
+    const cells = row.map((c, ci)=>{
+      if(!c || c.v == null || c.v === '') return '';
+      maxC = Math.max(maxC, ci + 1);
+      const ref = xlsxColName(ci) + (ri + 1);
+      if(c.t === 'n') return `<c r="${ref}"><v>${+c.v}</v></c>`;
+      if(c.t === 'time') return `<c r="${ref}" s="2"><v>${+c.v / 86400}</v></c>`;
+      return `<c r="${ref}" t="s"${c.t === 'text' ? ' s="1"' : ''}><v>${si(c.v)}</v></c>`;
+    }).join('');
+    return cells ? `<row r="${ri + 1}">${cells}</row>` : '';
+  }).join('');
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>');
+  zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+  zip.file('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${xe(sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`);
+  zip.file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>');
+  zip.file('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="mm:ss"/></numFmts><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
+  zip.file('xl/sharedStrings.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sst.length}" uniqueCount="${sst.length}">${sst.map(s=>`<si><t xml:space="preserve">${xe(s)}</t></si>`).join('')}</sst>`);
+  zip.file('xl/worksheets/sheet1.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:${xlsxColName(Math.max(0, maxC-1))}${rows.length}"/><sheetData>${body}</sheetData></worksheet>`);
+  return zip.generateAsync({ type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', compression:'DEFLATE' });
+}
+function lmsSheetRows(){                                            // 지침 §3 그대로의 행 배열
+  const S = v=>({ v, t:'s' }), N = v=>({ v, t:'n' });
+  const o = LMS.opt, rows = [];
+  rows.push(['시험 제목', '과목', '시험 시간(분)'].map(S));
+  rows.push([S(o.title.trim()), S(o.subj.trim()), N(+o.mins)]);
+  rows.push(null);
+  LMS.rows.forEach((r, i)=>{
+    const p = lmsProblem(r), L = lmsLookup(p, r.sub, r.type), a = r.ans;
+    rows.push(LMS_GROUP_HEAD.map(S));
+    rows.push([N(i + 1), S(L[0]), S(r.sub), S(r.type), S(r.no + '번'), S(o.author.trim()), S(lmsTag(p, r.sub, r.type))]);   // 시작·종료 페이지 셀은 만들지 않음
+    rows.push(LMS_ITEM_HEAD.map(S));
+    const choice = a.kind === '단답형' ? null : (typeof a.choice === 'number' ? N(a.choice) : S(a.choice));
+    const short = a.kind === '단답형' ? (typeof a.short === 'number' ? N(a.short) : S(a.short)) : null;
+    rows.push([{ v:r.no, t:'text' }, S(L[0]), S(r.sub), S(r.type), S(a.kind), S('일반적인 문제'), { v:r.secs, t:'time' },
+      N(a.count), N(r.pts), choice, short, null, null, S('아니오')]);
+    for(const [s, t] of r.extra){                                   // 복합 유형: 같은 번호로 B·C·D만
+      const X = lmsLookup(p, s, t); if(!X) continue;
+      rows.push([{ v:r.no, t:'text' }, S(X[0]), S(s), S(t)]);
+    }
+  });
+  return rows;
+}
+async function lmsDownload(){
+  const c = lmsCheck();
+  if(c.global.length || c.rowErr.size){
+    lmsSummary();
+    const first = LMS.rows.find(r=>c.rowErr.has(r)); if(first){ const el = $('#lms-r' + LMS.rows.indexOf(first)); if(el) el.scrollIntoView({ block:'center' }); }
+    toast('⚠ 고칠 것이 있습니다 — ' + [...c.global, ...(c.rowErr.size ? [c.rowErr.size + '개 문항(빨간 표시)'] : [])].join(' / '));
+    return;
+  }
+  if(!window.JSZip){ toast('구성요소(JSZip)가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
+  const blob = await xlsxBlob('ExamTemplate', lmsSheetRows());
+  const d = new Date(), z = n=>String(n).padStart(2, '0');
+  const name = `StudyPeak_ExamTemplate_${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.xlsx`;   // LMS 업로드 파일명은 영문
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  LMS.lastBlob = blob; LMS.lastName = name;
+  const nw = [...c.warn.values()].length;
+  toast(`📥 ${name} — 문항 ${LMS.rows.length}개` + (nw ? ` · 검토요망 ${nw}개는 업로드 전에 확인하세요` : ''));
+}
 /* 조건 기반 자동 구성: 부족하면 부족 수량을 그대로 보고 */
 function acFillChap(){ // 자동 구성: 과목 → 대단원 → 소단원 연동 ('전체' 허용)
   const s = $('#ac-subject').value;
@@ -9697,7 +10049,7 @@ async function sbLogout(){
 /* ═══ ☁️ 설정도 계정에: 로그인하면 AI 키·모델·워크스페이스·구글 클라이언트 ID·태그 그룹·단원 구성 등이 따라온다 ═══
    worksheets 표의 '__settings' 행(내 계정만 읽고 쓰기 — RLS)에 {at, kv} 로 보관. 더 최근 쪽이 이김. */
 const SETTINGS_KEYS = ['sp-lab-apikey','sp-lab-aimodel','sp-lab-figmodel','sp-lab-wsid','sp-lab-gcid','sp-lab-geninst','sp-lab-presets',
-  'sp-lab-curriculum','sp-lab-units','sp-lab-srctypes','sp-lab-taggroups','sp-lab-twinruns','sp-lab-style-twin','sp-lab-style-fig','sp-lab-stylepresets-twin','sp-lab-stylepresets-fig'];
+  'sp-lab-curriculum','sp-lab-units','sp-lab-srctypes','sp-lab-taggroups','sp-lab-twinruns','sp-lab-style-twin','sp-lab-style-fig','sp-lab-stylepresets-twin','sp-lab-stylepresets-fig','sp-lab-lms'];
 const SETTINGS_ROW = '__settings';
 let SETTINGS_APPLYING = false;
 function settingsSyncOn(){ return localStorage.getItem('sp-lab-syncsettings') !== '0'; }
