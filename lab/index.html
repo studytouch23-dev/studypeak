@@ -1025,6 +1025,12 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
         <button class="btn ghost" onclick="sbLogout()">로그아웃</button>
       </div>
       <p class="hint" id="sb-sync-status" style="margin-top:.4rem"></p>
+      <div class="row" style="margin-top:.6rem;gap:.4rem;padding:.6rem .8rem;background:var(--green-50);border:1px solid var(--green-100);border-radius:12px">
+        <label style="margin:0;display:flex;align-items:center;gap:.4rem;font-weight:700;color:var(--ink)"><input type="checkbox" id="sb-syncset" style="width:auto" checked onchange="setSettingsSync(this.checked)">
+          ☁️ AI 키·모델·워크스페이스·구글 클라이언트 ID·태그 그룹·단원 구성도 계정에 저장 → 다른 기기에서 <b>로그인만 하면</b> 그대로</label>
+        <span class="hint">내 계정만 읽을 수 있는 칸에 저장됩니다(다른 선생님은 못 봄). 로그인 정보를 남과 나눠 쓰면 키도 함께 쓰이니 주의하세요.</span>
+        <button class="btn ghost sm" onclick="sbDeleteSettings()">계정에서 설정 지우기</button>
+      </div>
       <details style="margin-top:.6rem" open><summary style="cursor:pointer;font-size:.88rem;font-weight:700">🔑 비밀번호 설정 — 다른 기기에서 메일 없이 로그인</summary>
         <p class="hint" style="margin:.4rem 0">여기서 비밀번호(8자 이상)를 정해 두면 PC·태블릿·휴대폰 어디서나 <b>이메일 + 비밀번호</b>로 바로 로그인됩니다(로그인 메일 필요 없음). 맥의 자동 등록 스크립트도 이 비밀번호를 씁니다. 바꿀 때도 여기서 다시 설정하세요.</p>
         <div class="row">
@@ -9220,7 +9226,7 @@ async function sbInit(){ // 시작 시: 전에 로그인한 적 있으면 조용
     });
     SB.listening = true;
     const { data } = await c.auth.getSession();
-    if(data && data.session){ SB.user = data.session.user; sbUI(); sbPull().catch(()=>{}); }
+    if(data && data.session){ SB.user = data.session.user; sbUI(); sbPull().catch(()=>{}); sbSyncSettingsNow(); }
   }catch(e){ /* 오프라인 등 — 로컬만으로 계속 동작 */ }
 }
 /* Supabase 영어 오류 → 쉬운 우리말 */
@@ -9281,6 +9287,96 @@ async function sbLogout(){
   localStorage.removeItem('sp-lab-cloud'); localStorage.removeItem('sp-lab-cloudsince');
   sbUI(); toast('로그아웃했습니다 — 이 기기에 저장된 문제는 그대로 남아 있습니다.');
 }
+
+/* ═══ ☁️ 설정도 계정에: 로그인하면 AI 키·모델·워크스페이스·구글 클라이언트 ID·태그 그룹·단원 구성 등이 따라온다 ═══
+   worksheets 표의 '__settings' 행(내 계정만 읽고 쓰기 — RLS)에 {at, kv} 로 보관. 더 최근 쪽이 이김. */
+const SETTINGS_KEYS = ['sp-lab-apikey','sp-lab-aimodel','sp-lab-figmodel','sp-lab-wsid','sp-lab-gcid','sp-lab-geninst','sp-lab-presets',
+  'sp-lab-curriculum','sp-lab-srctypes','sp-lab-taggroups','sp-lab-twinruns','sp-lab-style-twin','sp-lab-style-fig','sp-lab-stylepresets-twin','sp-lab-stylepresets-fig'];
+const SETTINGS_ROW = '__settings';
+let SETTINGS_APPLYING = false;
+function settingsSyncOn(){ return localStorage.getItem('sp-lab-syncsettings') !== '0'; }
+(function(){                                                     // 설정 키가 바뀌면 → 잠시 뒤 계정에 올림
+  try{
+    const S = Storage.prototype, _set = S.setItem, _rm = S.removeItem;
+    S.setItem = function(k, v){ _set.call(this, k, v); if(this === window.localStorage && SETTINGS_KEYS.includes(k)) settingsChanged(); };
+    S.removeItem = function(k){ _rm.call(this, k); if(this === window.localStorage && SETTINGS_KEYS.includes(k)) settingsChanged(); };
+  }catch(e){}
+})();
+function settingsChanged(){
+  if(SETTINGS_APPLYING || !window.__settingsReady) return;     // 시작할 때 자동으로 쓰는 값은 '사용자가 바꾼 것'으로 치지 않음
+  try{ Storage.prototype.setItem.call(localStorage, 'sp-lab-settings-at', String(Date.now())); }catch(e){}
+  clearTimeout(settingsChanged.t); settingsChanged.t = setTimeout(()=>sbPushSettings().catch(()=>{}), 1500);
+}
+function settingsSnapshot(){ const kv = {}; SETTINGS_KEYS.forEach(k=>{ const v = localStorage.getItem(k); if(v != null) kv[k] = v; }); return kv; }
+async function sbPushSettings(){
+  if(typeof SB === 'undefined' || !SB.user || !settingsSyncOn()) return false;
+  const c = await sbLoad(), at = +(localStorage.getItem('sp-lab-settings-at')||Date.now());
+  const kv = { ...(SB.cloudKv || {}), ...settingsSnapshot() };   // 계정에만 있던 값(예: 다른 기기의 키)은 지우지 않고 합침
+  const { error } = await c.from('worksheets').upsert([{ id: SETTINGS_ROW, data: { kind:'settings', at, kv }, updated_at: Date.now(), deleted: false }]);
+  if(error) throw error;
+  return true;
+}
+function applyCloudSettings(data){ // 클라우드 쪽이 더 최근이면 이 기기에 반영
+  if(!data || !data.kv || !settingsSyncOn()) return false;
+  SB.cloudKv = { ...data.kv };
+  const localAt = +(localStorage.getItem('sp-lab-settings-at')||0);
+  if(+data.at <= localAt) return false;
+  SETTINGS_APPLYING = true;
+  try{
+    SETTINGS_KEYS.forEach(k=>{ if(k in data.kv) localStorage.setItem(k, data.kv[k]); });   // 계정에 없는 값은 이 기기 것을 그대로 둠
+    localStorage.setItem('sp-lab-settings-at', String(data.at));
+  } finally { SETTINGS_APPLYING = false; }
+  try{ CURRICULUM = loadCurriculum(); }catch(e){}
+  fillSettingsUI();
+  const v = (document.querySelector('.view.active')||{}).id || '';
+  if(v === 'view-mytags') renderMyTags(); if(v === 'view-srctags') renderSrcTags(); if(v === 'view-tags') renderTags();
+  return true;
+}
+/* 로그인(또는 세션 복원) 직후 한 번: 계정 설정을 직접 읽어 — 없으면 이 기기 설정을 올리고, 계정 쪽이 더 최근이면 받아옴 */
+async function sbSyncSettingsNow(){
+  if(!SB.user || !settingsSyncOn()) return;
+  try{
+    const c = await sbLoad();
+    const { data, error } = await c.from('worksheets').select('id,data,updated_at,deleted').eq('id', SETTINGS_ROW);
+    if(error) throw error;
+    const row = (data||[]).find(r=>r.id === SETTINGS_ROW && !r.deleted);
+    if(row && row.data && row.data.kv){ applyCloudSettings(row.data);
+      const localAt = +(localStorage.getItem('sp-lab-settings-at')||0);
+      if(localAt > +row.data.at) await sbPushSettings();               // 이 기기 쪽이 더 최근
+    } else if(Object.keys(settingsSnapshot()).length){
+      if(!localStorage.getItem('sp-lab-settings-at')) Storage.prototype.setItem.call(localStorage, 'sp-lab-settings-at', String(Date.now()));
+      await sbPushSettings();                                            // 계정에 아직 없음 → 이 기기 설정을 올림
+    }
+  }catch(e){}
+}
+function fillSettingsUI(){
+  const ai = aiSettings();
+  if($('#ai-key')) $('#ai-key').value = ai.key || '';
+  if($('#ai-wsid')) $('#ai-wsid').value = ai.wsid || '';
+  if($('#ai-model')) $('#ai-model').value = ai.model;
+  if($('#ai-figmodel')) $('#ai-figmodel').value = ai.figModel;
+  const gcid = localStorage.getItem('sp-lab-gcid');
+  if($('#gd-cid')) $('#gd-cid').value = gcid || '';
+  const gdlast = localStorage.getItem('sp-lab-gdlast');
+  if(typeof gdStatus === 'function') gdStatus(gcid
+    ? (gdlast ? `마지막 드라이브 백업: ${new Date(gdlast).toLocaleString('ko-KR')}` : '클라이언트 ID 저장됨 — [① 구글 로그인] 후 백업하세요.')
+    : '처음이라면 아래 "클라이언트 ID 만드는 방법"을 열어 최초 1회 설정을 해주세요.');
+  if(ai.key && $('#ai-status')) $('#ai-status').textContent = '✅ 키 저장됨 — AI 변환 사용 가능'+(SB && SB.user && settingsSyncOn() ? ' (☁️ 계정에 저장됨 — 다른 기기에서도 로그인만 하면 그대로)' : '');
+  try{ if($('#fig-style')) $('#fig-style').value = styleLast('fig'); fillSrcTypeSelects(); }catch(e){}
+  if($('#sb-syncset')) $('#sb-syncset').checked = settingsSyncOn();
+}
+function setSettingsSync(on){
+  localStorage.setItem('sp-lab-syncsettings', on ? '1' : '0');
+  if(on){ sbPushSettings().then(()=>toast('☁️ 설정을 계정에 저장했습니다 — 다른 기기에서 로그인하면 그대로 쓸 수 있어요.')).catch(e=>toast('⚠ '+(e.message||e))); }
+  else toast('설정은 이 기기에만 둡니다. (계정에 이미 저장된 것은 그대로 — 지우려면 [계정에서 설정 지우기])');
+  fillSettingsUI();
+}
+async function sbDeleteSettings(){
+  if(!SB.user) return;
+  if(!confirm('계정에 저장된 AI 키·설정을 지울까요? (이 기기의 설정은 그대로 남습니다)')) return;
+  try{ const c = await sbLoad(); const { error } = await c.from('worksheets').upsert([{ id: SETTINGS_ROW, data: {}, updated_at: Date.now(), deleted: true }]); if(error) throw error;
+    localStorage.setItem('sp-lab-syncsettings', '0'); fillSettingsUI(); toast('계정에서 설정을 지웠습니다.'); }catch(e){ toast('⚠ '+(e.message||e)); }
+}
 /* 저장·삭제 훅: saveProblem/삭제/학습지에서 호출 → 1.2초 묶음으로 밀어올림 */
 function sbQueue(table, id){ if(SB.user){ SB.queue.set(table+'|'+id, {table, id, del:false}); sbScheduleFlush(); } }
 function sbQueueDel(table, id){ if(SB.user){ SB.queue.set(table+'|'+id, {table, id, del:true}); sbScheduleFlush(); } }
@@ -9328,7 +9424,7 @@ async function sbPull(full){
   if(!SB.user) return 0;
   const c = await sbLoad();
   const since = full ? 0 : +(localStorage.getItem('sp-lab-cloudsince')||0);
-  let maxT = since, applied = 0, cloudProblems = 0;
+  let maxT = since, applied = 0, cloudProblems = 0, sawSettings = false;
   for(const table of ['problems','worksheets']){
     let from = 0;
     for(;;){
@@ -9354,6 +9450,9 @@ async function sbPull(full){
             else state.problems.push(lightenProblem(stored));
             applied++;
           }
+        }else if(row.id === SETTINGS_ROW){
+          sawSettings = true;
+          if(!row.deleted && applyCloudSettings(row.data)) applied++;
         }else{
           const local = (state.worksheets||[]).find(w=>w.id===row.id);
           if(row.deleted){
@@ -9372,6 +9471,8 @@ async function sbPull(full){
     }
   }
   localStorage.setItem('sp-lab-cloudsince', String(maxT));
+  // 계정에 설정이 없거나 이 기기 쪽이 더 최근이면 → 올림 (처음 로그인한 기기의 키가 계정으로)
+  if(settingsSyncOn() && Object.keys(settingsSnapshot()).length && (full ? !sawSettings : false)) sbPushSettings().catch(()=>{});
   if(applied){ persistCart(); refreshCounts(); if($('#view-db').classList.contains('active')) renderDB(); renderWorksheetList(); figRerenderSolids().catch(()=>{}); }
   const el = $('#sb-sync-status');
   if(el) el.textContent = applied ? `⬇ 클라우드에서 ${applied}건 가져왔습니다.`
@@ -9666,18 +9767,8 @@ function dashGo(f){
   persistCart();
   refreshCounts();
   renderJobLog();
-  const ai = aiSettings();
-  if(ai.key) $('#ai-key').value = ai.key;
-  if(ai.wsid) $('#ai-wsid').value = ai.wsid;
-  $('#ai-model').value = ai.model;
-  if($('#ai-figmodel')) $('#ai-figmodel').value = ai.figModel;
-  const gcid = localStorage.getItem('sp-lab-gcid');
-  if(gcid) $('#gd-cid').value = gcid;
-  const gdlast = localStorage.getItem('sp-lab-gdlast');
-  gdStatus(gcid
-    ? (gdlast ? `마지막 드라이브 백업: ${new Date(gdlast).toLocaleString('ko-KR')}` : '클라이언트 ID 저장됨 — [① 구글 로그인] 후 백업하세요.')
-    : '처음이라면 아래 "클라이언트 ID 만드는 방법"을 열어 최초 1회 설정을 해주세요.');
-  if(ai.key) $('#ai-status').textContent = '✅ 키 저장됨 — AI 변환 사용 가능';
+  fillSettingsUI();
+  window.__settingsReady = true;
   sbInit();                                                // 클라우드 로그인 상태면 세션 복원 + 변경분 내려받기
   renderErrCount();
  }catch(e){
