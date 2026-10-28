@@ -18,10 +18,10 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     const base = { solution:'s', grade:'', srcType:'기출', srcName:'L', difficulty:3, tags:[], reviewed:true, images:[], choices:[], createdAt:1, updatedAt:1 };
     const C5 = ['① 1','② 2','③ 3','④ 4','⑤ 5'];
     const ps = [
-      { ...base, id:'L1', question:'곡선 위의 점에서의 접선 [3점]', choices:C5, answer:'④', difficulty:3, subject:'미적분Ⅰ', chapter:'미분', section:'접선의 방정식', subsection:'도함수의 활용', utype:'접선의 방정식 구하기(1) : 접점의 좌표가 주어진 경우' },
-      { ...base, id:'L2', question:'점 (1,2)를 평행이동한 점 [4점]', answer:'12', difficulty:5, subject:'공통수학2', chapter:'도형의 방정식', section:'도형의 이동', subsection:'도형의 이동', utype:'점의 평행이동' },
-      { ...base, id:'L3', question:'등차수열의 제5항은? [2점]\n① 1 ② 2 ③ 3 ④ 4 ⑤ 5', answer:'③', difficulty:1, subject:'대수', chapter:'수열', section:'등차수열' },
-      { ...base, id:'L4', question:'f∘g=g∘f 인 함수', answer:'', difficulty:4, subject:'공통수학2', chapter:'함수와 그래프', section:'합성함수', subsection:'함수', utype:'fｏg=gｏf인 경우' },
+      { ...base, id:'L1', origNo:'11', question:'곡선 위의 점에서의 접선 [3점]', choices:C5, answer:'④', difficulty:3, subject:'미적분Ⅰ', chapter:'미분', section:'접선의 방정식', subsection:'도함수의 활용', utype:'접선의 방정식 구하기(1) : 접점의 좌표가 주어진 경우' },
+      { ...base, id:'L2', origNo:'12', question:'점 (1,2)를 평행이동한 점 [4점]', answer:'12', difficulty:5, subject:'공통수학2', chapter:'도형의 방정식', section:'도형의 이동', subsection:'도형의 이동', utype:'점의 평행이동' },
+      { ...base, id:'L3', origNo:'13', question:'등차수열의 제5항은? [2점]\n① 1 ② 2 ③ 3 ④ 4 ⑤ 5', answer:'③', difficulty:1, subject:'대수', chapter:'수열', section:'등차수열' },
+      { ...base, id:'L4', origNo:'14', question:'f∘g=g∘f 인 함수', answer:'', difficulty:4, subject:'공통수학2', chapter:'함수와 그래프', section:'합성함수', subsection:'함수', utype:'fｏg=gｏf인 경우' },
     ];
     for(const p of ps){ await saveProblem(p); state.problems.push(lightenProblem(p)); }
     state.cart = ps.map(p => p.id); state.points = {};
@@ -55,11 +55,20 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     out.lock = { l2: LMS.rows[1].secs, sum: LMS.rows.reduce((s, x) => s + x.secs, 0), five: LMS.rows.every(x => x.secs % 5 === 0) };
     out.check = lmsCheck(); out.check = { g: out.check.global, e: out.check.rowErr.size };
     // xlsx
-    const blob = await xlsxBlob('ExamTemplate', lmsSheetRows());
+    out.noMode = LMS.opt.noMode;
+    const blob = await xlsxBlob(lmsWorkbook());
     const zip = await JSZip.loadAsync(blob);
     const sheet = await zip.file('xl/worksheets/sheet1.xml').async('string');
     const sst = [...new DOMParser().parseFromString(await zip.file('xl/sharedStrings.xml').async('string'), 'application/xml').getElementsByTagName('si')].map(x => x.textContent);
     const styles = await zip.file('xl/styles.xml').async('string');
+    const wbx = await zip.file('xl/workbook.xml').async('string');
+    const lk = await zip.file('xl/worksheets/sheet2.xml').async('string');
+    out.lookup = { hidden: /name="_Lookup" sheetId="2" state="hidden"/.test(wbx), first: /name="ExamTemplate"/.test(wbx.split('_Lookup')[0]), cells: (lk.match(/<c /g) || []).length,
+      fills: /FFE8EEF5/.test(styles) && /FFD9E1F2/.test(styles) && /FFFCE4D6/.test(styles), cols: /<col min="3" max="3" width="35.7"/.test(sheet) };
+    LMS.opt.numType = 'int';
+    const z2 = await JSZip.loadAsync(await xlsxBlob(lmsWorkbook())), sh2 = await z2.file('xl/worksheets/sheet1.xml').async('string');
+    out.intMode = /<c r="H7"><v>5<\/v><\/c>/.test(sh2) && /<c r="J7"><v>4<\/v><\/c>/.test(sh2);
+    LMS.opt.numType = 'str';
     const doc = new DOMParser().parseFromString(sheet, 'application/xml');
     const grid = {};
     for(const c of doc.getElementsByTagName('c')){
@@ -68,7 +77,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     }
     const rowVals = n => { const o = []; for(const k of Object.keys(grid)) { const m = k.match(/^([A-Z]+)(\d+)$/); if(+m[2] === n) o.push([m[1], grid[k].v]); } return o.sort((a, b) => a[0].length - b[0].length || a[0].localeCompare(b[0])).map(x => x[1]); };
     out.x = { r1: rowVals(1), r2: rowVals(2), r3: rowVals(3), g4: rowVals(4), g5: rowVals(5), i6: rowVals(6), i7: rowVals(7),
-      a7: grid.A7, g7: grid.G7, j7: grid.J7, h7: grid.H7, k11: grid.K11, b9: grid.B9, i15: rowVals(15), i16: rowVals(16),
+      a7: grid.A7, g7: grid.G7, j7: grid.J7, h7: grid.H7, a4: grid.A4, a1: grid.A1, e5: grid.E5, k11: grid.K11, b9: grid.B9, i15: rowVals(15), i16: rowVals(16),
       selfClose: /<c [^>]*\/>/.test(sheet), emptyV: /<v><\/v>/.test(sheet), h5: !!grid.H5 || !!grid.I5,
       styles: /numFmtId="164" formatCode="mm:ss"/.test(styles) && /numFmtId="49"/.test(styles) };
     await lmsDownload();
@@ -92,11 +101,13 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   check('모두 채우면 오류 없음', r.check.g.length === 0 && r.check.e === 0, JSON.stringify(r.check));
   const x = r.x;
   check('1~3행: 시험 제목·과목·시험 시간 / 값 / 공백', x.r1.join() === '시험 제목,과목,시험 시간(분)' && x.r2[1] === '수학' && x.r2[2] === 10 && x.r3.length === 0, JSON.stringify([x.r1, x.r2, x.r3]));
-  check('그룹 헤더 9열·그룹 값(1, 대분류, 소분류, 유형, 1번, 지영T, 과목) — 시작·종료 페이지 셀 없음', x.g4.length === 9 && x.g4[8] === '종료 페이지' && x.g5.join('|') === '1|함수|도함수의 활용|접선의 방정식 구하기(1) : 접점의 좌표가 주어진 경우|1번|지영T|미적분1' && !x.h5, JSON.stringify([x.g4, x.g5]));
+  check('그룹 헤더 9열·그룹 값(1, 대분류, 소분류, 유형, 11번, 지영T, 과목) — 시작·종료 페이지 셀 없음', x.g4.length === 9 && x.g4[8] === '종료 페이지' && x.g5.join('|') === '1|함수|도함수의 활용|접선의 방정식 구하기(1) : 접점의 좌표가 주어진 경우|11번|지영T|미적분1' && !x.h5, JSON.stringify([x.g4, x.g5]));
   check('문항 헤더 14열 (주관식 정답·비교 유형 포함)', x.i6.length === 14 && x.i6[10] === '주관식 정답' && x.i6[11] === '비교 유형' && x.i6[13] === '답안없음', JSON.stringify(x.i6));
-  check('문항 값: 번호 텍스트(@)·단일 선택·일반적인 문제·mm:ss 시간·5지·정답 4(숫자)·아니오', x.a7.t === 's' && x.a7.s === '1' && x.a7.v === '1' && x.i7[4] === '단일 선택' && x.i7[5] === '일반적인 문제' && x.g7.s === '2' && x.g7.t === 'n' && x.h7.v === 5 && x.j7.t === 'n' && x.j7.v === 4 && x.i7[x.i7.length-1] === '아니오', JSON.stringify([x.a7, x.g7, x.h7, x.j7, x.i7]));
+  check('문항 값: 원본 번호 텍스트(@)·단일 선택·일반적인 문제·mm:ss 시간·답안개수 \'5\'·정답 \'4\'(v3 샘플처럼 문자열)·아니오', r.noMode === 'orig' && x.a7.t === 's' && x.a7.s === '1' && x.a7.v === '11' && x.e5.v === '11번' && x.i7[4] === '단일 선택' && x.i7[5] === '일반적인 문제' && x.g7.s === '2' && x.g7.t === 'n' && x.h7.t === 's' && x.h7.v === '5' && x.j7.t === 's' && x.j7.v === '4' && x.i7[x.i7.length-1] === '아니오', JSON.stringify([r.noMode, x.a7, x.e5, x.g7, x.h7, x.j7, x.i7]));
+  check('[숫자] 고르면 답안개수·정답선택지 int', r.intMode);
+  check('숨김 _Lookup 시트(값 목록)·헤더 채움색(E8EEF5·D9E1F2·FCE4D6)·열 너비', r.lookup.hidden && r.lookup.first && r.lookup.cells === 47 && r.lookup.fills && r.lookup.cols && x.a1.s === '3' && x.a4.s === '4', JSON.stringify([r.lookup, x.a1, x.a4]));
   check('단답형 정답 12 = 숫자 셀, 대분류 기하', x.k11 && x.k11.t === 'n' && x.k11.v === 12 && x.b9.v === '기하', JSON.stringify([x.k11, x.b9]));
-  check('복합 유형: 같은 번호로 B·C·D만 채운 행 추가', x.i16.length === 4 && x.i16[0] === '3' && x.i15[0] === '3', JSON.stringify([x.i15, x.i16]));
+  check('복합 유형: 같은 번호로 B·C·D만 채운 행 추가', x.i16.length === 4 && x.i16[0] === '13' && x.i15[0] === '13', JSON.stringify([x.i15, x.i16]));
   check('빈 셀(<c/>) 없음, 스타일 @·mm:ss', !x.selfClose && !x.emptyV && x.styles);
   check('다운로드 파일명 영문', /^StudyPeak_ExamTemplate_\d{8}_\d{4}\.xlsx$/.test(r.name), r.name);
   check('닫으면 창 너비 원래대로', r.closed);

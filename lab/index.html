@@ -8393,8 +8393,9 @@ function lmsOpen(){
   if(!list.length){ toast('담긴 문제가 없습니다.'); return; }
   let saved = {}; try{ saved = JSON.parse(localStorage.getItem('sp-lab-lms') || '{}') || {}; }catch(e){}
   const suneung = list.some(p=>lmsPtsInText(p) != null);
+  const orig = list.map(p=>String(p.origNo || '').trim()), origOk = orig.every(Boolean) && new Set(orig).size === orig.length;
   LMS.opt = { title: $('#s-title').value || '수학 시험', subj: saved.subj || '수학', mins: '', author: saved.author || '지영T',
-    kind: suneung ? 'suneung' : 'general', pts: '' };
+    kind: suneung ? 'suneung' : 'general', pts: '', noMode: origOk ? 'orig' : 'seq', origOk, numType: saved.numType === 'int' ? 'int' : 'str' };
   LMS.rows = list.map((p, i)=>{
     const ok = p.subsection && p.utype && lmsLookup(p, p.subsection, p.utype);
     const extra = (p.utypeExtra || []).map(k=>k.split('\u0001')).filter(([s, t])=>lmsLookup(p, s, t));
@@ -8450,6 +8451,7 @@ function lmsCheck(){                                                // → { row
   if(!String(LMS.opt.title||'').trim()) global.push('시험 제목을 적어 주세요');
   if(!(+LMS.opt.mins > 0)) global.push('시험 시간(분)을 적어 주세요');
   if(!LMS.opt.pts) global.push('배점 방식을 골라 주세요');
+  if(LMS.opt.noMode === 'orig' && !LMS.opt.origOk) global.push('원본 문항 번호가 없거나 겹칩니다 — [1부터 차례로]를 고르세요');
   for(const r of LMS.rows){
     const p = lmsProblem(r);
     if(!r.sub || !r.type) add(rowErr, r, '유형 미지정');
@@ -8466,7 +8468,8 @@ function lmsCheck(){                                                // → { row
 }
 function lmsSet(k, v){
   LMS.opt[k] = v;
-  if(k === 'subj' || k === 'author'){ try{ localStorage.setItem('sp-lab-lms', JSON.stringify({ subj: LMS.opt.subj, author: LMS.opt.author })); }catch(e){} }
+  if(k === 'subj' || k === 'author' || k === 'numType'){ try{ localStorage.setItem('sp-lab-lms', JSON.stringify({ subj: LMS.opt.subj, author: LMS.opt.author, numType: LMS.opt.numType })); }catch(e){} }
+  if(k === 'noMode'){ lmsRender(); return; }
   if(k === 'pts' || k === 'kind'){ lmsApplyPts(); lmsRender(); return; }
   if(k === 'mins'){ lmsAllocate(); lmsRender(); return; }
   lmsSummary();
@@ -8523,6 +8526,10 @@ function lmsRender(){
       <span style="font-weight:600">시험 성격 ${sel('kind', [['suneung','수능형 (수능·평가원·학평·사설 모의)'],['general','일반 문제 (개념 TEST·내신·단원평가·과제)']])}</span>
       <span style="font-weight:600">배점 <b style="color:var(--danger,#dc2626)">*</b> ${sel('pts', [['','— 골라 주세요 —'],['orig','원배점 유지 ([2점]·[3점]·[4점]·학습지 배점칸)'],['even','균일배점 100점'],['manual','직접 입력']])}</span>
     </div>
+    <div class="row" style="gap:1rem;margin:-.2rem 0 .6rem;font-size:.82rem">
+      <span>문항 번호 ${sel('noMode', [['orig','원본 시험 번호 그대로' + (o.origOk ? '' : ' (번호 없거나 겹침 — 쓸 수 없음)')],['seq','1부터 차례로']])}</span>
+      <span title="v3 템플릿 샘플은 문자열('5','4'). 업로드 오류가 나면 숫자로 바꿔 다시">답안개수·정답선택지 ${sel('numType', [['str','문자열 (v3 템플릿 샘플대로)'],['int','숫자 (업로드 오류 시)']])}</span>
+    </div>
     <div class="row" style="gap:.4rem;margin-bottom:.5rem">
       <button class="btn ghost sm" onclick="lmsAiFill()">🤖 빈 유형 AI로 채우기</button>
       <button class="btn ghost sm" onclick="lmsRebalance()" title="손으로 고친 시간도 풀고 난도대로 다시 나눕니다">⏱ 시간 다시 배분</button>
@@ -8536,7 +8543,7 @@ function lmsRender(){
       const p = lmsProblem(r), L = r.sub ? lmsLookup(p, r.sub, r.type) : null;
       const a = r.ans, aTxt = a.err ? '' : a.kind === '단답형' ? `단답형 · ${esc(String(a.short))}` : `${a.kind} · ${esc(String(a.choice))}번 / ${a.count}지`;
       return `<tr data-i="${i}" id="lms-r${i}">
-        <td>${r.no}</td>
+        <td>${esc(lmsNo(r))}</td>
         <td style="max-width:260px"><div class="lms-q">${esc(mathSafeSlice(stripBoxMarks(p.question || (hasImg(p) ? '(그림 문항)' : '')), 70))}</div><div class="hint">${esc([p.subject, p.chapter, p.section].filter(Boolean).join(' › ') || '단원 미지정')}</div></td>
         <td style="min-width:250px"><div class="hint" style="font-weight:700;color:var(--green-2)">${L ? esc(L[0]) + ' · ' + esc(lmsTag(p, r.sub, r.type)) : '대분류 —'}</div>
           <select onchange="lmsPickType(${i},this.value)" style="max-width:300px"><option value="">(유형 고르기)</option>${lmsTypeOptions(p, r.sub ? [r.sub, r.type] : null)}</select>
@@ -8595,57 +8602,91 @@ async function lmsAiFill(){                                         // 유형이
   lmsRender();
   toast(`🤖 유형 ${done}개를 채웠습니다` + (fail ? ` · ${fail}개 실패 — 직접 골라 주세요` : '') + ' (검토요망 표시는 확인해 주세요)');
 }
-/* ── 최소 xlsx 쓰기: 값이 있는 셀만 만든다(빈 <c/> 없음). 스타일 1 = 텍스트(@), 2 = mm:ss ── */
+/* ── 최소 xlsx 쓰기: 값이 있는 셀만 만든다(빈 <c/> 없음).
+   sheets = [{ name, rows, hidden, widths:{A:20.7,…} }], rows = [[cell|null, …]|null], cell = { v, t:'s'|'n'|'text'|'time', st }
+   스타일: text = 텍스트(@), time = mm:ss, st 'h1'·'hg'·'hi' = 굵게 + 채움(E8EEF5·D9E1F2·FCE4D6) ── */
 function xlsxColName(c){ let s = ''; c++; while(c){ const m = (c-1) % 26; s = String.fromCharCode(65+m) + s; c = Math.floor((c-1)/26); } return s; }
-async function xlsxBlob(sheetName, rows){                           // rows: [[cell|null, …]|null], cell = {v, t:'s'|'n'|'text'|'time'}
+async function xlsxBlob(sheets){
   const xe = s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const sst = [], sIdx = new Map();
   const si = v=>{ v = String(v); if(!sIdx.has(v)){ sIdx.set(v, sst.length); sst.push(v); } return sIdx.get(v); };
-  let maxC = 0;
-  const body = rows.map((row, ri)=>{
-    if(!row) return '';
-    const cells = row.map((c, ci)=>{
-      if(!c || c.v == null || c.v === '') return '';
-      maxC = Math.max(maxC, ci + 1);
-      const ref = xlsxColName(ci) + (ri + 1);
-      if(c.t === 'n') return `<c r="${ref}"><v>${+c.v}</v></c>`;
-      if(c.t === 'time') return `<c r="${ref}" s="2"><v>${+c.v / 86400}</v></c>`;
-      return `<c r="${ref}" t="s"${c.t === 'text' ? ' s="1"' : ''}><v>${si(c.v)}</v></c>`;
+  const XF = { text:1, time:2, h1:3, hg:4, hi:5 };
+  const sheetXml = sh=>{
+    let maxC = 0;
+    const body = sh.rows.map((row, ri)=>{
+      if(!row) return '';
+      const cells = row.map((c, ci)=>{
+        if(!c || c.v == null || c.v === '') return '';
+        maxC = Math.max(maxC, ci + 1);
+        const ref = xlsxColName(ci) + (ri + 1), st = XF[c.st || (c.t === 'text' || c.t === 'time' ? c.t : '')];
+        const sa = st ? ` s="${st}"` : '';
+        if(c.t === 'n') return `<c r="${ref}"${sa}><v>${+c.v}</v></c>`;
+        if(c.t === 'time') return `<c r="${ref}"${sa}><v>${+c.v / 86400}</v></c>`;
+        return `<c r="${ref}"${sa} t="s"><v>${si(c.v)}</v></c>`;
+      }).join('');
+      return cells ? `<row r="${ri + 1}">${cells}</row>` : '';
     }).join('');
-    return cells ? `<row r="${ri + 1}">${cells}</row>` : '';
-  }).join('');
-  const zip = new JSZip();
-  zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>');
+    const cols = Object.entries(sh.widths || {}).map(([L, w])=>{ let n = 0; for(const ch of L) n = n*26 + ch.charCodeAt(0) - 64; return `<col min="${n}" max="${n}" width="${w}" customWidth="1"/>`; }).join('');
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:${xlsxColName(Math.max(0, maxC-1))}${Math.max(1, sh.rows.length)}"/>${cols ? `<cols>${cols}</cols>` : ''}<sheetData>${body}</sheetData></worksheet>`;
+  };
+  const zip = new JSZip(), n = sheets.length;
+  zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+    + sheets.map((_, k)=>`<Override PartName="/xl/worksheets/sheet${k+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')
+    + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>');
   zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
-  zip.file('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${xe(sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`);
-  zip.file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>');
-  zip.file('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="mm:ss"/></numFmts><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
-  zip.file('xl/sharedStrings.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sst.length}" uniqueCount="${sst.length}">${sst.map(s=>`<si><t xml:space="preserve">${xe(s)}</t></si>`).join('')}</sst>`);
-  zip.file('xl/worksheets/sheet1.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:${xlsxColName(Math.max(0, maxC-1))}${rows.length}"/><sheetData>${body}</sheetData></worksheet>`);
+  zip.file('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((sh, k)=>`<sheet name="${xe(sh.name)}" sheetId="${k+1}"${sh.hidden ? ' state="hidden"' : ''} r:id="rId${k+1}"/>`).join('')}</sheets></workbook>`);
+  zip.file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + sheets.map((_, k)=>`<Relationship Id="rId${k+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${k+1}.xml"/>`).join('')
+    + `<Relationship Id="rId${n+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId${n+2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>`);
+  const fill = rgb=>`<fill><patternFill patternType="solid"><fgColor rgb="FF${rgb}"/><bgColor indexed="64"/></patternFill></fill>`;
+  zip.file('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="mm:ss"/></numFmts>'
+    + '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
+    + `<fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>${fill('E8EEF5')}${fill('D9E1F2')}${fill('FCE4D6')}</fills>`
+    + '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+    + '<cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+    + '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="1" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="1" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs>'
+    + '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
+  sheets.forEach((sh, k)=>zip.file(`xl/worksheets/sheet${k+1}.xml`, sheetXml(sh)));
+  zip.file('xl/sharedStrings.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sst.length}" uniqueCount="${sst.length}">${sst.map(x=>`<si><t xml:space="preserve">${xe(x)}</t></si>`).join('')}</sst>`);
   return zip.generateAsync({ type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', compression:'DEFLATE' });
 }
-function lmsSheetRows(){                                            // 지침 §3 그대로의 행 배열
-  const S = v=>({ v, t:'s' }), N = v=>({ v, t:'n' });
-  const o = LMS.opt, rows = [];
-  rows.push(['시험 제목', '과목', '시험 시간(분)'].map(S));
+const LMS_LOOKUP_COLS = {                                           // v3 템플릿의 숨김 _Lookup 시트 값
+  A: ['단일 선택','다중 선택','단답형','순서 있음','순서 없음','유의어 처리'],
+  B: ['일반적인 문제','쉬운 문제','변별력 문제','함정 문제','어려운 문제','엄청 어려운 문제'],
+  C: ['아니오','예'],
+  D: ['cm','m','km','mm','cm²','m²','km²','cm³','m³','L','mL','kg','g','mg','°','%','mol','J','N','W','V','A','Ω','Pa','°C','K','Hz','s','min','h'],
+  H: ['순서 있음','순서 없음','유의어 처리'] };
+function lmsLookupRows(){
+  const rows = [];
+  for(const [L, vals] of Object.entries(LMS_LOOKUP_COLS)){ const ci = L.charCodeAt(0) - 65; vals.forEach((v, r)=>{ (rows[r] = rows[r] || [])[ci] = { v, t:'s' }; }); }
+  return rows;
+}
+const LMS_WIDTHS = { A:20.7, B:25.7, C:35.7, D:30.7, E:25.7, G:24.7, H:18.7, I:12.7, J:18.7, K:25.7, M:12.7, N:18.7 };
+function lmsSheetRows(){                                            // 지침 §4(시험 v3) 그대로의 행 배열
+  const S = (v, st)=>({ v, t:'s', st }), N = v=>({ v, t:'n' });
+  const o = LMS.opt, rows = [], asNum = o.numType === 'int';
+  const NS = v=>asNum && /^-?\d+$/.test(String(v)) ? N(+v) : S(String(v));       // 답안개수·정답선택지: 템플릿 샘플은 문자열
+  rows.push(['시험 제목', '과목', '시험 시간(분)'].map(v=>S(v, 'h1')));
   rows.push([S(o.title.trim()), S(o.subj.trim()), N(+o.mins)]);
   rows.push(null);
   LMS.rows.forEach((r, i)=>{
-    const p = lmsProblem(r), L = lmsLookup(p, r.sub, r.type), a = r.ans;
-    rows.push(LMS_GROUP_HEAD.map(S));
-    rows.push([N(i + 1), S(L[0]), S(r.sub), S(r.type), S(r.no + '번'), S(o.author.trim()), S(lmsTag(p, r.sub, r.type))]);   // 시작·종료 페이지 셀은 만들지 않음
-    rows.push(LMS_ITEM_HEAD.map(S));
-    const choice = a.kind === '단답형' ? null : (typeof a.choice === 'number' ? N(a.choice) : S(a.choice));
+    const p = lmsProblem(r), L = lmsLookup(p, r.sub, r.type), a = r.ans, no = lmsNo(r);
+    rows.push(LMS_GROUP_HEAD.map(v=>S(v, 'hg')));
+    rows.push([N(i + 1), S(L[0]), S(r.sub), S(r.type), S(no + '번'), S(o.author.trim()), S(lmsTag(p, r.sub, r.type))]);   // 시작·종료 페이지 셀은 만들지 않음
+    rows.push(LMS_ITEM_HEAD.map(v=>S(v, 'hi')));
+    const choice = a.kind === '단답형' ? null : NS(a.choice);
     const short = a.kind === '단답형' ? (typeof a.short === 'number' ? N(a.short) : S(a.short)) : null;
-    rows.push([{ v:r.no, t:'text' }, S(L[0]), S(r.sub), S(r.type), S(a.kind), S('일반적인 문제'), { v:r.secs, t:'time' },
-      N(a.count), N(r.pts), choice, short, null, null, S('아니오')]);
-    for(const [s, t] of r.extra){                                   // 복합 유형: 같은 번호로 B·C·D만
-      const X = lmsLookup(p, s, t); if(!X) continue;
-      rows.push([{ v:r.no, t:'text' }, S(X[0]), S(s), S(t)]);
+    rows.push([{ v:no, t:'text' }, S(L[0]), S(r.sub), S(r.type), S(a.kind), S('일반적인 문제'), { v:r.secs, t:'time' },
+      NS(a.count), N(r.pts), choice, short, null, null, S('아니오')]);
+    for(const [s2, t2] of r.extra){                                 // 복합 유형: 같은 번호로 B·C·D만
+      const X = lmsLookup(p, s2, t2); if(!X) continue;
+      rows.push([{ v:no, t:'text' }, S(X[0]), S(s2), S(t2)]);
     }
   });
   return rows;
 }
+function lmsNo(r){ return LMS.opt.noMode === 'orig' ? String(lmsProblem(r).origNo || '').trim() || r.no : r.no; }
+function lmsWorkbook(){ return [{ name:'ExamTemplate', rows: lmsSheetRows(), widths: LMS_WIDTHS }, { name:'_Lookup', rows: lmsLookupRows(), hidden:true }]; }
 async function lmsDownload(){
   const c = lmsCheck();
   if(c.global.length || c.rowErr.size){
@@ -8655,7 +8696,7 @@ async function lmsDownload(){
     return;
   }
   if(!window.JSZip){ toast('구성요소(JSZip)가 아직 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
-  const blob = await xlsxBlob('ExamTemplate', lmsSheetRows());
+  const blob = await xlsxBlob(lmsWorkbook());
   const d = new Date(), z = n=>String(n).padStart(2, '0');
   const name = `StudyPeak_ExamTemplate_${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.xlsx`;   // LMS 업로드 파일명은 영문
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
