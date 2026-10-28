@@ -10,6 +10,7 @@
  *   node twins.js --src "10월" --nos 1-10,15 --twin 2 --variant 1 --diff harder
  *   node twins.js --ids id1,id2                         # 문항 ID 로 (웹 문제 상세의 ID)
  * 옵션: --twin N(기본 1, 최대 10) · --variant N(기본 1, 최대 10) · --diff same|easier|harder · --no-verify · --no-fill(원본 정답·해설 채우지 않기) · --timeout 분(기본 10)
+ *       --style "강사 요청" (예: "실생활 상황으로, 계수는 정수만")
  *       --parallel N(동시에 처리할 원본 수, 기본 2, 최대 4 — 빨라지지만 Max 사용량이 빨리 참)
  * 환경변수: SP_EMAIL, SP_PASSWORD(랩의 자동화용 비밀번호), CLAUDE_BIN(기본 'claude')
  * 다 만든 뒤 웹: 문제 검색 → [등록 묶음]에서 "… 쌍둥이·변형" → [📚 원본 + 쌍둥이·변형으로 교재 만들기]
@@ -28,7 +29,8 @@ const NOS = opt('nos', '');
 const TWIN = Math.max(0, Math.min(10, +opt('twin', 1) || 0)), VARIANT = Math.max(0, Math.min(10, +opt('variant', 1) || 0));   // 원본당 최대 10개씩
 const DIFF = ['same','easier','harder'].includes(opt('diff')) ? opt('diff') : 'same';
 const VERIFY = !argv.includes('--no-verify');
-const FILL = !argv.includes('--no-fill');                         // 원본에 정답·해설이 없으면 먼저 채움
+const FILL = !argv.includes('--no-fill');
+const STYLE = opt('style', '');                                     // 강사 요청(스타일 프롬프트)                         // 원본에 정답·해설이 없으면 먼저 채움
 const TIMEOUT_MIN = +opt('timeout', 10) || 10;
 const PARALLEL = Math.max(1, Math.min(4, +opt('parallel', 2) || 2));
 const EMAIL = process.env.SP_EMAIL, PASSWORD = process.env.SP_PASSWORD;
@@ -78,7 +80,7 @@ if(!TWIN && !VARIANT){ console.error('--twin 또는 --variant 를 1 이상으로
       .sort((a,b)=>(origNoKey(a)-origNoKey(b)) || ((a.createdAt||0)-(b.createdAt||0))).map(p => p.id);
   }, { SRC, IDS, nos: [...parseNos(NOS)] });
   if(!sources.length){ console.error('원본 문항을 찾지 못했습니다 (본문이 있는 문항만, 이미 만든 쌍둥이는 제외).'); await lab.close(); process.exit(2); }
-  console.log(`📄 원본 ${sources.length}문항 · 원본당 쌍둥이 ${TWIN} · 변형 ${VARIANT} · 난이도 ${DIFF}${VERIFY?' · 독립 검산':''} · 동시 ${PARALLEL}개 — Claude Code(Max)로 생성`);
+  console.log(`📄 원본 ${sources.length}문항 · 원본당 쌍둥이 ${TWIN} · 변형 ${VARIANT} · 난이도 ${DIFF}${VERIFY?' · 독립 검산':''} · 동시 ${PARALLEL}개${STYLE ? ' · 요청: '+STYLE : ''} — Claude Code(Max)로 생성`);
 
   const res = await page.evaluate(async ({ids, opts}) => {
     const srcs = ids.map(id => state.problems.find(p => p.id === id));
@@ -94,7 +96,7 @@ if(!TWIN && !VARIANT){ console.error('--twin 또는 --variant 를 1 이상으로
         else if(e.type === 'srcDone') console.log(`TWIN-PROGRESS ■ 원본 ${no} 끝${e.short?` (못 만든 것 ${e.short}개)`:''}${e.error?' — 오류: '+e.error:''}`);
       });
     return { ...r, saved: r.saved.length };
-  }, { ids: sources, opts: { twin: TWIN, variant: VARIANT, diff: DIFF, verify: VERIFY, concurrency: PARALLEL, fillSrc: FILL } });
+  }, { ids: sources, opts: { twin: TWIN, variant: VARIANT, diff: DIFF, verify: VERIFY, concurrency: PARALLEL, fillSrc: FILL, style: STYLE } });
   await waitSynced(page);
   const why = Object.entries(res.reasons || {}).map(([k, v]) => `${k} ${v}`).join(', ');
   console.log(`\n✅ 검산 통과 ${res.saved}문항 저장·동기화 — 묶음 "${res.batchName}"`

@@ -173,8 +173,8 @@ if(EACH){
             const r = runClaude(CLAUDE_BIN, await page.evaluate(ch => aiClassifyPrompt(ch), chunk), { timeoutMs: 300000 });
             cOk += await page.evaluate(([chunk, items]) => {
               let n = 0;
-              for(const c of (Array.isArray(items) ? items : []))
-                if(chunk.some(t=>t.i === +c.i) && applyAiClassifyResult(state.bulkDrafts[+c.i], c)) n++;
+              for(const [i, c] of classifyMapResult(chunk, items))     // 글자 꼬리표 + 첫 글자로 짝 (번호와 헷갈려 밀리지 않게)
+                if(applyAiClassifyResult(state.bulkDrafts[i], c)) n++;
               rerenderBulk(); return n;
             }, [chunk, r.items]);
           }catch(e){ console.error('  ⚠ 단원 분류 실패: '+(e.message||e).split('\n')[0]); }
