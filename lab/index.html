@@ -22,7 +22,7 @@
   /* 포인트 컬러 = 맑은 초록, 나머지는 차분한 회색 계열 (마이일타식 깔끔한 화면) */
   --green:#16a34a; --green-2:#15803d; --green-3:#14532d; --green-50:#f0fdf4; --green-100:#dcfce7; --green-200:#bbf7d0;
   --gold:#16a34a; --gold-2:#15803d;                       /* 예전 금색 강조 → 초록으로 통일 */
-  --bg:#f7f8fa; --card:#ffffff; --ink:#111827; --ink-2:#374151; --muted:#6b7280; --muted-2:#9ca3af;
+  --bg:#f7f8fa; --card:#ffffff; --ink:#111827; --ink-2:#374151; --muted:#6b7280; --muted-2:#6e7480;
   --line:#e5e7eb; --line-2:#f1f2f4; --danger:#dc2626; --ok:#16a34a; --sbw:252px;
   --r-lg:18px; --r-md:12px; --r-sm:9px;
   --shadow:0 1px 2px rgba(16,24,40,.04);
@@ -49,7 +49,7 @@ code{background:var(--line-2);border-radius:5px;padding:0 .3em;font-size:.88em}
 #sidebar nav button:hover,#sidebar nav a.navlink:hover{background:#f3f4f6;color:var(--ink)}
 #sidebar nav .ic{width:18px;height:18px;flex:0 0 18px;color:var(--muted)}
 #sidebar nav .ic svg{width:18px;height:18px;display:block}
-#sidebar nav button.active{background:var(--green);color:#fff;font-weight:700}
+#sidebar nav button.active{background:var(--green-2);color:#fff;font-weight:700}
 #sidebar nav button.active .ic{color:#fff}
 #sidebar nav button .badge{margin-left:auto;background:var(--green-100);color:var(--green-2);border-radius:99px;font-size:.7rem;padding:.05rem .45rem;font-weight:800}
 #sidebar nav button.active .badge{background:rgba(255,255,255,.25);color:#fff}
@@ -100,10 +100,10 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
 .spread{display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap}
 .field{margin-bottom:.9rem}
 
-.btn{border:1px solid transparent;border-radius:10px;padding:.6rem 1.05rem;font-weight:700;font-size:.9rem;background:var(--green);color:#fff;transition:background .15s,border-color .15s,color .15s;display:inline-flex;align-items:center;gap:.35rem;justify-content:center}
-.btn:hover{background:var(--green-2)}
-.btn.gold{background:var(--green);color:#fff}
-.btn.gold:hover{background:var(--green-2)}
+.btn{border:1px solid transparent;border-radius:10px;padding:.6rem 1.05rem;font-weight:700;font-size:.9rem;background:var(--green-2);color:#fff;transition:background .15s,border-color .15s,color .15s;display:inline-flex;align-items:center;gap:.35rem;justify-content:center}
+.btn:hover{background:var(--green-3)}
+.btn.gold{background:var(--green-2);color:#fff}
+.btn.gold:hover{background:var(--green-3)}
 .btn.ghost{background:#fff;color:var(--ink-2);border:1px solid var(--line)}
 .btn.ghost:hover{border-color:var(--green);color:var(--green-2);background:var(--green-50)}
 .btn.danger{background:#fff;color:var(--danger);border:1px solid #fecaca}
@@ -128,7 +128,7 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
 .stat.si b{line-height:1.2}
 .stat.si .ss{font-size:.78rem;color:var(--muted-2)}
 .step{border:1px solid var(--line);border-radius:var(--r-lg);padding:1.2rem 1.25rem;background:#fff;box-shadow:var(--shadow)}
-.step .no{color:var(--green);font-weight:800;font-size:.76rem;letter-spacing:.08em}
+.step .no{color:var(--green-2);font-weight:800;font-size:.76rem;letter-spacing:.08em}
 .step h4{color:var(--ink);font-size:1.05rem;margin:.3rem 0 .35rem}
 .step p{font-size:.86rem;color:var(--muted)}
 /* 하위 탭 (태그 관리: 단원태그 · 출처태그 · 나만의태그) */
@@ -198,7 +198,7 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
 .tagtree{padding:.7rem}
 .tagtree .tabs3{display:flex;gap:.25rem;margin-bottom:.6rem}
 .tagtree .tabs3 button{flex:1;border:1px solid var(--line);background:#fff;border-radius:8px;padding:.35rem 0;font-size:.78rem;white-space:nowrap;font-weight:700;color:var(--muted)}
-.tagtree .tabs3 button.active{background:var(--green);border-color:var(--green);color:#fff}
+.tagtree .tabs3 button.active{background:var(--green-2);border-color:var(--green-2);color:#fff}
 .titem{display:flex;align-items:center;gap:.4rem;padding:.38rem .5rem;border-radius:7px;font-size:.85rem;cursor:pointer}
 .titem:hover{background:#f3f4f6}
 .titem.sel{background:#f0fdf4;color:var(--green);font-weight:800}
@@ -207,7 +207,7 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
 #tree-body{max-height:480px;overflow:auto;margin-bottom:.5rem}
 .mode-tgl{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
 .mode-tgl button{border:0;background:#fff;padding:.4rem .75rem;font-size:.84rem;font-weight:700;color:var(--muted)}
-.mode-tgl button.active{background:var(--green);color:#fff}
+.mode-tgl button.active{background:var(--green-2);color:#fff}
 .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(265px,1fr));gap:.7rem;align-items:stretch}
 .pcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:.7rem .8rem;display:flex;flex-direction:column;gap:.4rem}
 .pcard.selected{outline:2px solid var(--gold);background:#f0fdf4}
@@ -233,7 +233,7 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
 .pdfed-thumb.sel{border-color:var(--green);background:#f0fdf4}
 .pdfed-thumb .pno{font-size:.72rem;color:var(--muted);font-weight:700}
 .pdfed-thumb .badge-ans{position:absolute;top:4px;right:4px;background:#fff7ed;color:#7a5c1e;font-size:.64rem;font-weight:800;border-radius:6px;padding:0 .3rem}
-.pdfed-thumb .pmode{position:absolute;top:4px;left:4px;font-size:.64rem;font-weight:800;border-radius:6px;padding:0 .35rem;background:var(--green);color:#fff}
+.pdfed-thumb .pmode{position:absolute;top:4px;left:4px;font-size:.64rem;font-weight:800;border-radius:6px;padding:0 .35rem;background:var(--green-2);color:#fff}
 .pdfed-thumb.m-sol{border-color:var(--gold-2)} .pdfed-thumb.m-sol .pmode{background:var(--gold-2)}
 .pdfed-thumb.m-skip{opacity:.45} .pdfed-thumb.m-skip .pmode{background:#999}
 .reg-box{position:absolute;border:2px solid #2c5fd8;background:rgba(44,95,216,.07);border-radius:3px;cursor:pointer}
@@ -338,6 +338,12 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
 #cartbar .inner{max-width:1240px;margin:0 auto;padding:.6rem 18px;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
 #cartbar .cb{background:rgba(255,255,255,.14);color:#fff}
 #cartbar .cb:hover{background:rgba(255,255,255,.26)}
+body:has(#cartbar.show) .main, body:has(#cartbar.show) main{padding-bottom:130px}   /* 담기 바가 마지막 내용을 가리지 않게 */
+@media(max-width:640px){                                         /* 휴대폰: 담기 바를 한 줄 가로 스크롤로 (화면 1/3 을 덮던 문제) */
+  #cartbar .inner{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:thin;padding:.5rem 12px}
+  #cartbar .inner>*{flex:0 0 auto}
+  body:has(#cartbar.show) .main, body:has(#cartbar.show) main{padding-bottom:80px}
+}
 
 /* modal */
 .modal-bg{position:fixed;inset:0;background:rgba(20,28,22,.55);z-index:80;display:none;align-items:flex-start;justify-content:center;overflow:auto;padding:3vh 12px}
@@ -359,7 +365,7 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
 .sheet-item .sq{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.55}
 .sheet-item .mv{display:flex;flex-direction:column;gap:.2rem}
 
-#toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:var(--green);color:#fff;padding:.6rem 1.1rem;border-radius:99px;font-size:.88rem;font-weight:700;z-index:100;display:none;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+#toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:var(--green-2);color:#fff;padding:.6rem 1.1rem;border-radius:99px;font-size:.88rem;font-weight:700;z-index:100;display:none;box-shadow:0 4px 14px rgba(0,0,0,.25)}
 
 /* print */
 #print-area{display:none}
@@ -390,7 +396,7 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
 .titem{border-radius:9px;padding:.45rem .6rem}
 .titem.sel{background:var(--green-50);color:var(--green-2)}
 .tagtree .tabs3 button{border-radius:9px;padding:.42rem 0}
-.tagtree .tabs3 button.active{background:var(--green);border-color:var(--green)}
+.tagtree .tabs3 button.active{background:var(--green-2);border-color:var(--green-2)}
 .mode-tgl{border-radius:11px;background:#f3f4f6;border:0;padding:.2rem;gap:.15rem}
 .mode-tgl button{background:transparent;border-radius:9px}
 .mode-tgl button.active{background:#fff;color:var(--green-2);box-shadow:0 1px 3px rgba(16,24,40,.1)}
@@ -794,7 +800,7 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
         <button data-tab="mine">나만의</button>
         <button data-tab="date">날짜</button>
       </div>
-      <div id="tree-body"></div>
+      <div id="tree-body" tabindex="0" aria-label="단원·출처 트리"></div>
       <button class="btn ghost sm" style="width:100%" onclick="resetFilters()">선택 해제</button>
     </aside>
     <div style="min-width:0">
@@ -1491,9 +1497,22 @@ function toggleSidebar(force){
   sb.classList.toggle('open', open);
   $('#sb-overlay').classList.toggle('show', open);
 }
+/* 접근성: 이름표 없는 입력칸에 이름 붙이기 — .field 안 <label> 은 그 칸과 연결, 나머지 select 는 첫 항목('과목 전체' 등)으로 */
+function a11yLabels(root){
+  (root || document).querySelectorAll('.field').forEach(f=>{
+    const lab = f.querySelector(':scope > label'), inp = f.querySelector(':scope > input[id], :scope > select[id], :scope > textarea[id]');
+    if(lab && inp && !lab.htmlFor) lab.htmlFor = inp.id;
+  });
+  (root || document).querySelectorAll('select:not([aria-label]), input:not([aria-label]):not([type=hidden]), textarea:not([aria-label])').forEach(el=>{
+    if(el.labels && el.labels.length) return;
+    const name = el.tagName === 'SELECT' ? (el.options[0] && el.options[0].textContent.trim()) : (el.placeholder || el.title || '');
+    if(name) el.setAttribute('aria-label', name.slice(0, 60));
+  });
+}
 function go(view){
   $$('#sbnav button').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
   $$('.view').forEach(v=>v.classList.toggle('active', v.id==='view-'+view));
+  try{ a11yLabels($('#view-'+view)); }catch(e){}
   const tt = String(VIEW_TITLES[view]||'').split(' · ');           // '태그 관리 | 단원태그' 식 제목
   $('#topbar-title').innerHTML = tt.length > 1 ? `<span class="crumb-a">${esc(tt[0])}</span><span class="crumb-sep"></span><span>${esc(tt.slice(1).join(' · '))}</span>` : esc(tt[0]);
   $$('#sbnav .ng').forEach(g=>{ if(g.querySelector(`button[data-view="${view}"]`)) g.classList.remove('closed'); });
@@ -8370,6 +8389,8 @@ function lmsAnswerOf(p){                                            // → { kin
       const k = choices.findIndex(c=>norm(c) === norm(ans)); if(k >= 0) nums = [k+1];
     }
     nums = [...new Set(nums)];
+    const over = nums.filter(x=>x < 1 || x > n);
+    if(over.length) return { kind:'단일 선택', count:n, err:`정답 ${over.map(x=>LMS_CIRC[x-1] || x).join(',')}이(가) 선택지 수(${n}개)보다 큼` };
     if(!nums.length) return { kind:'단일 선택', count:n, err: ans ? `정답 "${ans}"에서 선택지 번호를 못 찾음` : '정답 없음' };
     if(nums.length === 1) return { kind:'단일 선택', count:n, choice:nums[0] };
     return { kind:'다중 선택', count:n, choice:nums.join(','), warn:'다중 선택 정답 표기(쉼표) 확인' };
@@ -8387,11 +8408,19 @@ function lmsDefaultGrade(p, pts){
   return g;
 }
 const lmsFmtT = s=>s == null || isNaN(s) ? '' : Math.floor(s/60)+':'+String(Math.round(s%60)).padStart(2, '0');
-function lmsParseT(v){ const m = String(v||'').trim().match(/^(\d+)(?::(\d{1,2}))?$/); return m ? (+m[1])*60 + (+(m[2]||0)) : null; }
+function lmsParseT(v){                                             // "2:30" / "150초"·"150"(16 이상 = 초) / "3"(15 이하 = 분) → 5초 단위
+  const t = String(v||'').trim().replace(/\s*초$/, '');
+  let s = null, m;
+  if((m = t.match(/^(\d+):(\d{1,2})$/))) s = (+m[1])*60 + (+m[2]);
+  else if((m = t.match(/^(\d+)\s*분$/))) s = (+m[1])*60;
+  else if(/^\d+$/.test(t)) s = +t <= 15 ? (+t)*60 : +t;
+  return s == null ? null : Math.round(s / 5) * 5;
+}
 function lmsOpen(){
   const list = cartProblems();
   if(!list.length){ toast('담긴 문제가 없습니다.'); return; }
-  let saved = {}; try{ saved = JSON.parse(localStorage.getItem('sp-lab-lms') || '{}') || {}; }catch(e){}
+  let saved = lsJson('sp-lab-lms', {}); if(!saved || typeof saved !== 'object') saved = {};
+  LMS.byId = null; LMS.token = (LMS.token || 0) + 1;
   const suneung = list.some(p=>lmsPtsInText(p) != null);
   const orig = list.map(p=>String(p.origNo || '').trim()), origOk = orig.every(Boolean) && new Set(orig).size === orig.length;
   LMS.opt = { title: $('#s-title').value || '수학 시험', subj: saved.subj || '수학', mins: '', author: saved.author || '지영T',
@@ -8405,7 +8434,10 @@ function lmsOpen(){
   $('#modal-bg').classList.add('show');
   lmsApplyPts(); lmsRender();
 }
-function lmsProblem(r){ return state.problems.find(p=>p.id === r.id) || {}; }
+function lmsProblem(r){
+  if(!LMS.byId || LMS.byId.size !== state.problems.length) LMS.byId = new Map(state.problems.map(p=>[p.id, p]));
+  return LMS.byId.get(r.id) || {};
+}
 function lmsApplyPts(){                                             // 배점 방식 → 문항별 점수 기본값
   const mode = LMS.opt.pts, N = LMS.rows.length;
   LMS.rows.forEach((r, i)=>{
@@ -8413,12 +8445,14 @@ function lmsApplyPts(){                                             // 배점 �
     if(mode === 'orig') r.pts = state.points[r.id] != null ? state.points[r.id] : lmsPtsInText(p);
     else if(mode === 'even'){ const base = Math.floor(100/N), extra = 100 - base*N; r.pts = base + (i >= N - extra ? 1 : 0); }
     else if(mode === 'manual') r.pts = state.points[r.id] != null ? state.points[r.id] : r.pts;
+    if(r.gradeSet && r.gradeKind === LMS.opt.kind) return;
+    r.gradeSet = false;
     r.grade = LMS.opt.kind === 'suneung' ? lmsDefaultGrade(p, r.pts != null ? r.pts : lmsPtsInText(p)) : String(Math.min(5, Math.max(1, p.difficulty || 3)));
   });
   lmsAllocate();
 }
 function lmsAllocate(){                                             // 난도 가중치로 시험 시간 배분 → 5초 단위, 합계 정확히
-  const T = (+LMS.opt.mins || 0) * 60;
+  const T = lmsMins() * 60;
   const free = LMS.rows.filter(r=>!r.lock);
   if(!T){ free.forEach(r=>{ r.secs = null; }); return; }
   const R = T - LMS.rows.filter(r=>r.lock).reduce((s, r)=>s + (r.secs || 0), 0);
@@ -8438,6 +8472,7 @@ function lmsAllocate(){                                             // 난도 �
   fixed.forEach((v, r)=>t.set(r, v));
   free.forEach(r=>{ r.secs = Math.max(5, Math.round(t.get(r) / 5) * 5); });
   let diff = R - free.reduce((s, r)=>s + r.secs, 0);                // 반올림 오차 보정: 무거운 문항부터 5초씩
+  if(diff % 5) return;                                              // (잠근 시간이 5초 단위가 아니면 맞출 수 없음 — lmsCheck 가 알림)
   const order = free.slice().sort((a, b)=>w(b) - w(a) || LMS.rows.indexOf(b) - LMS.rows.indexOf(a));
   for(let k = 0; diff !== 0 && k < 10000; k++){
     const r = order[k % order.length], step = diff > 0 ? 5 : -5;
@@ -8450,6 +8485,7 @@ function lmsCheck(){                                                // → { row
   const add = (mp, r, x)=>{ if(!mp.has(r)) mp.set(r, []); mp.get(r).push(x); };
   if(!String(LMS.opt.title||'').trim()) global.push('시험 제목을 적어 주세요');
   if(!(+LMS.opt.mins > 0)) global.push('시험 시간(분)을 적어 주세요');
+  else if(!Number.isInteger(+LMS.opt.mins)) global.push('시험 시간은 분 단위 정수로 적어 주세요');
   if(!LMS.opt.pts) global.push('배점 방식을 골라 주세요');
   if(LMS.opt.noMode === 'orig' && !LMS.opt.origOk) global.push('원본 문항 번호가 없거나 겹칩니다 — [1부터 차례로]를 고르세요');
   for(const r of LMS.rows){
@@ -8462,10 +8498,11 @@ function lmsCheck(){                                                // → { row
     if(LMS.opt.pts && !(r.pts > 0)) add(rowErr, r, '점수 없음');
     if(+LMS.opt.mins > 0 && !(r.secs > 0)) add(rowErr, r, '풀이시간 없음');
   }
-  const T = (+LMS.opt.mins || 0) * 60, sum = LMS.rows.reduce((s, r)=>s + (r.secs || 0), 0);
+  const T = lmsMins() * 60, sum = LMS.rows.reduce((s, r)=>s + (r.secs || 0), 0);
   if(T && sum !== T) global.push(`권장풀이시간 합계 ${lmsFmtT(sum)} ≠ 시험 시간 ${lmsFmtT(T)} — [⏱ 다시 배분]`);
   return { rowErr, warn, global };
 }
+function lmsMins(){ const m = +LMS.opt.mins; return m > 0 && Number.isInteger(m) ? m : 0; }
 function lmsSet(k, v){
   LMS.opt[k] = v;
   if(k === 'subj' || k === 'author' || k === 'numType'){ try{ localStorage.setItem('sp-lab-lms', JSON.stringify({ subj: LMS.opt.subj, author: LMS.opt.author, numType: LMS.opt.numType })); }catch(e){} }
@@ -8475,7 +8512,8 @@ function lmsSet(k, v){
   lmsSummary();
 }
 async function lmsPickType(i, v){
-  const r = LMS.rows[i]; const [sub, type] = v ? v.split('\u0001') : ['', ''];
+  const r = LMS.rows[i], c = v === '' ? null : (r.cands || [])[+v]; if(v !== '' && !c) return;
+  const [sub, type] = c || ['', ''];
   r.sub = sub; r.type = type; r.unsure = false; r.why = '';
   if(sub) await remapProblems(p=>p.id === r.id, { subsection: sub, utype: type, udetail: '' });   // 문제 DB에도 태그
   lmsRender();
@@ -8483,7 +8521,7 @@ async function lmsPickType(i, v){
 async function lmsExtra(i, v, del){                                 // 복합 유형(추가 분류 행)
   const r = LMS.rows[i];
   if(del != null) r.extra.splice(del, 1);
-  else if(v){ const [s, t] = v.split('\u0001'); if(!r.extra.some(([a, b])=>a === s && b === t) && !(s === r.sub && t === r.type)) r.extra.push([s, t]); }
+  else if(v !== ''){ const c = (r.cands || [])[+v]; if(!c) return; const [s, t] = c; if(!r.extra.some(([a, b])=>a === s && b === t) && !(s === r.sub && t === r.type)) r.extra.push([s, t]); }
   await remapProblems(p=>p.id === r.id, { utypeExtra: r.extra.map(([s, t])=>lmsKey(s, t)) });
   lmsRender();
 }
@@ -8492,19 +8530,19 @@ async function lmsSetAnswer(i, v){
   await remapProblems(p=>p.id === r.id, { answer: String(v||'').trim() });
   r.ans = lmsAnswerOf(lmsProblem(r)); lmsRender();
 }
-function lmsSetPts(i, v){ const r = LMS.rows[i], n = parseFloat(v); r.pts = isNaN(n) ? null : n; if(r.pts != null) setPoint(r.id, String(r.pts)); lmsSummary(); }
-function lmsSetGrade(i, v){ LMS.rows[i].grade = v; lmsAllocate(); lmsRender(); }
+function lmsSetPts(i, v){ const r = LMS.rows[i], n = parseFloat(v); r.pts = isNaN(n) ? null : n; setPoint(r.id, r.pts != null ? String(r.pts) : ''); lmsSummary(); }
+function lmsSetGrade(i, v){ const r = LMS.rows[i]; r.grade = v; r.gradeSet = true; r.gradeKind = LMS.opt.kind; lmsAllocate(); lmsRender(); }
 function lmsSetTime(i, v){
   const r = LMS.rows[i], s = lmsParseT(v);
   if(s == null || s <= 0){ r.lock = false; } else { r.secs = s; r.lock = true; }
   lmsAllocate(); lmsRender();
 }
 function lmsRebalance(){ LMS.rows.forEach(r=>{ r.lock = false; }); lmsAllocate(); lmsRender(); }
-function lmsTypeOptions(p, cur){
-  const cands = lmsCandidates(p);
-  if(cur && cur[0] && !cands.some(([s, t])=>s === cur[0] && t === cur[1]) && lmsLookup(p, cur[0], cur[1])) cands.unshift(cur);
-  const bySub = new Map(); cands.forEach(([s, t])=>{ if(!bySub.has(s)) bySub.set(s, []); bySub.get(s).push(t); });
-  return [...bySub].map(([s, ts])=>`<optgroup label="${esc(s)}">${ts.map(t=>`<option value="${esc(lmsKey(s, t))}" ${cur && cur[0] === s && cur[1] === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
+function lmsTypeOptions(r, cur){                                    // 옵션 값 = r.cands 의 번호 (유형 이름을 값에 넣지 않음)
+  const p = lmsProblem(r), cands = r.cands = lmsCandidates(p);
+  if(r.sub && !cands.some(([s, t])=>s === r.sub && t === r.type) && lmsLookup(p, r.sub, r.type)) cands.unshift([r.sub, r.type]);
+  const bySub = new Map(); cands.forEach(([s, t], k)=>{ if(!bySub.has(s)) bySub.set(s, []); bySub.get(s).push([t, k]); });
+  return [...bySub].map(([s, ts])=>`<optgroup label="${esc(s)}">${ts.map(([t, k])=>`<option value="${k}" ${cur && cur[0] === s && cur[1] === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
 }
 function lmsRender(){
   const m = $('#modal-body'), o = LMS.opt, su = o.kind === 'suneung';
@@ -8531,7 +8569,7 @@ function lmsRender(){
       <span title="v3 템플릿 샘플은 문자열('5','4'). 업로드 오류가 나면 숫자로 바꿔 다시">답안개수·정답선택지 ${sel('numType', [['str','문자열 (v3 템플릿 샘플대로)'],['int','숫자 (업로드 오류 시)']])}</span>
     </div>
     <div class="row" style="gap:.4rem;margin-bottom:.5rem">
-      <button class="btn ghost sm" onclick="lmsAiFill()">🤖 빈 유형 AI로 채우기</button>
+      ${LMS.ai ? `<button class="btn danger sm" onclick="aiBatchCancel()">⏹ 중지</button><span class="hint" id="lms-ai-state">🤖 유형 고르는 중…</span>` : `<button class="btn ghost sm" onclick="lmsAiFill()">🤖 빈 유형 AI로 채우기</button>`}
       <button class="btn ghost sm" onclick="lmsRebalance()" title="손으로 고친 시간도 풀고 난도대로 다시 나눕니다">⏱ 시간 다시 배분</button>
       <span style="flex:1"></span>
       <button class="btn gold" onclick="lmsDownload()">📥 엑셀 다운로드</button>
@@ -8546,9 +8584,9 @@ function lmsRender(){
         <td>${esc(lmsNo(r))}</td>
         <td style="max-width:260px"><div class="lms-q">${esc(mathSafeSlice(stripBoxMarks(p.question || (hasImg(p) ? '(그림 문항)' : '')), 70))}</div><div class="hint">${esc([p.subject, p.chapter, p.section].filter(Boolean).join(' › ') || '단원 미지정')}</div></td>
         <td style="min-width:250px"><div class="hint" style="font-weight:700;color:var(--green-2)">${L ? esc(L[0]) + ' · ' + esc(lmsTag(p, r.sub, r.type)) : '대분류 —'}</div>
-          <select onchange="lmsPickType(${i},this.value)" style="max-width:300px"><option value="">(유형 고르기)</option>${lmsTypeOptions(p, r.sub ? [r.sub, r.type] : null)}</select>
+          <select onchange="lmsPickType(${i},this.value)" style="max-width:300px"><option value="">(유형 고르기)</option>${lmsTypeOptions(r, r.sub ? [r.sub, r.type] : null)}</select>
           ${r.extra.map(([s, t], k)=>`<div class="hint">＋ ${esc(s)} › ${esc(t)} <a href="#" onclick="lmsExtra(${i},null,${k});return false">빼기</a></div>`).join('')}
-          ${r.sub ? `<select class="lms-extra" onchange="lmsExtra(${i},this.value)" style="max-width:300px;font-size:.75rem"><option value="">＋ 복합 유형 추가</option>${lmsTypeOptions(p, null)}</select>` : ''}</td>
+          ${r.sub ? `<select class="lms-extra" onchange="lmsExtra(${i},this.value)" style="max-width:300px;font-size:.75rem"><option value="">＋ 복합 유형 추가</option>${lmsTypeOptions(r, null)}</select>` : ''}</td>
         <td>${a.err ? `<input placeholder="정답 (예: ④ / 12)" style="width:110px" onchange="lmsSetAnswer(${i},this.value)">` : `<span>${aTxt}</span>`}</td>
         <td><input type="number" min="0" step="0.5" style="width:62px" value="${r.pts != null ? r.pts : ''}" onchange="lmsSetPts(${i},this.value)"></td>
         <td>${gradeSel(r, i)}</td>
@@ -8577,7 +8615,9 @@ async function lmsAiFill(){                                         // 유형이
   if(!todo.length){ toast('모든 문항에 유형이 있습니다.'); return; }
   if(!aiSettings().key){ toast('API 키가 없습니다 — [백업·데이터 → AI 변환 설정]에서 키를 저장하세요.'); return; }
   let done = 0, fail = 0;
+  const token = LMS.token, alive = ()=>token === LMS.token && $('#modal-bg').classList.contains('show') && $('#modal-body').classList.contains('lms-wide');
   const one = async r=>{
+    if(AI_BATCH.cancel) return;
     const p = lmsProblem(r), cands = lmsCandidates(p);
     if(!cands.length){ fail++; r.why = '단원(과목)이 없어 후보를 못 찾음'; return; }
     const content = [];
@@ -8595,11 +8635,17 @@ async function lmsAiFill(){                                         // 유형이
       r.extra = (Array.isArray(res.also) ? res.also : []).map(k=>cands[(+k || 0) - 1]).filter(Boolean).filter(([s, t])=>!(s === r.sub && t === r.type)).slice(0, 2);
       await remapProblems(x=>x.id === r.id, { subsection: r.sub, utype: r.type, udetail: '', utypeExtra: r.extra.map(([s, t])=>lmsKey(s, t)) });
       done++;
-    }catch(e){ fail++; r.why = String(e.message || e).slice(0, 60); }
-    toast(`🤖 유형 고르는 중… ${done + fail}/${todo.length}`);
+    }catch(e){ if(!AI_BATCH.cancel){ fail++; r.why = String(e.message || e).slice(0, 60); } }
+    const l = $('#lms-ai-state'); if(l) l.textContent = `🤖 유형 고르는 중… ${done + fail}/${todo.length}`;
   };
-  for(let k = 0; k < todo.length; k += 3) await Promise.all(todo.slice(k, k + 3).map(one));
-  lmsRender();
+  if(AI_BATCH.running){ toast('다른 AI 작업이 진행 중입니다. 끝난 뒤 다시 눌러 주세요.'); return; }
+  aiBatchStart(`🤖 LMS 유형 채우기 ${todo.length}문항`);
+  LMS.ai = true; if(alive()) lmsRender();
+  let wasStopped = false;
+  try{ for(let k = 0; k < todo.length && !AI_BATCH.cancel; k += 3) await Promise.all(todo.slice(k, k + 3).map(one)); }
+  finally{ wasStopped = AI_BATCH.cancel; aiBatchDone(); LMS.ai = false; }
+  if(alive()) lmsRender();
+  if(wasStopped){ toast(`⏹ 중지했습니다 — ${done}개까지 채웠습니다`); return; }
   toast(`🤖 유형 ${done}개를 채웠습니다` + (fail ? ` · ${fail}개 실패 — 직접 골라 주세요` : '') + ' (검토요망 표시는 확인해 주세요)');
 }
 /* ── 최소 xlsx 쓰기: 값이 있는 셀만 만든다(빈 <c/> 없음).
