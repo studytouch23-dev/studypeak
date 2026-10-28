@@ -215,6 +215,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 .tl-chip.check{background:#eef3fb;border-color:#c9d8f0;color:#2c5fd8}
 .tl-chip.repair{background:#fdf3e1;border-color:#ecd3a5;color:#8a5a12}
 .tl-chip.rejected{background:#fbeceb;border-color:#efc4bf;color:#a5352a;text-decoration:line-through}
+.tl-chip.warn{background:#fff6e5;border-color:#f0d49a;color:#8a5a12}
 .tl-chip.wait{color:#9a958a;border-style:dashed}
 .tl-chip.gen{color:#6b6b6b;animation:tlp 1.2s infinite}
 @keyframes tlp{50%{opacity:.45}}
@@ -525,10 +526,12 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
       <p class="hint" style="margin-bottom:.5rem">한글(HWPX)·PDF·TXT 파일을 올리면 텍스트를 추출해 <b>1. / 2. / 3)</b> 번호 기준으로 문제를 자동 분할합니다. 구형 <b>.hwp</b>는 한글에서 ‘다른 이름으로 저장 → .hwpx’ 후 올려주세요.</p>
       <div class="dropzone" id="dropzone">
         <b>📂 클릭 또는 드래그하여 파일 업로드</b><br>
-        <span class="hint">.hwpx · .pdf · .txt — 여러 파일 선택 가능<br>
+        <span class="hint">.hwpx · .pdf · .txt · 이미지(.png·.jpg) — 여러 파일 선택 가능<br>
+        📋 <b>캡처한 이미지는 그대로 Ctrl+V</b>(맥은 ⌘+V)로 붙여넣으세요 — 여러 장 모아서 한 번에 문제로 나눌 수 있습니다<br>
         💡 <b>문제 PDF와 해설 PDF를 함께 선택</b>(Ctrl 클릭)하면 한 화면에서 문제·해설을 한 번에 추출하고 번호로 자동 매칭합니다</span>
       </div>
-      <input type="file" id="bulk-files" accept=".hwpx,.hwp,.pdf,.txt" multiple style="display:none">
+      <input type="file" id="bulk-files" accept=".hwpx,.hwp,.pdf,.txt,image/*" multiple style="display:none">
+      <div id="paste-tray" style="display:none"></div>
       <div class="hint" id="upload-status" style="margin:.4rem 0"></div>
       <textarea id="bulk-text" style="min-height:200px" placeholder="또는 여기에 직접 붙여넣기:&#10;1. 두 수 a, b에 대하여 ...&#10;&#10;2. 함수 f(x)=... 일 때 ...&#10;&#10;3. 등차수열 {a_n}에서 ..."></textarea>
       <div class="field" style="margin-top:.7rem">
@@ -3126,6 +3129,15 @@ async function handleUploadFiles(files, targetSel){
   const seen = lsJson('sp-lab-filehashes', {});
   let ok=0;
   files = [...files];
+  if(targetSel === '#bulk-text'){                                // 이미지 파일은 붙여넣기 모음으로 (여러 장 → 한 번에 문제로 나누기)
+    const ims = files.filter(f=>/^image\//.test(f.type) || /\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name));
+    if(ims.length){
+      for(const f of ims) addPastedImage(await readAsDataURL(f), f.name);
+      files = files.filter(f=>!ims.includes(f));
+      status.textContent = `📋 이미지 ${ims.length}장을 모았습니다 — 아래 [✂ 문제로 나누기]를 누르세요.`;
+      if(!files.length) return;
+    }
+  }
   // PDF를 2개 이상 함께 올리면(예: 문제지 + 해설지) 한 에디터에서 통합 처리 — 번호로 자동 매칭
   const pdfs = targetSel==='#bulk-text' ? files.filter(f=>f.name.toLowerCase().endsWith('.pdf')) : [];
   if(pdfs.length >= 2){
@@ -3226,6 +3238,76 @@ dz.addEventListener('drop', e=>{
 $('#bulk-files').addEventListener('change', e=>{
   if(e.target.files.length) handleUploadFiles([...e.target.files], '#bulk-text');
   e.target.value='';
+});
+/* ── 📋 캡처 이미지 붙여넣기: Ctrl+V 한 이미지(·이미지 파일)를 모아 두었다가 → 한 장씩 페이지인 PDF로 만들어 영역 인식 에디터로
+   (스캔 PDF와 같은 길: 문항 영역 자동 인식 → 이미지 문항 → AI 텍스트 변환) */
+const PASTE = { imgs: [] };
+function addPastedImage(dataURL, name){
+  PASTE.imgs.push({ src: dataURL, name: name || ('캡처 '+(PASTE.imgs.length+1)) });
+  renderPasteTray();
+}
+function renderPasteTray(){
+  const el = $('#paste-tray'); if(!el) return;
+  if(!PASTE.imgs.length){ el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block';
+  el.innerHTML = `<div class="spread" style="margin:.5rem 0 .3rem"><b>📋 붙여넣은 이미지 ${PASTE.imgs.length}장</b>
+      <span class="row" style="gap:.3rem"><button class="btn gold sm" onclick="pasteTrayOpen()">✂ 문제로 나누기 (영역 인식)</button>
+      <button class="btn ghost sm" onclick="PASTE.imgs=[];renderPasteTray()">모두 지우기</button></span></div>
+    <div class="row" style="gap:.4rem;flex-wrap:wrap">${PASTE.imgs.map((im,k)=>`<figure style="margin:0;position:relative;border:1px solid var(--line);border-radius:8px;padding:.2rem;background:#fff">
+      <img src="${im.src}" style="max-height:110px;max-width:220px;display:block" alt="붙여넣은 이미지 ${k+1}">
+      <figcaption class="hint" style="text-align:center">${k+1}</figcaption>
+      <button class="btn ghost sm" style="position:absolute;top:2px;right:2px;padding:0 .35rem" title="빼기" onclick="PASTE.imgs.splice(${k},1);renderPasteTray()">×</button></figure>`).join('')}</div>
+    <p class="hint" style="margin-top:.3rem">계속 붙여넣으면 여기에 쌓입니다. 다 모았으면 [✂ 문제로 나누기] — 한 장에 여러 문제가 있어도 번호로 나눠 줍니다.</p>`;
+}
+async function imageToJpeg(src){ // → {bytes, w, h} (흰 바탕 JPEG)
+  const im = new Image(); await new Promise((res, rej)=>{ im.onload = res; im.onerror = ()=>rej(new Error('이미지를 읽지 못했습니다')); im.src = src; });
+  const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(im, 0, 0);
+  const b64 = c.toDataURL('image/jpeg', 0.95).split(',')[1], bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for(let i=0; i<bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return { bytes, w: c.width, h: c.height };
+}
+async function imagesToPdfFile(srcs, name){ // 이미지 한 장 = PDF 한 페이지 (1px = 0.75pt)
+  const enc = new TextEncoder(), parts = [], offs = [];
+  let len = 0; const push = x=>{ const b = typeof x === 'string' ? enc.encode(x) : x; parts.push(b); len += b.length; };
+  const jpgs = []; for(const s of srcs) jpgs.push(await imageToJpeg(s));
+  const n = jpgs.length, obj = k=>{ offs[k] = len; };
+  push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+  obj(1); push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  obj(2); push('2 0 obj\n<< /Type /Pages /Count '+n+' /Kids ['+jpgs.map((_,k)=>(3+3*k)+' 0 R').join(' ')+'] >>\nendobj\n');
+  jpgs.forEach((j, k)=>{
+    const W = +(j.w*0.75).toFixed(2), H = +(j.h*0.75).toFixed(2), P = 3+3*k, C = 4+3*k, I = 5+3*k;
+    obj(P); push(`${P} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /XObject << /Im0 ${I} 0 R >> >> /Contents ${C} 0 R >>\nendobj\n`);
+    const cs = `q ${W} 0 0 ${H} 0 0 cm /Im0 Do Q`;
+    obj(C); push(`${C} 0 obj\n<< /Length ${cs.length} >>\nstream\n${cs}\nendstream\nendobj\n`);
+    obj(I); push(`${I} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${j.w} /Height ${j.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${j.bytes.length} >>\nstream\n`);
+    push(j.bytes); push('\nendstream\nendobj\n');
+  });
+  const total = 3 + 3*n, xref = len;
+  let x = 'xref\n0 '+total+'\n0000000000 65535 f \n';
+  for(let k=1; k<total; k++) x += String(offs[k]).padStart(10, '0')+' 00000 n \n';
+  push(x + 'trailer\n<< /Size '+total+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF\n');
+  return new File(parts, name, { type:'application/pdf' });
+}
+async function pasteTrayOpen(){
+  if(!PASTE.imgs.length) return;
+  const d = new Date(), z = n=>String(n).padStart(2,'0');
+  const name = `캡처 ${d.getMonth()+1}-${d.getDate()} ${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}.pdf`;
+  try{
+    const f = await imagesToPdfFile(PASTE.imgs.map(x=>x.src), name);
+    PASTE.imgs = []; renderPasteTray();
+    await handleUploadFiles([f], '#bulk-text');
+  }catch(e){ toast('⚠ 붙여넣은 이미지를 처리하지 못했습니다: '+(e.message||e)); }
+}
+function readAsDataURL(file){ return new Promise((res, rej)=>{ const r = new FileReader(); r.onload = ()=>res(r.result); r.onerror = rej; r.readAsDataURL(file); }); }
+document.addEventListener('paste', async e=>{
+  if(!$('#view-add').classList.contains('active') || $('#add-bulk').style.display === 'none') return;
+  if($('#pdfed-bg') && $('#pdfed-bg').classList.contains('show')) return;
+  const files = [...((e.clipboardData && e.clipboardData.items) || [])].filter(it=>it.kind === 'file' && /^image\//.test(it.type)).map(it=>it.getAsFile()).filter(Boolean);
+  if(!files.length) return;                                        // 글자 붙여넣기는 그대로
+  e.preventDefault();
+  for(const f of files) addPastedImage(await readAsDataURL(f));
+  toast(`📋 이미지 ${files.length}장을 붙여넣었습니다 — 더 붙여넣거나 [✂ 문제로 나누기]`);
 });
 $('#sol-files').addEventListener('change', e=>{
   if(e.target.files.length) handleUploadFiles([...e.target.files], '#bulk-sol');
@@ -4286,7 +4368,11 @@ async function aiJsonCall(content, maxTokens, modelOverride){ // 공용: content
   const data = await r.json();
   const txt = (data.content||[]).map(c=>c.text||'').join('');
   const a = txt.indexOf('{');
-  if(a<0) throw new Error('AI 응답을 해석하지 못했습니다 (JSON 없음).');
+  if(a<0){
+    errLog('AI 응답에 JSON 없음', '['+(data.stop_reason||'')+'] '+txt.slice(0, 300));
+    const e = new Error('AI가 형식(JSON) 없이 답했습니다'+(data.stop_reason==='refusal' ? ' (요청을 거절함)' : txt.trim() ? ': "'+txt.trim().replace(/\s+/g,' ').slice(0, 60)+'…"' : ' (빈 답)'));
+    e.noJson = true; e.aiText = txt; throw e;
+  }
   const b = txt.lastIndexOf('}');
   try{
     return tolerantJsonParse(b>a ? txt.slice(a, b+1) : txt.slice(a));
@@ -6684,6 +6770,7 @@ function twinPrompt(src, nTwin, nVar, diff, spec, avoid, extra){
   const ch = (src.choices||[]).map(c=>String(c).trim()).filter(Boolean);
   const ideas = extra && extra.ideas, style = extra && extra.style;
   return '아래 원본 문제를 바탕으로 한국 고등학교 수학 문제를 새로 만드세요. JSON 하나만 출력하세요. 설명·코드블록 금지.\n'
+    +'어떤 경우에도 JSON 만 출력합니다. 정말 만들 수 없으면(본문이 잘려 조건을 알 수 없는 등) {"items":[],"reason":"짧은 이유"}.\n'
     +'{"srcIdeas":["원본 풀이 아이디어1","아이디어2"],"items":[{"kind":"쌍둥이 또는 변형","ideas":["이 문제 풀이 아이디어"],"changed":"(변형만) 원본에서 바뀐 아이디어","question":"본문(수식은 $...$, 그림 자리는 한 줄로 [그림])","choices":["① …","② …","③ …","④ …","⑤ …"] 또는 [],"answer":"정답","solution":"단계별 풀이(수식은 $...$)","figure":그림 설계도 JSON 또는 null}]}\n'
     +TWIN_RULE+(ideas && ideas.length ? '  원본 아이디어는 아래 [원본 풀이 아이디어]를 그대로 srcIdeas 에 쓰세요.\n' : '')
     +(nTwin ? `- 쌍둥이 ${nTwin}개 (kind:"쌍둥이"): 원본 풀이 아이디어가 "모두" 그대로 필요한 문제 — 아이디어를 하나도 더하거나 빼거나 바꾸지 말고, 숫자·계수·식·상황 같은 겉모습만 바꿔 답이 달라지게. 문항 형식도 같게. 계산이 깔끔하게 떨어지는 숫자를 고르세요.\n` : '')
@@ -6767,12 +6854,30 @@ function stylePresetAdd(kind, inputId, boxId){
 }
 function stylePresetDel(kind, inputId, boxId, k){ const a = stylePresets(kind); a.splice(k, 1); styleSavePresets(kind, a); renderStylePresets(kind, inputId, boxId); }
 /* 원본에 정답·해설이 없으면 먼저 채운다 — 정답을 알면 그 정답에 맞는 풀이만, 모르면 풀고 독립 검산 */
-function srcFillPrompt(src, other){
+/* 생성 실패 이유를 짧은 말로 */
+function twinErrWhy(e){
+  const m = String(e && e.message || e || '');
+  if(/길이 제한|max_tokens/.test(m)) return '답이 너무 길어 잘림';
+  if(/JSON|형식/.test(m)) return 'AI가 형식에 맞지 않게 답함';
+  if(/API 오류 5|overloaded|과부하|529|503/.test(m)) return 'AI 서버가 잠시 바쁨';
+  return m.slice(0, 60);
+}
+/* 원본 채우기 실패 이유를 짧은 말로 */
+function fillFailWhy(m){
+  m = String(m||'');
+  if(/길이 제한|max_tokens/.test(m)) return '풀이가 너무 길어 잘림';
+  if(/JSON|해석|형식/.test(m)) return 'AI 답의 형식이 깨짐';
+  if(/API 오류 5|overloaded|과부하|529|503/.test(m)) return 'AI 서버가 잠시 바쁨';
+  if(/비워서/.test(m)) return 'AI가 답을 비워서 보냄';
+  return m.slice(0, 40);
+}
+function srcFillPrompt(src, other, brief){
   const ch = (src.choices||[]).map(c=>String(c).trim()).filter(Boolean), ans = String(src.answer||'').trim();
   return '다음 한국 고등학교 수학 문제의 '+(ans ? '해설(풀이)' : '정답과 해설(풀이)')+'을 작성하세요. 아래 JSON 하나만 출력합니다. 설명·코드블록 금지.\n'
     +'{"complete":true,"answer":"'+(ans ? ans : ch.length ? '정답 — 반드시 ①~⑤ 기호 중 하나' : '정답 값(단답형)')+'","solution":"단계별 풀이"}\n'
     +'- 모든 수식은 $...$ 안에 LaTeX로 정확히. 문자열 안 줄바꿈은 \\n 으로 이스케이프.\n'
     +'- 풀이는 학생이 따라올 수 있게 단계별로 쓰고, 계산을 다른 방법이나 대입으로 검산한 뒤 확정하세요.\n'
+    +(brief ? '- 풀이는 핵심 단계만 간결하게(15줄 이내). 정답을 반드시 채우세요.\n' : '- 풀이는 길어도 30줄 이내로.\n')
     +(ans ? '- 정답은 '+ans+' 입니다(교재 정답). 이 정답에 이르는 풀이를 쓰고 answer 에는 그대로 '+ans+' 를 쓰세요.\n' : '')
     +(ch.length ? '- 마지막 줄은 "따라서 정답은 ⓝ이다." 형태로 끝내세요.\n' : '')
     +'- 문제 본문이 중간에 잘려 무엇을 구하는지 알 수 없으면 추측하지 말고 complete 를 false, answer 를 "" 로 하세요.\n'
@@ -6809,7 +6914,19 @@ async function makeTwins(sources, opts, ask, onEvent){
         emit({ type:'fill', i, state:'run', needAns, needSol });
         try{
           const fimg = imgs.slice(0, 1);
-          let r = await ask(srcFillPrompt(src), 4000, fimg) || {};
+          // 풀기: 어려운 문제는 풀이가 길어 잘리거나 형식이 깨질 수 있음 → 넉넉한 길이로, 실패하면 한 번 더(짧게 쓰라고)
+          let r = null, firstErr = '';
+          for(let tryN = 0; tryN < 2 && !r; tryN++){
+            try{
+              const x = await ask(srcFillPrompt(src, null, tryN > 0) , 12000, fimg) || {};
+              if(x.complete === false || String(x.answer==null ? '' : x.answer).trim() || String(x.solution||'').trim()) r = x;
+              else firstErr = firstErr || 'AI가 정답·해설을 비워서 보냄';
+            }catch(e){
+              if(/API 키|401|네트워크|API 오류 4|중지됨/.test(e.message||'')) throw e;
+              firstErr = firstErr || (e.message||String(e));
+            }
+          }
+          if(!r){ const err = new Error(firstErr || '알 수 없는 오류'); err.fillFail = true; throw err; }
           const tags = src.tags = (src.tags||[]).slice();
           if(r.complete === false){
             if(!tags.includes('본문확인')) tags.push('본문확인');
@@ -6818,16 +6935,16 @@ async function makeTwins(sources, opts, ask, onEvent){
           } else {
             let ans = needAns ? String(r.answer==null ? '' : r.answer).trim() : String(src.answer).trim();
             let sol = fixAiNewlines(String(r.solution||'')).trim(), verify = null;
-            if(needAns && ans && opts.verify !== false){                 // 정답을 새로 구했으면 다른 호출이 정답 모른 채 다시 풀어 비교
-              const vr = await ask(aiVerifyPrompt(src.question, src.choices), 2000, fimg);
+            if(needAns && ans && opts.verify !== false) try{             // 정답을 새로 구했으면 다른 호출이 정답 모른 채 다시 풀어 비교 (검산이 실패해도 채운 것은 살림)
+              const vr = await ask(aiVerifyPrompt(src.question, src.choices), 3000, fimg);
               let o = verifyOutcome(ans, src.choices, vr);
               if(o === 'mismatch' && vr && vr.wellPosed !== false){      // 다르면 한 번 더 신중히 → 맞으면 그 답으로
-                const r2 = await ask(srcFillPrompt(src, vr), 4000, fimg) || {};
+                const r2 = await ask(srcFillPrompt(src, vr), 12000, fimg) || {};
                 const a2 = String(r2.answer==null ? '' : r2.answer).trim();
                 if(a2 && verifyOutcome(a2, src.choices, vr) !== 'mismatch'){ ans = a2; sol = fixAiNewlines(String(r2.solution||'')).trim() || sol; o = verifyOutcome(a2, src.choices, vr); }
               }
               verify = { result:o, aiAnswer: String(vr && vr.answer || '').slice(0,60), note: String(vr && vr.work || '').slice(0,300), at: Date.now() };
-            }
+            }catch(e){ if(/API 키|401|네트워크|API 오류 4|중지됨/.test(e.message||'')) throw e; verify = null; }
             const got = (needAns && ans) || (needSol && sol);
             if(needAns && ans) src.answer = ans;
             if(needSol && sol) src.solution = sol;
@@ -6837,11 +6954,13 @@ async function makeTwins(sources, opts, ask, onEvent){
               if(verify) src.verify = verify;
               src.updatedAt = Date.now(); await saveProblem(src); out.filled++;
             }
-            emit({ type:'fill', i, state: !got ? 'fail' : (verify && verify.result === 'mismatch') ? 'check' : 'done', answer: src.answer, verify: verify && verify.result, why: got ? '' : 'AI가 정답·해설을 내놓지 않음' });
+            if(!got) out.fillFail = (out.fillFail||0) + 1;
+            emit({ type:'fill', i, state: !got ? 'fail' : (verify && verify.result === 'mismatch') ? 'check' : 'done', answer: src.answer, verify: verify && verify.result, why: got ? '' : 'AI가 정답·해설을 비워서 보냄' });
           }
         }catch(e){
           if(/API 키|401|네트워크|API 오류 4|중지됨/.test(e.message||'')) throw e;
-          emit({ type:'fill', i, state:'fail', why: e.message||String(e) });
+          out.fillFail = (out.fillFail||0) + 1;
+          emit({ type:'fill', i, state:'fail', why: fillFailWhy(e.message||String(e)) });
         }
       }
       const need = { 쌍둥이: nTwin, 변형: nVar }, made = [], seen = new Set([twinNorm(src.question)]);
@@ -6923,14 +7042,27 @@ async function makeTwins(sources, opts, ask, onEvent){
         const t = Math.max(0, Math.min(need.쌍둥이 - inflight.쌍둥이, CH)), v = Math.max(0, Math.min(need.변형 - inflight.변형, CH - t));
         if(t + v <= 0){ if(prevRound){ const pr = prevRound; prevRound = null; await pr; continue; } break; }
         emit({ type:'gen', i, call: calls, want: t + v, done: total - need.쌍둥이 - need.변형, total });
-        const r = await ask(twinPrompt({ ...src, _hasFig: hasFig }, t, v, opts.diff, spec, [...made, ...pendingQs], { ideas, style: opts.style }), 12000, (!spec && imgs[0]) ? [imgs[0]] : []);
+        // 생성: 답이 잘리거나 형식이 깨지면 개수를 줄여 다시(최대 3번). 그래도 안 되면 이 원본은 여기까지(오류 이유 표시)
+        let r = null, genErr = null, tt = t, vv = v;
+        for(let g = 0; g < 3 && !r; g++){
+          try{
+            r = await ask(twinPrompt({ ...src, _hasFig: hasFig }, tt, vv, opts.diff, spec, [...made, ...pendingQs], { ideas, style: opts.style }), 16000, (!spec && imgs[0]) ? [imgs[0]] : []);
+          }catch(e){
+            if(/API 키|401|네트워크|API 오류 4|중지됨/.test(e.message||'')) throw e;
+            genErr = e;
+            if(tt + vv > 1){ if(tt > 0){ tt = 1; vv = 0; } else vv = 1; }      // 다음엔 1개만(짧은 답)
+            emit({ type:'gen', i, call: calls, want: tt + vv, done: total - need.쌍둥이 - need.변형, total, retry: g + 1, why: twinErrWhy(e) });
+          }
+        }
         calls++;
+        if(!r) throw new Error('새 문제를 만들지 못했습니다 — '+twinErrWhy(genErr));
+        if(r && Array.isArray(r.items) && !r.items.length && r.reason) throw new Error('AI가 만들지 못한 이유: '+String(r.reason).slice(0, 120));
         if(!ideas && r && Array.isArray(r.srcIdeas)){
           const si = r.srcIdeas.map(x=>String(x).trim()).filter(Boolean).slice(0, 6);
           if(si.length){ ideas = si; src.ideas = si; try{ await saveProblem(src); }catch(e){} }
         }
         // 후보 고르기: 요청 개수 안에서, 원본·앞 문제·검산 중인 문제·서로 겹치지 않게
-        const quota = { 쌍둥이: t, 변형: v }, cand = [], candSeen = new Set(pendingQs.map(twinNorm));
+        const quota = { 쌍둥이: tt, 변형: vv }, cand = [], candSeen = new Set(pendingQs.map(twinNorm));
         for(const it of twinItemsOf(r)){
           if(quota[it.kind] <= 0) continue;
           const nq = twinNorm(it.question);
@@ -7022,7 +7154,7 @@ function twinLiveStart(sources, opts){
 function twinLiveEvent(e){
   const row = TWIN_LIVE.rows && TWIN_LIVE.rows[e.i]; if(!row) return;
   if(e.type === 'src'){ row.state = 'run'; row.t0 = Date.now(); }
-  else if(e.type === 'gen'){ row.gen = e.want; }
+  else if(e.type === 'gen'){ row.gen = e.want; row.genRetry = e.retry ? `다시 시도 ${e.retry} · ${e.why||''}` : ''; }
   else if(e.type === 'fill'){ row.fill = e; }
   else if(e.type === 'item'){ row.gen = 0; const it = row.items.get(e.key) || {}; Object.assign(it, e); row.items.set(e.key, it); }
   else if(e.type === 'srcDone' && e.stopped){ row.state = 'stop'; row.t1 = Date.now(); row.gen = 0; row.items.forEach(it=>{ if(it.state === 'check' || it.state === 'repair'){ it.state = 'rejected'; it.why = '중지됨'; } }); }
@@ -7061,7 +7193,7 @@ function twinLiveRender(){
       const waitN = (r.state==='wait' && stopped) || r.state==='stop' ? 0 : r.state==='wait' ? TWIN_LIVE.per : r.state==='run' ? Math.max(0, TWIN_LIVE.per - savedN - inProg - (r.gen||0)) : 0;
       const status = (r.state==='wait' && stopped) || r.state==='stop' ? '⏹ 중지됨' : r.state==='wait' ? '대기' : r.state==='run' ? '진행 중' : r.state==='err' ? '⚠ 오류' : (r.short ? `⚠ ${r.short}개 못 만듦` : '✓ 완료');
       return `<div class="tl-src ${r.state==='run'?'run':''}"><div class="tl-t"><b>${esc(r.label || '원본 '+(i+1))}</b><span class="q">${esc(r.q)}</span><span>${savedN}/${TWIN_LIVE.per} · ${status}${r.t1?' · '+el2(r.t1-r.t0):''}</span></div>
-        <div class="tl-chips">${r.fill ? twinFillChip(r.fill) : ''}${items.map(chip).join('')}${r.gen?`<span class="tl-chip gen">✍ ${r.gen}개 만드는 중…</span>`:''}${'<span class="tl-chip wait">대기</span>'.repeat(Math.min(10, waitN))}</div>
+        <div class="tl-chips">${r.fill ? twinFillChip(r.fill) : ''}${items.map(chip).join('')}${r.gen?`<span class="tl-chip gen">✍ ${r.gen}개 만드는 중…${r.genRetry?' ('+esc(r.genRetry)+')':''}</span>`:''}${'<span class="tl-chip wait">대기</span>'.repeat(Math.min(10, waitN))}</div>
         ${r.err?`<div class="hint" style="color:var(--danger)">${esc(r.err)}</div>`:''}</div>`; }).join('')}</div>
     ${TWIN_LIVE.done && TWIN_LIVE.result ? `<div class="tl-foot">
       <button class="btn gold sm" onclick="twinShowGroups('${TWIN_LIVE.result.batch}')">👯 원본별로 보기</button>
@@ -7072,7 +7204,7 @@ function twinFillChip(f){ // 원본 정답·해설 채우기 상태
   if(f.state === 'done') return `<span class="tl-chip saved" title="원본에 정답·해설을 채웠습니다 (#AI해설)">📝 원본 채움${f.answer ? ' · 정답 '+esc(String(f.answer).slice(0, 16)) : ''}</span>`;
   if(f.state === 'check') return `<span class="tl-chip repair" title="독립 검산과 정답이 달라 #검산불일치 를 붙였습니다">📝 원본 채움 · ⚠ 정답 확인 필요</span>`;
   if(f.state === 'incomplete') return `<span class="tl-chip rejected" title="본문이 잘려 정답을 정할 수 없습니다 (#본문확인)">📝 원본 본문이 잘림 · 확인 필요</span>`;
-  return `<span class="tl-chip rejected" title="${esc(f.why||'')}">📝 원본 채우기 실패</span>`;
+  return `<span class="tl-chip warn" title="원본 문제의 정답·해설을 AI가 자동으로 채우지 못했습니다 (${esc(f.why||'')}). 쌍둥이·변형은 계속 만듭니다. 나중에 원본 문제 상세 화면의 [🤖 AI 해설 생성]으로 다시 채울 수 있어요.">📝 원본 정답·해설 못 채움${f.why ? ' · '+esc(f.why) : ''} (쌍둥이는 계속)</span>`;
 }
 function twinStop(){ // 중지: 새 AI 호출을 막고 진행 중인 요청도 끊음 → 이미 저장된 문제는 그대로
   if(TWIN_LIVE.done || TWIN_LIVE.stopping) return;
@@ -7105,7 +7237,7 @@ async function startTwinMaker(){
   refreshCounts();
   if(res.saved.length) twinShowGroups(res.batch); else go('db');
   const why = Object.entries(res.reasons).map(([k,v])=>`${k} ${v}`).join(', ');
-  toast((res.stopped ? '⏹ 중지했습니다 — ' : '')+`👯 검산을 통과한 ${res.saved.length}문항을 저장했습니다`+(res.filled?` · 📝 원본 정답·해설 채움 ${res.filled}개${res.fillCheck?`(정답 확인 필요 ${res.fillCheck})`:''}`:'')+(res.incomplete?` · ⚠ 본문이 잘린 원본 ${res.incomplete}개(#본문확인)`:'')+(res.repaired?` · 바로잡아 통과 ${res.repaired}개`:'')+(res.rejected?` · 버리고 다시 만든 것 ${res.rejected}개(${why})`:'')
+  toast((res.stopped ? '⏹ 중지했습니다 — ' : '')+`👯 검산을 통과한 ${res.saved.length}문항을 저장했습니다`+(res.filled?` · 📝 원본 정답·해설 채움 ${res.filled}개${res.fillCheck?`(정답 확인 필요 ${res.fillCheck})`:''}`:'')+(res.incomplete?` · ⚠ 본문이 잘린 원본 ${res.incomplete}개(#본문확인)`:'')+(res.fillFail?` · 원본 정답·해설 못 채움 ${res.fillFail}개(원본 상세의 [🤖 AI 해설 생성]으로 다시)`:'')+(res.repaired?` · 바로잡아 통과 ${res.repaired}개`:'')+(res.rejected?` · 버리고 다시 만든 것 ${res.rejected}개(${why})`:'')
     +(res.short?` · ⚠ 끝내 못 만든 것 ${res.short}개`:'')+(res.warn?` · 수식 확인 ${res.warn}개`:'')
     +(res.fail?` · 실패 ${res.fail}개 (${res.lastErr})`:''));
 }
