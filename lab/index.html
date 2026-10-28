@@ -9,6 +9,7 @@
 <meta property="og:title" content="스터디피크 수학 랩 — 나만의 수학 문제 DB">
 <meta property="og:description" content="문제 등록 → 태그 보강 → 의미 검색 → 시험지 출력. 내 브라우저에 저장되는 비공개 수학 문제 연구소.">
 <meta property="og:url" content="https://www.studypeak.co.kr/lab/">
+<script src="units-db.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
@@ -168,8 +169,10 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
 .subj-chip.sel{border-color:var(--green);background:#f0fdf4;color:var(--green)}
 .subj-chip .mini{background:none;border:0;font-size:.8rem;opacity:.55;padding:0 .1rem}
 .subj-chip .mini:hover{opacity:1}
-.cascade{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
-@media(max-width:760px){.cascade{grid-template-columns:1fr}}
+.cascade{display:grid;grid-template-columns:repeat(5,minmax(190px,1fr));gap:.7rem;overflow-x:auto;padding-bottom:.3rem}
+.cascade .col-box{min-height:340px}
+.cascade .col-item .nm{flex:1;min-width:0;word-break:keep-all}
+.cascade .col-item .chev{color:var(--muted-2);font-size:.8rem}
 .col-box{border:1px solid var(--line);border-radius:12px;background:#fff;display:flex;flex-direction:column;min-height:300px}
 .col-box .col-h{display:flex;justify-content:space-between;align-items:center;padding:.6rem .8rem;border-bottom:1px solid var(--line);font-weight:800;color:var(--green);font-size:.88rem}
 .col-box .col-h .cnt{color:var(--muted);font-weight:700;font-size:.78rem}
@@ -533,7 +536,7 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
 
   <div class="grid3" style="margin-bottom:1.1rem">
     <div class="stat si"><span class="sic "><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5Z"/><path d="M8 7h7"/></svg></span><span class="sl">등록 과목</span><b id="tg-subjects">0</b><span class="ss">현재 사용 중인 과목</span></div>
-    <div class="stat si"><span class="sic b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg></span><span class="sl">선택 과목 단원</span><b id="tg-units">0</b><span class="ss">대단원 + 중단원</span></div>
+    <div class="stat si"><span class="sic b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg></span><span class="sl">선택 과목 단원</span><b id="tg-units">0</b><span class="ss">대단원 ~ 상세유형</span></div>
     <div class="stat si"><span class="sic y"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span><span class="sl">선택 과목 문제</span><b id="tg-used">0</b><span class="ss">이 과목으로 태그된 내 문제</span></div>
   </div>
 
@@ -549,7 +552,13 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
   </div>
 
   <div class="card">
-    <h3>단원 태그 구조 <span class="hint" id="casc-subject-label"></span></h3>
+    <div class="spread" style="margin-bottom:.8rem"><div><h3 style="margin:0">단원 태그 구조</h3><span class="hint" id="casc-subject-label"></span></div>
+      <div class="row" style="gap:.35rem"><span class="pillc">⤷ 깊이 5단계</span>
+        <button class="btn ghost sm" onclick="unitsCsvTemplate()">⬇ CSV 양식</button>
+        <button class="btn ghost sm" onclick="unitsCsvExport()">⬇ CSV 내보내기</button>
+        <button class="btn ghost sm" onclick="$('#units-csv').click()">⬆ CSV 불러오기</button>
+        <button class="btn ghost sm" onclick="unitsLoadPreset()">스터디피크 기본 단원 DB 불러오기</button>
+        <input type="file" id="units-csv" accept=".csv,text/csv" style="display:none" onchange="unitsCsvImport(this.files[0]);this.value=''"></div></div>
     <div class="cascade">
       <div class="col-box">
         <div class="col-h"><span>대단원</span><span class="cnt" id="chap-cnt"></span></div>
@@ -561,8 +570,23 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
         <div class="col-list" id="sect-list"></div>
         <div class="col-add"><button class="btn ghost sm" onclick="addSection()">＋ 중단원 추가</button></div>
       </div>
+      <div class="col-box">
+        <div class="col-h"><span>소단원</span><span class="cnt" id="usub-cnt"></span></div>
+        <div class="col-list" id="usub-list"></div>
+        <div class="col-add"><button class="btn ghost sm" onclick="unitDeepAdd(3)">＋ 소단원 추가</button></div>
+      </div>
+      <div class="col-box">
+        <div class="col-h"><span>유형</span><span class="cnt" id="utype-cnt"></span></div>
+        <div class="col-list" id="utype-list"></div>
+        <div class="col-add"><button class="btn ghost sm" onclick="unitDeepAdd(4)">＋ 유형 추가</button></div>
+      </div>
+      <div class="col-box">
+        <div class="col-h"><span>상세유형</span><span class="cnt" id="udet-cnt"></span></div>
+        <div class="col-list" id="udet-list"></div>
+        <div class="col-add"><button class="btn ghost sm" onclick="unitDeepAdd(5)">＋ 상세유형 추가</button></div>
+      </div>
     </div>
-    <p class="hint" style="margin-top:.6rem">더 세분화된 유형(소단원·상세유형)은 문제의 <b>나만의 태그</b>로 붙이면 검색·필터에 그대로 쓸 수 있습니다. 숫자 배지는 해당 태그가 붙은 내 문제 수입니다.</p>
+    <p class="hint" style="margin-top:.6rem">대단원 → 중단원 → 소단원 → 유형 → 상세유형 순서로 누르면 다음 단계가 열립니다. 숫자 배지는 그 단원이 붙은 내 문제 수 · 이름을 바꾸면 그 단원이 붙은 문제도 함께 옮겨집니다. 학원 자체 체계가 있으면 <b>CSV 양식</b>에 맞춰 채운 뒤 <b>CSV 불러오기</b>로 합치세요(열: 과목, 대단원, 중단원, 소단원, 유형, 상세유형).</p>
   </div>
 
 </section>
@@ -672,6 +696,11 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
         <div class="field"><label>과목</label><select id="f-subject"></select></div>
         <div class="field"><label>대단원</label><select id="f-chapter"></select></div>
         <div class="field"><label>중단원</label><select id="f-section"></select></div>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>소단원</label><select id="f-sub"></select></div>
+        <div class="field"><label>유형</label><select id="f-utype"></select></div>
+        <div class="field"><label>상세유형</label><select id="f-udetail"></select></div>
       </div>
       <div class="grid4">
         <div class="field"><label>출처 유형</label>
@@ -1693,6 +1722,226 @@ function thToSheet(keys, withOrig){
   toast(`${withOrig ? '📚 원본 → 쌍둥이 → 변형 순서로' : '🧺 만든 문제'} ${ids.length}문항을 담았습니다 — [교재 HTML] · [모의고사(A3)] · [학습지] 중 고르세요`);
 }
 
+
+/* ═══════════════ 단원 5단계: 대단원·중단원(CURRICULUM) + 소단원 → 유형 → 상세유형(UNITS) ═══════════════
+   UNITS = { '과목|대단원|중단원': { 소단원: { 유형: [상세유형, …] } } } — 기본값은 lab/units-db.js 의 스터디피크 단원 DB,
+   한 번이라도 고치면 localStorage 'sp-lab-units' 에 저장(계정 설정 동기화에 포함). 문제 필드: subsection·utype·udetail */
+const ukey = (s, c, x)=>s+'|'+c+'|'+x;
+function parseUnitsDSL(text){
+  const out = {}, alias = [];
+  let cur = null;
+  for(const raw of String(text||'').split('\n')){
+    const line = raw.trim(); if(!line) continue;
+    if(line.startsWith('#')){
+      const [lhs, rhs] = line.slice(1).split('=').map(x=>x && x.trim());
+      const path = lhs.split('>').map(x=>x.trim());
+      if(path.length !== 3){ cur = null; continue; }
+      const k = ukey(...path);
+      if(rhs){ const src = rhs.split('>').map(x=>x.trim()); if(src.length === 3) alias.push([k, ukey(...src)]); cur = null; }
+      else { cur = out[k] = out[k] || {}; }
+      continue;
+    }
+    if(!cur) continue;
+    const [subName, rest] = line.split('::').map(x=>x && x.trim());
+    if(!subName) continue;
+    const sub = cur[subName] = cur[subName] || {};
+    for(const part of String(rest||'').split(';').map(x=>x.trim()).filter(Boolean)){
+      const m = part.match(/^(.*?)\s*(?:\[(.*)\])?$/);
+      const tname = (m && m[1] || part).trim(); if(!tname) continue;
+      sub[tname] = (m && m[2] ? m[2].split(',').map(x=>x.trim()).filter(Boolean) : []);
+    }
+  }
+  for(const [k, src] of alias) if(out[src] && !out[k]) out[k] = JSON.parse(JSON.stringify(out[src]));
+  return out;
+}
+let UNITS_CACHE = null;
+function unitsPreset(){ return window.SP_UNITS_DSL ? parseUnitsDSL(window.SP_UNITS_DSL) : {}; }
+function unitsDB(){
+  if(UNITS_CACHE) return UNITS_CACHE;
+  try{ const raw = localStorage.getItem('sp-lab-units'); if(raw){ const o = JSON.parse(raw); if(o && typeof o === 'object'){ UNITS_CACHE = o; return o; } } }catch(e){}
+  UNITS_CACHE = unitsPreset();
+  return UNITS_CACHE;
+}
+function saveUnits(){ localStorage.setItem('sp-lab-units', JSON.stringify(unitsDB())); }
+function unitNode(s, c, x){ return unitsDB()[ukey(s, c, x)] || null; }
+function unitSubs(s, c, x){ return Object.keys(unitNode(s, c, x) || {}); }
+function unitTypes(s, c, x, sub){ const n = unitNode(s, c, x); return Object.keys((n && n[sub]) || {}); }
+function unitDetails(s, c, x, sub, t){ const n = unitNode(s, c, x); return ((n && n[sub] && n[sub][t]) || []).slice(); }
+function unitsRenamePath(oldPrefix, newPrefix){ // 과목·대단원·중단원 이름이 바뀌면 키도 옮김
+  const U = unitsDB(); let moved = 0;
+  for(const k of Object.keys(U)) if(k === oldPrefix || k.startsWith(oldPrefix+'|')){ const nk = newPrefix + k.slice(oldPrefix.length); if(!U[nk]) U[nk] = U[k]; delete U[k]; moved++; }
+  if(moved) saveUnits();
+}
+function unitsDropPath(prefix){ const U = unitsDB(); let n = 0; for(const k of Object.keys(U)) if(k === prefix || k.startsWith(prefix+'|')){ delete U[k]; n++; } if(n) saveUnits(); }
+function renderUnitDeepCols(){
+  const S = state.tagSubject, C = state.tagChapter, X = state.tagSection;
+  const lists = { 3: $('#usub-list'), 4: $('#utype-list'), 5: $('#udet-list') }; if(!lists[3]) return;
+  const P = state.problems.filter(p=>p.subject===S && p.chapter===C && p.section===X);
+  const subs = X ? unitSubs(S, C, X) : [];
+  if(!state.tagSub || !subs.includes(state.tagSub)) state.tagSub = subs[0] || null;
+  const types = state.tagSub ? unitTypes(S, C, X, state.tagSub) : [];
+  if(!state.tagType || !types.includes(state.tagType)) state.tagType = types[0] || null;
+  const dets = state.tagType ? unitDetails(S, C, X, state.tagSub, state.tagType) : [];
+  const cnt = (f)=>{ const m = new Map(); P.forEach(p=>{ const v = f(p); if(v) m.set(v, (m.get(v)||0)+1); }); return m; };
+  const cSub = cnt(p=>p.subsection), cType = cnt(p=>p.subsection===state.tagSub ? p.utype : null), cDet = cnt(p=>p.subsection===state.tagSub && p.utype===state.tagType ? p.udetail : null);
+  const item = (lv, name, n, sel, more)=>`<div class="col-item ${sel?'sel':''}" data-lv="${lv}" data-nm="${esc(name)}"><span class="nm">${esc(name)}</span><span class="n">${n||0}</span>
+    <button class="mini" data-act="ren" title="이름 수정">✎</button><button class="mini" data-act="del" title="삭제">🗑</button>${more?'<span class="chev">›</span>':''}</div>`;
+  $('#usub-cnt').textContent = subs.length+'개'; $('#utype-cnt').textContent = types.length+'개'; $('#udet-cnt').textContent = dets.length+'개';
+  lists[3].innerHTML = !X ? '<div class="colmuted">중단원을 먼저 선택해 주세요.</div>' : subs.length ? subs.map(x=>item(3, x, cSub.get(x), x===state.tagSub, true)).join('') : '<div class="colmuted">소단원을 추가해 주세요.</div>';
+  lists[4].innerHTML = !state.tagSub ? '<div class="colmuted">소단원을 먼저 선택해 주세요.</div>' : types.length ? types.map(x=>item(4, x, cType.get(x), x===state.tagType, true)).join('') : '<div class="colmuted">유형을 추가해 주세요.</div>';
+  lists[5].innerHTML = !state.tagType ? '<div class="colmuted">유형을 먼저 선택해 주세요.</div>' : dets.length ? dets.map(x=>item(5, x, cDet.get(x), false, false)).join('') : '<div class="colmuted">상세유형을 추가해 주세요.</div>';
+}
+document.addEventListener('click', e=>{
+  const it = e.target.closest('.cascade [data-lv]'); if(!it) return;
+  const lv = +it.dataset.lv, nm = it.dataset.nm, act = (e.target.closest('[data-act]')||{}).dataset;
+  if(act && act.act === 'ren'){ unitDeepRename(lv, nm); return; }
+  if(act && act.act === 'del'){ unitDeepDelete(lv, nm); return; }
+  if(lv === 3){ state.tagSub = nm; state.tagType = null; } else if(lv === 4){ state.tagType = nm; } else return;
+  renderUnitDeepCols();
+});
+function unitDeepNode(lv){ // lv 의 이름들이 들어 있는 그릇 (만들어서 돌려줌)
+  const U = unitsDB(), k = ukey(state.tagSubject, state.tagChapter, state.tagSection);
+  if(lv === 3) return (U[k] = U[k] || {});
+  const n3 = (U[k] = U[k] || {}), sub = (n3[state.tagSub] = n3[state.tagSub] || {});
+  if(lv === 4) return sub;
+  return (sub[state.tagType] = sub[state.tagType] || []);
+}
+const UNIT_LV = { 3:'소단원', 4:'유형', 5:'상세유형' }, UNIT_FIELD = { 3:'subsection', 4:'utype', 5:'udetail' };
+function unitDeepReady(lv){
+  if(!state.tagSection){ toast('중단원을 먼저 선택하세요.'); return false; }
+  if(lv >= 4 && !state.tagSub){ toast('소단원을 먼저 선택하세요.'); return false; }
+  if(lv >= 5 && !state.tagType){ toast('유형을 먼저 선택하세요.'); return false; }
+  return true;
+}
+function unitDeepAdd(lv){
+  if(!unitDeepReady(lv)) return;
+  const name = (prompt(`추가할 ${UNIT_LV[lv]} 이름`)||'').trim(); if(!name) return;
+  const box = unitDeepNode(lv);
+  if(Array.isArray(box)){ if(box.includes(name)){ toast('이미 있는 이름입니다.'); return; } box.push(name); }
+  else { if(box[name]){ toast('이미 있는 이름입니다.'); return; } box[name] = lv === 3 ? {} : []; }
+  if(lv === 3) state.tagSub = name; if(lv === 4) state.tagType = name;
+  saveUnits(); renderUnitDeepCols();
+}
+function unitDeepMatch(lv){ // 이 단계 항목이 붙은 문제 고르는 조건
+  const S = state.tagSubject, C = state.tagChapter, X = state.tagSection;
+  return p=>p.subject===S && p.chapter===C && p.section===X && (lv < 4 || p.subsection===state.tagSub) && (lv < 5 || p.utype===state.tagType);
+}
+async function unitDeepRename(lv, old){
+  if(!unitDeepReady(lv)) return;
+  const name = (prompt(`${UNIT_LV[lv]} 이름 수정`, old)||'').trim(); if(!name || name === old) return;
+  const box = unitDeepNode(lv);
+  if(Array.isArray(box)){ if(box.includes(name)){ toast('이미 있는 이름입니다.'); return; } box[box.indexOf(old)] = name; }
+  else { if(box[name]){ toast('이미 있는 이름입니다.'); return; } const o = {}; Object.keys(box).forEach(k=>{ o[k === old ? name : k] = box[k]; }); Object.keys(box).forEach(k=>delete box[k]); Object.assign(box, o); }
+  saveUnits();
+  const f = UNIT_FIELD[lv], m = unitDeepMatch(lv);
+  const n = await remapProblems(p=>m(p) && p[f]===old, { [f]: name });
+  if(lv === 3 && state.tagSub === old) state.tagSub = name; if(lv === 4 && state.tagType === old) state.tagType = name;
+  renderTags(); toast(`${UNIT_LV[lv]} 이름을 바꾸고 문제 ${n}개도 함께 옮겼습니다.`);
+}
+async function unitDeepDelete(lv, nm){
+  if(!unitDeepReady(lv)) return;
+  const f = UNIT_FIELD[lv], m = unitDeepMatch(lv), used = state.problems.filter(p=>m(p) && p[f]===nm).length;
+  if(!confirm(`‘${nm}’ ${UNIT_LV[lv]}을(를) 삭제할까요?`+(lv < 5 ? ' (아래 단계도 함께 지워집니다)' : '')+(used ? `\n문제 ${used}개의 이 단계 태그가 비워집니다.` : ''))) return;
+  const box = unitDeepNode(lv);
+  if(Array.isArray(box)) box.splice(box.indexOf(nm), 1); else delete box[nm];
+  saveUnits();
+  const clear = lv === 3 ? { subsection:'', utype:'', udetail:'' } : lv === 4 ? { utype:'', udetail:'' } : { udetail:'' };
+  await remapProblems(p=>m(p) && p[f]===nm, clear);
+  renderTags();
+}
+/* CSV: 과목,대단원,중단원,소단원,유형,상세유형 */
+function csvLine(a){ return a.map(v=>{ v = String(v==null?'':v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }).join(','); }
+function parseCsv(text){
+  const rows = []; let row = [], f = '', q = false;
+  text = String(text||'').replace(/^﻿/, '');
+  for(let i=0; i<text.length; i++){
+    const ch = text[i];
+    if(q){ if(ch === '"'){ if(text[i+1] === '"'){ f += '"'; i++; } else q = false; } else f += ch; }
+    else if(ch === '"') q = true;
+    else if(ch === ','){ row.push(f); f = ''; }
+    else if(ch === '\n' || ch === '\r'){ if(ch === '\r' && text[i+1] === '\n') i++; row.push(f); rows.push(row); row = []; f = ''; }
+    else f += ch;
+  }
+  if(f !== '' || row.length){ row.push(f); rows.push(row); }
+  return rows.filter(r=>r.some(x=>String(x).trim()));
+}
+function downloadText(name, text, type){
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿'+text], { type: type || 'text/csv;charset=utf-8' })); a.download = name;
+  document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+function unitsRows(){
+  const rows = [], U = unitsDB();
+  for(const s of Object.keys(CURRICULUM)) for(const c of Object.keys(CURRICULUM[s])) for(const x of (CURRICULUM[s][c]||[])){
+    const n = U[ukey(s, c, x)] || {}, subs = Object.keys(n);
+    if(!subs.length){ rows.push([s, c, x, '', '', '']); continue; }
+    for(const sub of subs){ const ts = Object.keys(n[sub]||{}); if(!ts.length){ rows.push([s, c, x, sub, '', '']); continue; }
+      for(const t of ts){ const ds = n[sub][t]||[]; if(!ds.length) rows.push([s, c, x, sub, t, '']); else ds.forEach(d=>rows.push([s, c, x, sub, t, d])); } }
+  }
+  return rows;
+}
+function unitsCsvTemplate(){
+  downloadText('단원태그_양식.csv', [csvLine(['과목','대단원','중단원','소단원','유형','상세유형']),
+    csvLine(['수학Ⅰ','수열','등차수열','등차수열의 일반항','첫째항과 공차','공차 구하기']),
+    csvLine(['수학Ⅰ','수열','등차수열','등차수열의 일반항','첫째항과 공차','몇째 항인지 구하기']),
+    csvLine(['수학Ⅰ','수열','등차수열','등차수열의 합','합의 최대·최소',''])].join('\n'));
+  toast('⬇ CSV 양식을 받았습니다 — 엑셀·구글 시트에서 채운 뒤 [CSV 불러오기]');
+}
+function unitsCsvExport(){ downloadText('단원태그_전체.csv', [csvLine(['과목','대단원','중단원','소단원','유형','상세유형']), ...unitsRows().map(csvLine)].join('\n')); }
+function unitsMergeRows(rows){ // 없는 과목·대단원·중단원은 단원 체계에도 추가
+  const U = unitsDB(); let added = 0, cur = false;
+  for(const r of rows){
+    const [s, c, x, sub, t, d] = r.map(v=>String(v||'').trim());
+    if(!s || !c) continue;
+    if(!CURRICULUM[s]){ CURRICULUM[s] = {}; cur = true; }
+    if(!CURRICULUM[s][c]){ CURRICULUM[s][c] = []; cur = true; }
+    if(!x) continue;
+    if(!CURRICULUM[s][c].includes(x)){ CURRICULUM[s][c].push(x); cur = true; }
+    if(!sub) continue;
+    const n = U[ukey(s, c, x)] = U[ukey(s, c, x)] || {};
+    if(!n[sub]){ n[sub] = {}; added++; }
+    if(!t) continue;
+    if(!n[sub][t]){ n[sub][t] = []; added++; }
+    if(d && !n[sub][t].includes(d)){ n[sub][t].push(d); added++; }
+  }
+  if(cur) saveCurriculum();
+  saveUnits();
+  return added;
+}
+async function unitsCsvImport(file){
+  if(!file) return;
+  const rows = parseCsv(await file.text());
+  const body = rows.length && /과목/.test(rows[0][0]||'') ? rows.slice(1) : rows;
+  if(!body.length){ toast('CSV에서 읽은 줄이 없습니다.'); return; }
+  const n = unitsMergeRows(body);
+  renderTags(); refreshUnitSelects();
+  toast(`⬆ CSV ${body.length}줄을 합쳤습니다 — 새 항목 ${n}개 추가`);
+}
+function unitsLoadPreset(){
+  if(!confirm('스터디피크 기본 단원 DB(소단원·유형·상세유형)를 지금 단원 체계에 합칠까요?\n직접 추가·수정한 항목은 그대로 두고, 없는 항목만 더합니다.')) return;
+  const P = unitsPreset(), U = unitsDB(); let added = 0;
+  for(const [k, n] of Object.entries(P)){
+    const t = U[k] = U[k] || {};
+    for(const [sub, types] of Object.entries(n)){
+      if(!t[sub]){ t[sub] = {}; added++; }
+      for(const [ty, ds] of Object.entries(types)){ if(!t[sub][ty]){ t[sub][ty] = []; added++; } ds.forEach(d=>{ if(!t[sub][ty].includes(d)){ t[sub][ty].push(d); added++; } }); }
+    }
+  }
+  saveUnits(); renderTags(); toast(`기본 단원 DB를 합쳤습니다 — 새 항목 ${added}개`);
+}
+/* 문제 입력 화면: 중단원 다음에 소단원 → 유형 → 상세유형 고르기 */
+function linkDeepSelects(subjSel, chapSel, sectSel, subSel, typeSel, detSel){
+  const opt = (arr, cur)=>'<option value="">(선택 안 함)</option>'+arr.map(v=>`<option ${v===cur?'selected':''}>${esc(v)}</option>`).join('');
+  const fillSub = ()=>{ subSel.innerHTML = opt(unitSubs(subjSel.value, chapSel.value, sectSel.value)); fillType(); };
+  const fillType = ()=>{ typeSel.innerHTML = opt(unitTypes(subjSel.value, chapSel.value, sectSel.value, subSel.value)); fillDet(); };
+  const fillDet = ()=>{ detSel.innerHTML = opt(unitDetails(subjSel.value, chapSel.value, sectSel.value, subSel.value, typeSel.value)); };
+  [subjSel, chapSel, sectSel].forEach(el=>el.addEventListener('change', ()=>setTimeout(fillSub, 0)));
+  subSel.addEventListener('change', fillType); typeSel.addEventListener('change', fillDet);
+  fillSub();
+  return { set(sub, t, d){ fillSub(); if(sub){ if(![...subSel.options].some(o=>o.value===sub)) subSel.add(new Option(sub, sub)); subSel.value = sub; } fillType();
+    if(t){ if(![...typeSel.options].some(o=>o.value===t)) typeSel.add(new Option(t, t)); typeSel.value = t; } fillDet();
+    if(d){ if(![...detSel.options].some(o=>o.value===d)) detSel.add(new Option(d, d)); detSel.value = d; } } };
+}
+const unitPathOf = (p, sep)=>[p.subject, p.chapter, p.section, p.subsection, p.utype, p.udetail].filter(Boolean).join(sep || ' › ');
 /* ═══════════════ 단원 셀렉트 ═══════════════ */
 function fillSubjectSelect(sel, withEmpty){
   const cur = sel.value;
@@ -1744,7 +1993,8 @@ function renderTags(){
   $('#tg-subjects').textContent = subjects.length;
   let unitCount = 0;
   if(state.tagSubject){
-    for(const c of chapters) unitCount += 1 + (CURRICULUM[state.tagSubject][c]||[]).length;
+    for(const c of chapters){ unitCount += 1 + (CURRICULUM[state.tagSubject][c]||[]).length;
+      for(const x of (CURRICULUM[state.tagSubject][c]||[])){ const n = unitNode(state.tagSubject, c, x) || {}; for(const sub of Object.keys(n)){ unitCount++; for(const t of Object.keys(n[sub]||{})) unitCount += 1 + (n[sub][t]||[]).length; } } }
   }
   $('#tg-units').textContent = unitCount;
   $('#tg-used').textContent = state.problems.filter(p=>p.subject===state.tagSubject).length;
@@ -1798,9 +2048,11 @@ function renderTags(){
   $('#sect-cnt').textContent = sects.length+'개';
   if(!state.tagChapter) sectList.innerHTML = '<div class="colmuted">대단원을 먼저 선택해 주세요.</div>';
   else if(!sects.length) sectList.innerHTML = '<div class="colmuted">중단원을 추가해 주세요.</div>';
+  if(!state.tagSection || !sects.includes(state.tagSection)) state.tagSection = sects[0] || null;
   for(const sName of sects){
     const it = document.createElement('div');
-    it.className = 'col-item';
+    it.className = 'col-item'+(sName===state.tagSection?' sel':'');
+    it.addEventListener('click', e=>{ if(e.target.closest('.mini')) return; state.tagSection = sName; state.tagSub = null; state.tagType = null; renderTags(); });
     it.innerHTML = `<span class="nm"></span><span class="n">${sectCnt.get(sName)||0}</span>
       <button class="mini" title="이름 수정">✎</button><button class="mini" title="삭제">🗑</button>`;
     it.querySelector('.nm').textContent = sName;
@@ -1809,6 +2061,7 @@ function renderTags(){
     btnD.addEventListener('click', ()=>deleteSection(sName));
     sectList.appendChild(it);
   }
+  renderUnitDeepCols();
 
   // 출처태그 / 나만의태그 요약
   const srcCnt = countBy(p=>p.srcName);
@@ -1874,6 +2127,7 @@ async function renameChapter(old){
   const subj = CURRICULUM[state.tagSubject];
   if(subj[name]){ toast('이미 있는 대단원 이름입니다.'); return; }
   subj[name] = subj[old]; delete subj[old]; saveCurriculum();
+  unitsRenamePath(state.tagSubject+'|'+old, state.tagSubject+'|'+name);
   const n = await remapProblems(p=>p.subject===state.tagSubject&&p.chapter===old, {chapter:name});
   if(state.tagChapter===old) state.tagChapter = name;
   renderTags(); refreshUnitSelects();
@@ -1882,8 +2136,8 @@ async function renameChapter(old){
 async function deleteChapter(c){
   const used = state.problems.filter(p=>p.subject===state.tagSubject&&p.chapter===c).length;
   if(!confirm(`‘${c}’ 대단원을 삭제할까요?`+(used?`\n문제 ${used}개의 단원 태그가 비워집니다.`:''))) return;
-  delete CURRICULUM[state.tagSubject][c]; saveCurriculum();
-  await remapProblems(p=>p.subject===state.tagSubject&&p.chapter===c, {chapter:'', section:''});
+  delete CURRICULUM[state.tagSubject][c]; saveCurriculum(); unitsDropPath(state.tagSubject+'|'+c);
+  await remapProblems(p=>p.subject===state.tagSubject&&p.chapter===c, {chapter:'', section:'', subsection:'', utype:'', udetail:''});
   if(state.tagChapter===c) state.tagChapter=null;
   renderTags(); refreshUnitSelects();
 }
@@ -1902,6 +2156,8 @@ async function renameSection(old){
   const arr = CURRICULUM[state.tagSubject][state.tagChapter];
   if(arr.includes(name)){ toast('이미 있는 중단원 이름입니다.'); return; }
   arr[arr.indexOf(old)] = name; saveCurriculum();
+  unitsRenamePath(ukey(state.tagSubject, state.tagChapter, old), ukey(state.tagSubject, state.tagChapter, name));
+  if(state.tagSection === old) state.tagSection = name;
   const n = await remapProblems(p=>p.subject===state.tagSubject&&p.chapter===state.tagChapter&&p.section===old, {section:name});
   renderTags(); refreshUnitSelects();
   toast(`중단원 이름을 바꾸고 문제 ${n}개의 태그를 함께 옮겼습니다.`);
@@ -1910,8 +2166,8 @@ async function deleteSection(sName){
   const used = state.problems.filter(p=>p.subject===state.tagSubject&&p.chapter===state.tagChapter&&p.section===sName).length;
   if(!confirm(`‘${sName}’ 중단원을 삭제할까요?`+(used?`\n문제 ${used}개의 중단원 태그가 비워집니다.`:''))) return;
   const arr = CURRICULUM[state.tagSubject][state.tagChapter];
-  arr.splice(arr.indexOf(sName),1); saveCurriculum();
-  await remapProblems(p=>p.subject===state.tagSubject&&p.chapter===state.tagChapter&&p.section===sName, {section:''});
+  arr.splice(arr.indexOf(sName),1); saveCurriculum(); unitsDropPath(ukey(state.tagSubject, state.tagChapter, sName));
+  await remapProblems(p=>p.subject===state.tagSubject&&p.chapter===state.tagChapter&&p.section===sName, {section:'', subsection:'', utype:'', udetail:''});
   renderTags(); refreshUnitSelects();
 }
 function resetCurriculum(){
@@ -1957,7 +2213,7 @@ $('#f-question').addEventListener('input', ()=>{
       saveCurriculum(); refreshUnitSelects();
       $('#f-subject').value=u[0]; $('#f-subject').dispatchEvent(new Event('change'));
       $('#f-chapter').value=u[1]; $('#f-chapter').dispatchEvent(new Event('change'));
-      $('#f-section').value=u[2];
+      $('#f-section').value=u[2]; $('#f-section').dispatchEvent(new Event('change'));
       toast('단원 태그를 적용했습니다: '+u.join(' › '));
     }));
   }, 350);
@@ -2010,6 +2266,7 @@ function collectSingle(){
     solution: $('#f-solution').value.trim(),
     images: state.pendingImages.slice(),
     subject: $('#f-subject').value, chapter: $('#f-chapter').value, section: $('#f-section').value,
+    subsection: ($('#f-sub')||{}).value||'', utype: ($('#f-utype')||{}).value||'', udetail: ($('#f-udetail')||{}).value||'',
     grade: $('#f-grade').value==='미지정' ? '' : $('#f-grade').value,
     srcType: $('#f-srctype').value, srcName: $('#f-srcname').value.trim(), srcYear: $('#f-srcyear').value.trim(),
     difficulty: +$('#f-diff').value,
@@ -3835,6 +4092,9 @@ function problemsFiltered(){
     if(fd && String(p.difficulty)!==fd) return false;
     if(fsrc && p.srcName!==fsrc) return false;
     if(fbatch && batchKeyOf(p)!==fbatch) return false;
+    if(state.fSect && p.section!==state.fSect) return false;
+    if(state.fSub && p.subsection!==state.fSub) return false;
+    if(state.fType && p.utype!==state.fType) return false;
     if(dateR && !((p.createdAt||0) >= dateR[0] && (p.createdAt||0) < dateR[1])) return false;
     if(state.filterTag && !(p.tags||[]).includes(state.filterTag)) return false;
     if(state.dashFilter === 'noSol' && (p.solution || p.answer)) return false;
@@ -3843,7 +4103,7 @@ function problemsFiltered(){
       const noM = q.match(/^#\s*(\d+)$/);                     // "#12" → 문제 번호로 검색
       if(noM){ if(!state.numOf || state.numOf.get(p.id)!==+noM[1]) return false; }
       else {
-        const hay = [p.question,p.answer,p.solution,p.srcName,p.subject,p.chapter,p.section,(p.tags||[]).join(' ')].join(' ').toLowerCase();
+        const hay = [p.question,p.answer,p.solution,p.srcName,p.subject,p.chapter,p.section,p.subsection,p.utype,p.udetail,(p.tags||[]).join(' ')].join(' ').toLowerCase();
         if(!hay.includes(q)) return false;
       }
     }
@@ -3869,7 +4129,7 @@ function problemCardHTML(p, idx){
   const inCart = state.cart.includes(p.id);
   const sim = state.lastResults && state.lastResults.has(p.id)
     ? `<span class="simscore">${(state.lastResults.get(p.id)*100).toFixed(0)}%</span>` : '';
-  const unit = [p.subject,p.chapter,p.section].filter(Boolean).join(' › ');
+  const unit = [p.subject,p.chapter,p.section,p.subsection,p.utype].filter(Boolean).join(' › ');
   const no = state.numOf ? state.numOf.get(p.id) : null;
   return `<div class="pcard ${inCart?'selected':''}" data-id="${p.id}">
     <div class="pc-top">
@@ -4075,8 +4335,26 @@ function renderTree(){
       h += `<div class="titem ${sel?'sel':''}" data-t="subject" data-v="${esc(s)}"><span>${sel?'▾':'▸'} ${esc(s)}</span><span class="n">${bySub.get(s)||0}</span></div>`;
       if(sel){
         const byChap = countBy(p=>p.subject===s?p.chapter:null);
-        for(const c of Object.keys(CURRICULUM[s]))
+        for(const c of Object.keys(CURRICULUM[s])){
           h += `<div class="titem sub ${fc===c?'sel':''}" data-t="chapter" data-v="${esc(c)}"><span>${esc(c)}</span><span class="n">${byChap.get(c)||0}</span></div>`;
+          if(fc !== c) continue;
+          // 대단원 아래로: 중단원 → 소단원 → 유형 (누를 때마다 한 단계씩 좁힘)
+          const P = state.problems.filter(p=>p.subject===s && p.chapter===c);
+          const cnt = f=>{ const m = new Map(); P.forEach(p=>{ const v = f(p); if(v) m.set(v, (m.get(v)||0)+1); }); return m; };
+          const cX = cnt(p=>p.section);
+          for(const x of (CURRICULUM[s][c]||[])){
+            h += `<div class="titem sub" style="margin-left:1.6rem" data-t="usect" data-v="${esc(x)}"><span class="${state.fSect===x?'':''}" style="${state.fSect===x?'font-weight:800;color:var(--green-2)':''}">${esc(x)}</span><span class="n">${cX.get(x)||0}</span></div>`;
+            if(state.fSect !== x) continue;
+            const cS = cnt(p=>p.section===x ? p.subsection : null);
+            for(const sub of unitSubs(s, c, x)){
+              h += `<div class="titem sub" style="margin-left:2.3rem;font-size:.78rem${state.fSub===sub?';font-weight:800;color:var(--green-2)':''}" data-t="usub" data-v="${esc(sub)}"><span>${esc(sub)}</span><span class="n">${cS.get(sub)||0}</span></div>`;
+              if(state.fSub !== sub) continue;
+              const cT = cnt(p=>p.section===x && p.subsection===sub ? p.utype : null);
+              for(const t of unitTypes(s, c, x, sub))
+                h += `<div class="titem sub" style="margin-left:3rem;font-size:.76rem${state.fType===t?';font-weight:800;color:var(--green-2)':''}" data-t="utype" data-v="${esc(t)}"><span>${esc(t)}</span><span class="n">${cT.get(t)||0}</span></div>`;
+            }
+          }
+        }
       }
     }
   } else if(state.treeTab==='src'){
@@ -4114,6 +4392,10 @@ $('#tree-body').addEventListener('click', e=>{
     $('#filter-subject').value = cur===v ? '' : v;
     $('#filter-chapter').value = '';
   }
+  if(t==='usect'){ state.fSect = state.fSect===v ? null : v; state.fSub = null; state.fType = null; }
+  if(t==='usub'){ state.fSub = state.fSub===v ? null : v; state.fType = null; }
+  if(t==='utype'){ state.fType = state.fType===v ? null : v; }
+  if(t==='subject' || t==='chapter'){ state.fSect = null; state.fSub = null; state.fType = null; }
   if(t==='chapter'){
     // 옵션이 아직 없으면 추가 후 선택
     const sel = $('#filter-chapter');
@@ -4224,10 +4506,11 @@ function resetFilters(){
   $('#filter-diff').value=''; $('#filter-src').value=''; $('#filter-grade').value=''; $('#filter-reviewed').value=''; $('#filter-batch').value=''; $('#db-twinview').checked = false;
   $('#filter-date').value=''; $('#filter-from').value=''; $('#filter-to').value='';
   state.lastResults = null; state.filterTag = null; state.dashFilter = null; state.page = 1;
+  state.fSect = state.fSub = state.fType = null;
   renderDB();
 }
 ['filter-subject','filter-chapter','filter-grade','filter-reviewed','filter-diff','filter-src','filter-batch','filter-date','filter-from','filter-to','sort','db-twinview'].forEach(id=>
-  $('#'+id).addEventListener('change', ()=>{ state.page=1; renderDB(); }));
+  $('#'+id).addEventListener('change', ()=>{ if(id==='filter-subject'||id==='filter-chapter') state.fSect = state.fSub = state.fType = null; state.page=1; renderDB(); }));
 async function toggleReviewed(id){
   const p = state.problems.find(x=>x.id===id); if(!p) return;
   p.reviewed = !p.reviewed; p.updatedAt = Date.now();
@@ -4387,6 +4670,11 @@ function openDetail(id){
       <div class="field"><label>대단원</label><select id="e-chapter"></select></div>
       <div class="field"><label>중단원</label><select id="e-section"></select></div>
     </div>
+    <div class="grid3">
+      <div class="field"><label>소단원</label><select id="e-sub"></select></div>
+      <div class="field"><label>유형</label><select id="e-utype"></select></div>
+      <div class="field"><label>상세유형</label><select id="e-udetail"></select></div>
+    </div>
     <div class="grid4">
       <div class="field"><label>출처 유형</label><select id="e-srctype">${[...new Set([...srcTypeList(), ...(p.srcType ? [p.srcType] : [])])].map(s=>`<option ${p.srcType===s?'selected':''}>${s}</option>`).join('')}</select></div>
       <div class="field"><label>출처 이름</label><input id="e-srcname" value="${esc(p.srcName)}"></div>
@@ -4413,6 +4701,7 @@ function openDetail(id){
   if((CURRICULUM[p.subject]||{})[p.chapter]){ $('#e-chapter').value=p.chapter; $('#e-chapter').dispatchEvent(new Event('change')); }
   const sects = (CURRICULUM[$('#e-subject').value]||{})[$('#e-chapter').value]||[];
   if(sects.includes(p.section)) $('#e-section').value = p.section;
+  linkDeepSelects($('#e-subject'), $('#e-chapter'), $('#e-section'), $('#e-sub'), $('#e-utype'), $('#e-udetail')).set(p.subsection||'', p.utype||'', p.udetail||'');
   $('#modal-bg').classList.add('show');
   detailPreview(); ['e-question','e-choices','e-answer'].forEach(k=>$('#'+k).addEventListener('input', ()=>{ clearTimeout(state._prevT); state._prevT = setTimeout(detailPreview, 250); }));
   if(hasImg(p)) imagesOf(p).then(imgs=>{
@@ -4460,6 +4749,7 @@ async function saveDetail(id){
   p.solution = $('#e-solution').value.trim();
   p.difficulty = +$('#e-diff').value;
   p.subject = $('#e-subject').value; p.chapter = $('#e-chapter').value; p.section = $('#e-section').value;
+  p.subsection = $('#e-sub') ? $('#e-sub').value : (p.subsection||''); p.utype = $('#e-utype') ? $('#e-utype').value : (p.utype||''); p.udetail = $('#e-udetail') ? $('#e-udetail').value : (p.udetail||'');
   p.srcType = $('#e-srctype').value; p.srcName = $('#e-srcname').value.trim(); p.srcYear = $('#e-srcyear').value.trim();
   p.grade = $('#e-grade').value==='미지정' ? '' : $('#e-grade').value;
   p.reviewed = $('#e-reviewed').checked;
@@ -9315,7 +9605,7 @@ async function sbLogout(){
 /* ═══ ☁️ 설정도 계정에: 로그인하면 AI 키·모델·워크스페이스·구글 클라이언트 ID·태그 그룹·단원 구성 등이 따라온다 ═══
    worksheets 표의 '__settings' 행(내 계정만 읽고 쓰기 — RLS)에 {at, kv} 로 보관. 더 최근 쪽이 이김. */
 const SETTINGS_KEYS = ['sp-lab-apikey','sp-lab-aimodel','sp-lab-figmodel','sp-lab-wsid','sp-lab-gcid','sp-lab-geninst','sp-lab-presets',
-  'sp-lab-curriculum','sp-lab-srctypes','sp-lab-taggroups','sp-lab-twinruns','sp-lab-style-twin','sp-lab-style-fig','sp-lab-stylepresets-twin','sp-lab-stylepresets-fig'];
+  'sp-lab-curriculum','sp-lab-units','sp-lab-srctypes','sp-lab-taggroups','sp-lab-twinruns','sp-lab-style-twin','sp-lab-style-fig','sp-lab-stylepresets-twin','sp-lab-stylepresets-fig'];
 const SETTINGS_ROW = '__settings';
 let SETTINGS_APPLYING = false;
 function settingsSyncOn(){ return localStorage.getItem('sp-lab-syncsettings') !== '0'; }
@@ -9350,7 +9640,7 @@ function applyCloudSettings(data){ // 클라우드 쪽이 더 최근이면 이 �
     SETTINGS_KEYS.forEach(k=>{ if(k in data.kv) localStorage.setItem(k, data.kv[k]); });   // 계정에 없는 값은 이 기기 것을 그대로 둠
     localStorage.setItem('sp-lab-settings-at', String(data.at));
   } finally { SETTINGS_APPLYING = false; }
-  try{ CURRICULUM = loadCurriculum(); }catch(e){}
+  try{ CURRICULUM = loadCurriculum(); UNITS_CACHE = null; }catch(e){}
   fillSettingsUI();
   const v = (document.querySelector('.view.active')||{}).id || '';
   if(v === 'view-mytags') renderMyTags(); if(v === 'view-srctags') renderSrcTags(); if(v === 'view-tags') renderTags();
@@ -9772,6 +10062,7 @@ function dashGo(f){
   })();
   fillSubjectSelect($('#f-subject'));
   linkUnitSelects($('#f-subject'), $('#f-chapter'), $('#f-section'));
+  linkDeepSelects($('#f-subject'), $('#f-chapter'), $('#f-section'), $('#f-sub'), $('#f-utype'), $('#f-udetail'));
   fillSubjectSelect($('#g-subject'));
   linkUnitSelects($('#g-subject'), $('#g-chapter'), $('#g-section'));
   $('#g-grade').innerHTML = GRADES.map(g=>`<option ${g==='고2'?'selected':''}>${g}</option>`).join('');
