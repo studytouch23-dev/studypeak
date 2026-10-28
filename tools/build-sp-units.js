@@ -350,6 +350,17 @@ function build(rows){
   return { UNITS, CURR, miss, unused:[...unused] };
 }
 
+function lookup(rows){                     // (학교급, 소분류, 유형) → [대분류, 태그들]
+  const L = {};
+  for(const r of rows){
+    const k = r.lv+'|'+r.sub+'|'+r.type;
+    if(!L[k]) L[k] = [r.cat, r.tag];
+    else if(L[k][0] !== r.cat) throw new Error('대분류가 둘인 유형: '+k);
+    else if(!L[k][1].split('/').includes(r.tag)) L[k][1] += '/'+r.tag;
+  }
+  return L;
+}
+
 if(require.main === module){
   const rows = parseMaster(fs.readFileSync(SRC, 'utf8'));
   const { UNITS, CURR, miss, unused } = build(rows);
@@ -363,12 +374,14 @@ if(require.main === module){
   const out = `/* 자동 생성 파일 — 고치지 말 것. 원본: tools/data/studypeak-master.md, 생성: node tools/build-sp-units.js
  * 스터디피크 수학 마스터 유형표(초 ${cnt.초등} · 중 ${cnt.중등} · 고 ${cnt.고등} 유형)를 랩 단원 체계에 맞춰 나눈 것.
  * SP_MASTER_UNITS: '과목|대단원|중단원' → { 소단원(=스터디피크 소분류, 초등은 학년): { 유형: [] } } — lab/units-db.js 보다 우선.
- * SP_MASTER_CURR : 교육과정에 새로 더할 과목·대단원·중단원 (초등 수학 등). */
+ * SP_MASTER_CURR : 교육과정에 새로 더할 과목·대단원·중단원 (초등 수학 등).
+ * SP_MASTER_LOOKUP: '학교급|소분류|유형' → [대분류(Category), 과목/학년 태그('/'로 여럿)] — LMS 엑셀의 대분류·지문 태그용. */
 window.SP_MASTER_COUNTS = ${JSON.stringify(cnt)};
 window.SP_MASTER_CURR = ${JSON.stringify(CURR)};
 window.SP_MASTER_UNITS = ${JSON.stringify(UNITS, null, 0).replace(/\},"/g, '},\n"')};
+window.SP_MASTER_LOOKUP = ${JSON.stringify(lookup(rows)).replace(/\],"/g, '],\n"')};
 `;
   fs.writeFileSync(OUT, out);
   console.log(`lab/units-sp.js — 중단원 ${Object.keys(UNITS).length}개, 유형 행 ${rows.length}개 (초 ${cnt.초등} · 중 ${cnt.중등} · 고 ${cnt.고등})`);
 }
-module.exports = { parseMaster, build, ROUTES };
+module.exports = { parseMaster, build, lookup, ROUTES };
