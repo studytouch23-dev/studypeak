@@ -25,6 +25,9 @@ fs.writeFileSync(fake, '#!/usr/bin/env node\n'
   + '} else if(p.includes("정답은 일부러 알려주지 않습니다")){\n'
   + '  fs.appendFileSync(' + JSON.stringify(log) + ', "verify\\n");\n'
   + '  out = { answer: p.includes("변형") ? "4" : "3", wellPosed:true, figureOk:true };\n'
+  + '} else if(p.includes("해설(풀이)")){\n'
+  + '  fs.appendFileSync(' + JSON.stringify(log) + ', "fill\\n");\n'
+  + '  out = { complete:true, answer:"1", solution:"원본 풀이 by Max" };\n'
   + '} else out = {};\n'
   + 'console.log(JSON.stringify({ result: JSON.stringify(out) }));\n');
 fs.chmodSync(fake, 0o755);
@@ -55,6 +58,7 @@ check('정상 종료', r.code === 0, r.code);
 check('출처·번호로 원본 2개(1·2번)만, 다른 출처 제외', /원본 2문항/.test(r.out) && calls.filter(c => c.startsWith('gen')).map(c => c.split(' ')[1]).join(',') === 'KW1,KW2', calls.join(' | '));
 check('그림 있는 원본은 이미지 파일로 넘김 (Claude Code가 Read)', calls.includes('gen KW2 img') && calls.includes('gen KW1 -'), calls.join(' | '));
 check('독립 검산: 새 문제 4개 각 1번', calls.filter(c => c === 'verify').length === 4);
+check('원본에 해설이 없으면 먼저 채움 (정답 1은 있어 검산 없이 풀이만)', calls.filter(c => c === 'fill').length === 2 && /원본 정답·해설 채움 2개/.test(r.out) && /📝 원본 채움 · 정답 1/.test(r.out), (r.out.match(/📝[^\n]*/g)||[]).join(' / '));
 check('검산 통과 4문항 저장·동기화 (버린 것 없음)', /✅ 검산 통과 4문항 저장·동기화/.test(r.out) && !/버리고/.test(r.out), (r.out.match(/✅[^\n]*/)||[])[0]);
 const up = JSON.parse((r.out.match(/\[stub\] 업로드: (.+)/)||[,'[]'])[1]);
 check('클라우드: 쌍둥이·변형, 원래 번호, 그림 원본엔 새 그림 설계도', up.length === 4 && up.filter(x => x[1] === '2' && x[3] === 1).length === 2 && up.filter(x => x[0] === '변형').length === 2, JSON.stringify(up));

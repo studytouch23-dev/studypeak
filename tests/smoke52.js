@@ -96,13 +96,14 @@ const L = 40, R = 320;
     // 원기둥: 옆선이 밑면 타원 끝에 정확히 닿음 (축 z 가 화면 위쪽)
     const cy = figSpecToSvg({ kind:'space', proj:{ x:[-0.45,-0.35], y:[1,0], z:[0,1] }, points:{ O:[0,0,0], Z:[0,0,2] }, solids:[{ type:'cylinder', c:[0,0,0], r:1, h:2 }] });
     const [O, Z] = dotsOf(cy.svg), sc = (O[1]-Z[1])/2, d2 = await px(cy.svg);
-    const cyl = d2(O[0] - sc, O[1] - sc) && d2(O[0] + sc, O[1] - sc) && !d2(O[0] + 1.6*sc, O[1] - sc) && /stroke-dasharray/.test(cy.svg);
+    const w = Math.hypot(0.45, 1)*sc;                       // 원을 proj 로 정확히 투영한 타원의 가로 끝 (x 축 -0.45, y 축 1)
+    const cyl = d2(O[0] - w, O[1] - sc) && d2(O[0] + w, O[1] - sc) && !d2(O[0] + 1.6*sc, O[1] - sc) && /stroke-dasharray/.test(cy.svg);
     const other = ['cone','sphere','revolution'].map(t => { try{ const o = figSpecToSvg({ kind:'space', solids:[{ type:t, c:[0,0,0], r:1, h:2, f:'sqrt(x)+0.3', from:0.5, to:3 }] }); return /stroke-dasharray/.test(o.svg); }catch(e){ return e.message; } });
     const iss = figSpecIssues({ kind:'space', solids:[{ type:'pyramid' }, { type:'crossSection', f:'q(x)' }] });
     return { csOk, cyl, other, iss };
   });
   check('단면 입체: 반원 단면이 계산한 자리에, 가운데 단면 진하게, 밑변 숨은선', mac.csOk.semi && mac.csOk.dark && mac.csOk.dash, JSON.stringify(mac.csOk));
-  check('원기둥: 옆선이 밑면 타원 끝에 정확히, 밑면 뒤쪽은 점선', mac.cyl);
+  check('원기둥: 옆선이 밑면 타원(정확한 투영) 끝에 정확히, 밑면 뒤쪽은 점선', mac.cyl);
   check('원뿔·구·회전체도 그려지고 뒤쪽은 점선', mac.other.every(x => x === true), JSON.stringify(mac.other));
   check('입체 점검: 모르는 type·틀린 식 안내', mac.iss.some(x => x.includes('type')) && mac.iss.some(x => x.includes('q(x)')), JSON.stringify(mac.iss));
 

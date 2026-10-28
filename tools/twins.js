@@ -9,7 +9,7 @@
  *   node twins.js --src "10월 모의고사"                 # 출처에 이 글자가 든 문항 전부, 원본당 쌍둥이 1·변형 1
  *   node twins.js --src "10월" --nos 1-10,15 --twin 2 --variant 1 --diff harder
  *   node twins.js --ids id1,id2                         # 문항 ID 로 (웹 문제 상세의 ID)
- * 옵션: --twin N(기본 1, 최대 10) · --variant N(기본 1, 최대 10) · --diff same|easier|harder · --no-verify · --timeout 분(기본 10)
+ * 옵션: --twin N(기본 1, 최대 10) · --variant N(기본 1, 최대 10) · --diff same|easier|harder · --no-verify · --no-fill(원본 정답·해설 채우지 않기) · --timeout 분(기본 10)
  *       --parallel N(동시에 처리할 원본 수, 기본 2, 최대 4 — 빨라지지만 Max 사용량이 빨리 참)
  * 환경변수: SP_EMAIL, SP_PASSWORD(랩의 자동화용 비밀번호), CLAUDE_BIN(기본 'claude')
  * 다 만든 뒤 웹: 문제 검색 → [등록 묶음]에서 "… 쌍둥이·변형" → [📚 원본 + 쌍둥이·변형으로 교재 만들기]
@@ -28,6 +28,7 @@ const NOS = opt('nos', '');
 const TWIN = Math.max(0, Math.min(10, +opt('twin', 1) || 0)), VARIANT = Math.max(0, Math.min(10, +opt('variant', 1) || 0));   // 원본당 최대 10개씩
 const DIFF = ['same','easier','harder'].includes(opt('diff')) ? opt('diff') : 'same';
 const VERIFY = !argv.includes('--no-verify');
+const FILL = !argv.includes('--no-fill');                         // 원본에 정답·해설이 없으면 먼저 채움
 const TIMEOUT_MIN = +opt('timeout', 10) || 10;
 const PARALLEL = Math.max(1, Math.min(4, +opt('parallel', 2) || 2));
 const EMAIL = process.env.SP_EMAIL, PASSWORD = process.env.SP_PASSWORD;
@@ -85,17 +86,20 @@ if(!TWIN && !VARIANT){ console.error('--twin 또는 --variant 를 1 이상으로
       e => { // 실황: 원본 시작·후보 생성·검산 결과를 한 줄씩
         const s = srcs[e.i] || {}, no = `${s.origNo||e.i+1}번`;
         if(e.type === 'src') console.log(`TWIN-PROGRESS ▶ 원본 ${no} 시작 (${e.i+1}/${srcs.length})`);
+        else if(e.type === 'fill' && e.state === 'run') console.log(`TWIN-PROGRESS   ${no} 📝 원본 ${e.needAns?'정답·해설':'해설'} 채우는 중`);
+        else if(e.type === 'fill') console.log(`TWIN-PROGRESS   ${no} 📝 ${{ done:'원본 채움'+(e.answer?' · 정답 '+e.answer:''), check:'원본 채움 · ⚠ 정답 확인 필요(#검산불일치)', incomplete:'원본 본문이 잘림 · 확인 필요(#본문확인)', fail:'원본 채우기 실패 '+(e.why||'') }[e.state]}`);
         else if(e.type === 'gen') console.log(`TWIN-PROGRESS   ${no} 후보 만드는 중 (${e.done}/${e.total} 완료)`);
         else if(e.type === 'item' && e.state === 'saved') console.log(`TWIN-PROGRESS   ${no} ✅ ${e.kind} 저장${e.repaired?' (바로잡음)':''}`);
         else if(e.type === 'item' && e.state === 'rejected') console.log(`TWIN-PROGRESS   ${no} ✖ ${e.kind} 버림 — ${e.why||''}`);
         else if(e.type === 'srcDone') console.log(`TWIN-PROGRESS ■ 원본 ${no} 끝${e.short?` (못 만든 것 ${e.short}개)`:''}${e.error?' — 오류: '+e.error:''}`);
       });
     return { ...r, saved: r.saved.length };
-  }, { ids: sources, opts: { twin: TWIN, variant: VARIANT, diff: DIFF, verify: VERIFY, concurrency: PARALLEL } });
+  }, { ids: sources, opts: { twin: TWIN, variant: VARIANT, diff: DIFF, verify: VERIFY, concurrency: PARALLEL, fillSrc: FILL } });
   await waitSynced(page);
   const why = Object.entries(res.reasons || {}).map(([k, v]) => `${k} ${v}`).join(', ');
   console.log(`\n✅ 검산 통과 ${res.saved}문항 저장·동기화 — 묶음 "${res.batchName}"`
     + (res.repaired ? ` · 바로잡아 통과 ${res.repaired}개` : '') + (res.rejected ? ` · 버리고 다시 만든 것 ${res.rejected}개(${why})` : '')
+    + (res.filled ? ` · 📝 원본 정답·해설 채움 ${res.filled}개${res.fillCheck ? `(정답 확인 필요 ${res.fillCheck})` : ''}` : '') + (res.incomplete ? ` · ⚠ 본문이 잘린 원본 ${res.incomplete}개(#본문확인)` : '')
     + (res.short ? ` · ⚠ 끝내 못 만든 것 ${res.short}개` : '') + (res.warn ? ` · 수식 확인 ${res.warn}개(#검수주의)` : '')
     + (res.fail ? ` · 실패 ${res.fail}개 (${res.lastErr})` : ''));
   console.log('   웹: 문제 검색 → [등록 묶음] → [📚 원본 + 쌍둥이·변형으로 교재 만들기]');
