@@ -1002,10 +1002,20 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
       다른 선생님도 이 사이트에서 각자 로그인하면 <b>각자 자기만의 DB</b>를 쓰게 됩니다.</p>
     <div id="cloud-login">
       <div class="row">
-        <input id="sb-email" type="email" placeholder="이메일 주소" style="max-width:260px">
-        <button class="btn gold" onclick="sbSendLink()">로그인 메일 받기</button>
+        <input id="sb-email" type="email" placeholder="이메일 주소" style="max-width:260px" autocomplete="username">
+        <input id="sb-pw-login" type="password" placeholder="비밀번호" style="max-width:200px" autocomplete="current-password" onkeydown="if(event.key==='Enter')sbPwLogin()">
+        <button class="btn" onclick="sbPwLogin()">🔑 비밀번호로 로그인</button>
       </div>
-      <p class="hint" id="sb-status" style="margin-top:.4rem">메일 속 로그인 링크를 누르면 이 사이트가 열리면서 로그인됩니다. (로그인하려는 기기에서 메일을 열어주세요)</p>
+      <div class="row" style="margin-top:.55rem;gap:.4rem">
+        <span class="hint">비밀번호를 아직 안 만들었거나 잊었다면</span>
+        <button class="btn ghost sm" onclick="sbSendLink()">📧 로그인 메일 받기</button>
+      </div>
+      <div class="row" id="sb-code-row" style="display:none;margin-top:.5rem;gap:.4rem">
+        <input id="sb-code" inputmode="numeric" maxlength="8" placeholder="메일 속 6자리 숫자 (있을 때만)" style="max-width:240px" onkeydown="if(event.key==='Enter')sbVerifyCode()">
+        <button class="btn ghost sm" onclick="sbVerifyCode()">숫자 코드로 로그인</button>
+      </div>
+      <p class="hint" id="sb-status" style="margin-top:.5rem">📌 메일 속 로그인 링크는 <b>그 링크를 누른 기기(브라우저)만</b> 로그인시킵니다. 휴대폰에서 눌렀으면 휴대폰만 로그인돼요.
+        한 번 로그인한 기기에서 아래 <b>[🔑 비밀번호 설정]</b>을 해 두면, 그다음부터는 PC·태블릿 어디서나 <b>이메일 + 비밀번호</b>로 바로 로그인됩니다.</p>
     </div>
     <div id="cloud-on" style="display:none">
       <p class="hint" id="sb-user"></p>
@@ -1015,8 +1025,8 @@ p.vd{color:var(--muted);font-size:.95rem;margin-bottom:1.5rem}
         <button class="btn ghost" onclick="sbLogout()">로그아웃</button>
       </div>
       <p class="hint" id="sb-sync-status" style="margin-top:.4rem"></p>
-      <details style="margin-top:.6rem"><summary style="cursor:pointer;font-size:.85rem">🔑 자동화(컴퓨터 에이전트)용 비밀번호 설정</summary>
-        <p class="hint" style="margin:.4rem 0">내 컴퓨터에서 PDF 자동 등록 스크립트를 돌릴 때 쓰는 로그인 비밀번호입니다 (8자 이상). 평소 웹 로그인은 지금처럼 이메일 링크로 하면 됩니다.</p>
+      <details style="margin-top:.6rem" open><summary style="cursor:pointer;font-size:.88rem;font-weight:700">🔑 비밀번호 설정 — 다른 기기에서 메일 없이 로그인</summary>
+        <p class="hint" style="margin:.4rem 0">여기서 비밀번호(8자 이상)를 정해 두면 PC·태블릿·휴대폰 어디서나 <b>이메일 + 비밀번호</b>로 바로 로그인됩니다(로그인 메일 필요 없음). 맥의 자동 등록 스크립트도 이 비밀번호를 씁니다. 바꿀 때도 여기서 다시 설정하세요.</p>
         <div class="row">
           <input id="sb-pw" type="password" placeholder="새 비밀번호 (8자 이상)" style="max-width:220px">
           <button class="btn sm" onclick="sbSetPassword()">비밀번호 설정</button>
@@ -9202,15 +9212,55 @@ async function sbInit(){ // 시작 시: 전에 로그인한 적 있으면 조용
   if(localStorage.getItem('sp-lab-cloud') !== '1') return;
   try{
     const c = await sbLoad();
-    c.auth.onAuthStateChange((ev, session)=>{
+    if(!SB.listening) c.auth.onAuthStateChange((ev, session)=>{
       SB.user = session ? session.user : null;
       if(SB.user) localStorage.setItem('sp-lab-cloud','1');
       sbUI();
       if(SB.user && ev === 'SIGNED_IN') sbPull(true).catch(()=>{});      // 새 기기·새 로그인은 처음부터 전부
     });
+    SB.listening = true;
     const { data } = await c.auth.getSession();
     if(data && data.session){ SB.user = data.session.user; sbUI(); sbPull().catch(()=>{}); }
   }catch(e){ /* 오프라인 등 — 로컬만으로 계속 동작 */ }
+}
+/* Supabase 영어 오류 → 쉬운 우리말 */
+function sbErrKo(e){
+  const m = String(e && e.message || e || '');
+  if(/rate limit|too many|over_email_send_rate_limit|security purposes/i.test(m)) return '로그인 메일을 짧은 시간에 여러 번 요청해서 잠시 막혔습니다(무료 메일 서버는 1시간에 몇 통만 보낼 수 있어요). 약 1시간 뒤 다시 시도하거나, 비밀번호를 만들어 두었다면 [🔑 비밀번호로 로그인]을 쓰세요.';
+  if(/invalid login credentials/i.test(m)) return '이메일 또는 비밀번호가 맞지 않습니다. 아직 비밀번호를 만들지 않았다면: 이미 로그인된 기기(예: 휴대폰)에서 [백업·데이터 → 🔑 비밀번호 설정]을 먼저 해 주세요.';
+  if(/email not confirmed/i.test(m)) return '이메일 확인이 아직 안 됐습니다. 받은 메일의 링크를 한 번 눌러 주세요.';
+  if(/token.*(expired|invalid)|otp.*(expired|invalid)/i.test(m)) return '숫자 코드가 맞지 않거나 시간이 지났습니다. 메일을 다시 받아 주세요.';
+  if(/password should be|at least/i.test(m)) return '비밀번호는 8자 이상으로 정해 주세요.';
+  if(/network|fetch/i.test(m)) return '인터넷 연결을 확인해 주세요.';
+  return m;
+}
+async function sbPwLogin(){
+  const email = ($('#sb-email').value||'').trim(), password = $('#sb-pw-login').value;
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ toast('이메일 주소를 입력하세요.'); return; }
+  if(!password){ toast('비밀번호를 입력하세요.'); return; }
+  try{
+    const c = await sbLoad();
+    $('#sb-status').textContent = '⏳ 로그인 중…';
+    const { error } = await c.auth.signInWithPassword({ email, password });
+    if(error) throw error;
+    $('#sb-pw-login').value = '';
+    localStorage.setItem('sp-lab-cloud','1');
+    await sbInit();                                               // 세션 반영·자동 동기화 시작 (새로고침 없이)
+    $('#sb-status').textContent = '✅ 로그인했습니다.';
+    toast('✅ 로그인했습니다 — 클라우드의 문제를 내려받는 중');
+  }catch(e){ $('#sb-status').textContent = '⚠ '+sbErrKo(e); }
+}
+async function sbVerifyCode(){
+  const email = ($('#sb-email').value||'').trim(), token = ($('#sb-code').value||'').replace(/\s/g,'');
+  if(!email || !/^\d{6,8}$/.test(token)){ toast('이메일과 메일 속 숫자 코드를 입력하세요.'); return; }
+  try{
+    const c = await sbLoad();
+    const { error } = await c.auth.verifyOtp({ email, token, type:'email' });
+    if(error) throw error;
+    localStorage.setItem('sp-lab-cloud','1');
+    await sbInit();
+    $('#sb-status').textContent = '✅ 로그인했습니다.';
+  }catch(e){ $('#sb-status').textContent = '⚠ '+sbErrKo(e); }
 }
 async function sbSendLink(){
   const email = ($('#sb-email').value||'').trim();
@@ -9221,8 +9271,9 @@ async function sbSendLink(){
     const { error } = await c.auth.signInWithOtp({ email, options:{ emailRedirectTo: location.origin + location.pathname } });
     if(error) throw error;
     localStorage.setItem('sp-lab-cloud','1');
-    $('#sb-status').textContent = '📧 메일을 보냈습니다! 이 기기에서 메일함을 열고, 메일 속 로그인 버튼(링크)을 누르면 이 사이트가 다시 열리면서 로그인됩니다. 안 보이면 스팸함도 확인하세요.';
-  }catch(e){ $('#sb-status').textContent = '⚠ '+(e.message||e); }
+    $('#sb-status').innerHTML = '📧 메일을 보냈습니다! <b>지금 로그인하려는 이 기기에서</b> 메일함을 열고 메일 속 링크를 누르세요(다른 기기에서 누르면 그 기기만 로그인됩니다). 메일에 6자리 숫자가 있으면 아래 칸에 넣어도 됩니다. 안 보이면 스팸함도 확인하세요.<br>로그인한 뒤에는 [🔑 비밀번호 설정]을 해 두면 다음부터 메일 없이 로그인됩니다.';
+    $('#sb-code-row').style.display = 'flex';
+  }catch(e){ $('#sb-status').textContent = '⚠ '+sbErrKo(e); }
 }
 async function sbLogout(){
   try{ const c = await sbLoad(); await c.auth.signOut(); }catch(e){}
@@ -9369,8 +9420,8 @@ async function sbSetPassword(){ // 자동화 스크립트(signInWithPassword)용
     const { error } = await c.auth.updateUser({ password: pw });
     if(error) throw error;
     $('#sb-pw').value = '';
-    toast('🔑 비밀번호 설정 완료 — 자동 등록 스크립트에서 이메일 + 이 비밀번호로 로그인합니다.');
-  }catch(e){ toast('⚠ 설정 실패: '+(e.message||e)); }
+    toast('🔑 비밀번호 설정 완료 — 이제 다른 기기에서도 이메일 + 이 비밀번호로 로그인됩니다.');
+  }catch(e){ toast('⚠ 설정 실패: '+sbErrKo(e)); }
 }
 async function sbPullAll(){
   if(!SB.user){ toast('먼저 로그인하세요.'); return; }
