@@ -2928,8 +2928,14 @@ function detectColumns(canvas, pg){
   cols.forEach(c=>{ delete c.hard; });
   return cols.length >= 2 ? cols : null;
 }
-/* ── 픽셀 여백 투영 분할: 번호가 없는 PDF용 (단 감지 + 가로 여백으로 경계) ── */
-function detectRegionsByPixels(canvas, pgW, pgH, pageIdx, startNum){
+/* ── 픽셀 분할: 글자 층이 없는 페이지(스캔 PDF·📋 캡처 이미지)용 ──
+   ① 단 감지 → ② 단마다 글줄로 자르고 → ③ '내어쓰기' 번호 찾기: 번호 줄은 단의 가장 왼쪽에서 시작하고 다음 줄은 들여써 있다
+   ("36. 그림과 같이…" / "    x=1, x=2로…"). 그런 줄마다 새 문제. 번호 모양을 못 찾으면 캡처는 한 장(단) = 한 문제,
+   스캔 페이지는 예전처럼 가로 여백으로 나눈다. 영역은 실제 잉크에 맞춰(번호·첫 줄 윗부분이 잘리지 않게) 조금 여유를 둔다.
+   opts.capture: 캡처 이미지 — 위아래 머리말 여백을 건너뛰지 않음 */
+function detectRegionsByPixels(canvas, pgW, pgH, pageIdx, startNum, opts){
+  opts = opts || {};
+  const capture = !!opts.capture;
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   const img = ctx.getImageData(0,0,W,H).data;
@@ -2948,29 +2954,87 @@ function detectRegionsByPixels(canvas, pgW, pgH, pageIdx, startNum){
     else { if(gapStart>=0 && x-gapStart > W*0.02 && (!bestGap || x-gapStart > bestGap[1]-bestGap[0])) bestGap=[gapStart,x]; gapStart=-1; }
   }
   if(gapStart>=0 && Math.floor(W*0.65)-gapStart > W*0.02) bestGap=[gapStart, Math.floor(W*0.65)];
-  const colRanges = bestGap
-    ? [[Math.floor(W*0.03), bestGap[0]], [bestGap[1], Math.floor(W*0.97)]]
-    : [[Math.floor(W*0.03), Math.floor(W*0.97)]];
-  // 각 단에서 가로 여백으로 문항 경계
+  if(bestGap){                                              // 진짜 2단이면 양쪽 모두 글이 빽빽 — 짧은 줄 뒤 오른쪽 빈 띠는 단 사이가 아님
+    let lr = 0, rr = 0;
+    for(let y=Math.floor(H*0.04); y<H*0.96; y+=2){
+      let l = 0, r = 0;
+      for(let x=0; x<bestGap[0]; x+=2) if(dark(x,y)){ l = 1; break; }
+      for(let x=bestGap[1]; x<W; x+=2) if(dark(x,y)){ r = 1; break; }
+      lr += l; rr += r;
+    }
+    if(Math.min(lr, rr) < Math.max(lr, rr)*0.4) bestGap = null;
+  }
+  const L = capture ? 0 : Math.floor(W*0.03), R = capture ? W : Math.floor(W*0.97);
+  const colRanges = bestGap ? [[L, bestGap[0]], [bestGap[1], R]] : [[L, R]];
+  const top = capture ? 0 : Math.floor(H*0.04), bot = capture ? H : Math.floor(H*0.95);
+  const PAD = Math.max(2, Math.round(4*sx));
   const out = []; let num = startNum;
+  const push = (x0, x1, a, b)=>{                            // 캔버스 좌표 → 페이지 좌표 (여유 PAD)
+    const X = Math.max(0, x0-PAD), Y = Math.max(0, a-PAD), X2 = Math.min(W, x1+PAD+1), Y2 = Math.min(H, b+PAD+1);
+    out.push({ page:pageIdx, x:X/sx, y:Y/sx, w:(X2-X)/sx, h:(Y2-Y)/sx, num:String(num++) });
+  };
   for(const [x0,x1] of colRanges){
+    const colStart = out.length;
     const rowHas = new Uint8Array(H);
-    for(let y=0;y<H;y++){
-      for(let x=x0;x<x1;x+=2){ if(dark(x,y)){ rowHas[y]=1; break; } }
-    }
-    const top = Math.floor(H*0.04), bot = Math.floor(H*0.95);
-    const GAP = Math.max(10, Math.round(14*sx));          // ≈14pt 이상 여백이면 경계
-    let segStart=-1, lastInk=-1;
-    const segs=[];
     for(let y=top;y<bot;y++){
-      if(rowHas[y]){ if(segStart<0) segStart=y; lastInk=y; }
-      else if(segStart>=0 && y-lastInk>GAP){ segs.push([segStart,lastInk]); segStart=-1; }
+      for(let x=x0;x<x1;x+=1){ if(dark(x,y)){ rowHas[y]=1; break; } }
     }
-    if(segStart>=0) segs.push([segStart,lastInk]);
-    for(const [a,b] of segs){
-      if(b-a < 22*sx) continue;                            // 너무 작은 조각(머리말 등) 제외
-      if(b < H*0.13) continue;                             // 페이지 맨 위 제목 띠(로고·표제)만으로 끝나는 조각 제외
-      out.push({ page:pageIdx, x:x0/sx, y:(a-4)/sx, w:(x1-x0)/sx, h:(b-a+10)/sx, num:String(num++) });
+    // 글줄: 잉크 줄이 이어진 덩어리 (2px 이하 틈은 같은 줄 — 근호 윗선·분수 막대)
+    const lines = [];
+    for(let y=top, a=-1, last=-1; y<=bot; y++){
+      if(y<bot && rowHas[y]){ if(a<0) a=y; last=y; }
+      else if(a>=0 && (y>=bot || y-last > Math.max(2, Math.round(1.5*sx)))){ lines.push({ a, b:last }); a=-1; }
+    }
+    for(const ln of lines){                                 // 줄의 왼쪽·오른쪽 끝 (점 하나짜리 티끌은 무시)
+      const colInk = new Uint8Array(x1-x0);
+      for(let y=ln.a; y<=ln.b; y++) for(let x=x0; x<x1; x++) if(!colInk[x-x0] && dark(x,y)) colInk[x-x0] = 1;
+      let l = -1, r = -1;
+      for(let i=0; i<colInk.length-1; i++) if(colInk[i] && colInk[i+1]){ l = i; break; }
+      for(let i=colInk.length-1; i>0; i--) if(colInk[i] && colInk[i-1]){ r = i; break; }
+      ln.left = l < 0 ? -1 : x0+l; ln.right = x0+r; ln.h = ln.b-ln.a+1;
+    }
+    const ls = lines.filter(ln=>ln.left >= 0 && (ln.h >= 3 || ln.right-ln.left > 6*sx));
+    if(!ls.length) continue;
+    const hs = ls.map(ln=>ln.h).sort((p,q)=>p-q), hMed = hs[Math.floor(hs.length/2)];
+    const textLike = ln=>ln.h <= hMed*2.2;
+    const minL = Math.min(...ls.filter(textLike).map(ln=>ln.left));
+    const tol = Math.max(3, Math.round((x1-x0)*0.012));
+    const flush = ln=>textLike(ln) && ln.left <= minL + tol;
+    // 번호 줄 = 왼쪽 끝 줄인데 바로 아래 줄(같은 문단)이 들여써 있음 — 또는 한 줄짜리 문제 뒤에 보기·그림이 들여써 있음
+    const gapMax = Math.max(hMed*1.8, 10*sx);
+    const starts = [];
+    ls.forEach((ln, i)=>{
+      if(!flush(ln)) return;
+      const nx = ls[i+1];
+      if(nx && nx.a - ln.b <= gapMax && !flush(nx)) starts.push(i);
+    });
+    const flushN = ls.filter(flush).length;
+    const hanging = starts.length && starts.length >= flushN*0.5;
+    let groups = [];
+    if(hanging){
+      const cut = [...starts]; if(cut[0] !== 0) cut.unshift(0);
+      cut.forEach((s, k)=>groups.push(ls.slice(s, k+1 < cut.length ? cut[k+1] : ls.length)));
+    } else if(capture){
+      groups = [ls];                                          // 캡처: 번호 모양을 못 찾으면 한 장 = 한 문제
+    } else {
+      // 스캔 페이지: 가로 여백으로 경계 (≈14pt, 줄 간격이 넓은 큰 글씨면 보통 줄 간격의 1.8배 이상)
+      const gaps = ls.slice(1).map((ln, i)=>ln.a - ls[i].b).sort((p,q)=>p-q);
+      const GAP = Math.max(10, Math.round(14*sx), gaps.length ? gaps[Math.floor(gaps.length/2)]*1.8 : 0);
+      let g = [ls[0]];
+      for(let i=1; i<ls.length; i++){ if(ls[i].a - ls[i-1].b > GAP){ groups.push(g); g = []; } g.push(ls[i]); }
+      groups.push(g);
+    }
+    for(const g of groups){
+      const a = g[0].a, b = g[g.length-1].b;
+      if(!capture){
+        if(b-a < 22*sx) continue;                            // 너무 작은 조각(머리말 등) 제외
+        if(b < H*0.13) continue;                             // 페이지 맨 위 제목 띠(로고·표제)만으로 끝나는 조각 제외
+      } else if(b-a < 6*sx && groups.length > 1) continue;   // 캡처 가장자리 티끌
+      push(Math.min(...g.map(ln=>ln.left)), Math.max(...g.map(ln=>ln.right)), a, b);
+    }
+    for(let k=colStart+1; k<out.length; k++){                 // 위아래로 붙은 영역의 여유(PAD)가 겹치면 가운데에서 나눔
+      const p = out[k-1], q = out[k];
+      if(p.y+p.h > q.y){ const m = (p.y+p.h+q.y)/2; p.h = m-p.y; q.h = q.y+q.h-m; q.y = m; }
     }
   }
   return out;
@@ -3269,7 +3333,7 @@ async function pdfedDetectPage(pg, rerender){
   }
   if(!regs.length){
     const c = await pdfedPixelCanvas(pg);
-    regs = detectRegionsByPixels(c, pg.w, pg.h, pg.idx, PDFED.nextNum);
+    regs = detectRegionsByPixels(c, pg.w, pg.h, pg.idx, PDFED.nextNum, { capture: PASTE.pdfNames.has(pdfedSrcOf(pg.idx)) });
   }
   regs.forEach(r=>{ r.kind = pg.mode==='sol' ? 'sol' : 'prob'; });   // 해설 페이지의 영역은 해설 조각
   PDFED.regions = PDFED.regions.filter(r=>r.page!==pg.idx).concat(regs);
@@ -3942,7 +4006,7 @@ $('#bulk-files').addEventListener('change', e=>{
 });
 /* ── 📋 캡처 이미지 붙여넣기: Ctrl+V 한 이미지(·이미지 파일)를 모아 두었다가 → 한 장씩 페이지인 PDF로 만들어 영역 인식 에디터로
    (스캔 PDF와 같은 길: 문항 영역 자동 인식 → 이미지 문항 → AI 텍스트 변환) */
-const PASTE = { imgs: [] };
+const PASTE = { imgs: [], pdfNames: new Set() };   // pdfNames: 캡처로 만든 PDF 이름(영역 인식이 캡처용으로 동작)
 function addPastedImage(dataURL, name){
   PASTE.imgs.push({ src: dataURL, name: name || ('캡처 '+(PASTE.imgs.length+1)) });
   renderPasteTray();
@@ -3996,6 +4060,7 @@ async function pasteTrayOpen(){
   const name = `캡처 ${d.getMonth()+1}-${d.getDate()} ${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}.pdf`;
   try{
     const f = await imagesToPdfFile(PASTE.imgs.map(x=>x.src), name);
+    PASTE.pdfNames.add(name);
     PASTE.imgs = []; renderPasteTray();
     await handleUploadFiles([f], '#bulk-text');
   }catch(e){ toast('⚠ 붙여넣은 이미지를 처리하지 못했습니다: '+(e.message||e)); }
