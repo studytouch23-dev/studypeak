@@ -67,7 +67,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     origBtn.click(); await sleep(150); const detOrig = $('#modal-body').textContent;
     closeModal();
     // 묶음 한 줄 담기
-    clearCart(); const g0 = document.querySelector('#plist .tgroup'); [...g0.querySelectorAll('button')].find(b => b.textContent.includes('이 줄 담기')).click();
+    clearCart(); const g0 = document.querySelector('#plist .tgroup'); [...g0.querySelectorAll('button')].find(b => b.textContent.includes('모두 선택')).click();
     const cart = cartList().map(p => p.twinKind ? p.twinKind[0] + p.origNo : 'O' + p.origNo);
     // 끄면 평소 목록
     $('#db-twinview').checked = false; $('#db-twinview').dispatchEvent(new Event('change'));
@@ -83,7 +83,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   check('끝나면 👯 원본별 묶어 보기: 원본 4묶음, 각 줄 [원본 → 쌍둥이 → 변형]', r.grp.on && r.grp.groups === 4 && r.grp.rows.every(x => x === 'OTV') && /원본 4개 묶음/.test(r.grp.count), JSON.stringify(r.grp));
   check('실황 칩 클릭 → 그 문제 상세', /원본:/.test(r.det), r.det.slice(0, 120).replace(/\s+/g, ' '));
   check('상세: 쌍둥이 → 원본 바로 가기, 원본 → 만든 문제 목록', /쌍둥이 1/.test(r.detTwin) && /원본:/.test(r.detTwin) && /이 문제로 만든 문제/.test(r.detOrig) && /쌍둥이 1/.test(r.detOrig) && /변형 1/.test(r.detOrig), r.detOrig.slice(0, 160));
-  check('[🧺 이 줄 담기] → 원본·쌍둥이·변형 순서로 담김', JSON.stringify(r.cart) === JSON.stringify(['O1','쌍1','변1']), JSON.stringify(r.cart));
+  check('[☑ 모두 선택] → 원본·쌍둥이·변형 순서로 담김', JSON.stringify(r.cart) === JSON.stringify(['O1','쌍1','변1']), JSON.stringify(r.cart));
   check('묶어 보기를 끄면 평소 목록', r.flat === 0);
   check('닫기 → 패널 숨김', r.hidden);
 
