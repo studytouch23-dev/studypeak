@@ -134,7 +134,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 @media(max-width:980px){.db-layout{grid-template-columns:1fr}}
 .tagtree{padding:.7rem}
 .tagtree .tabs3{display:flex;gap:.25rem;margin-bottom:.6rem}
-.tagtree .tabs3 button{flex:1;border:1px solid var(--line);background:#fff;border-radius:8px;padding:.35rem 0;font-size:.82rem;font-weight:700;color:var(--muted)}
+.tagtree .tabs3 button{flex:1;border:1px solid var(--line);background:#fff;border-radius:8px;padding:.35rem 0;font-size:.78rem;white-space:nowrap;font-weight:700;color:var(--muted)}
 .tagtree .tabs3 button.active{background:var(--green);border-color:var(--green);color:#fff}
 .titem{display:flex;align-items:center;gap:.4rem;padding:.38rem .5rem;border-radius:7px;font-size:.85rem;cursor:pointer}
 .titem:hover{background:#f3f5f0}
@@ -228,6 +228,10 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
 .tg-row .pcard.tg-orig{border:2px solid #23321f}
 .tg-arrow{flex:0 0 auto;align-self:center;font-size:1.4rem;color:#9bb8a6}
 .pcard{position:relative}
+.tg-sel{font-size:.75rem;font-weight:800;color:#9a9a90;border:1px solid var(--line);border-radius:99px;padding:.05rem .5rem}
+.tg-sel.on{color:#23321f;background:#f1ead8;border-color:#d8b97c}
+.tg-btns{display:flex;gap:.3rem;flex-wrap:wrap}
+.tg-allbar{display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;padding:.5rem .7rem;margin-bottom:.7rem;background:#f4f6fb;border-radius:12px;font-size:.85rem}
 #twin-live .tl-btn{background:#fff;color:#23321f;border:0;border-radius:8px;padding:.28rem .65rem;font-size:.8rem;font-weight:800;cursor:pointer;white-space:nowrap}
 #twin-live .tl-btn:hover{background:#f1ead8}
 #twin-live .tl-btn.stop{background:#d64545;color:#fff}
@@ -577,6 +581,7 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
         <button data-tab="unit" class="active">단원</button>
         <button data-tab="src">출처</button>
         <button data-tab="mine">나만의</button>
+        <button data-tab="date">📅 날짜</button>
       </div>
       <div id="tree-body"></div>
       <button class="btn ghost sm" style="width:100%" onclick="resetFilters()">선택 해제</button>
@@ -604,6 +609,8 @@ p.vd{color:var(--muted);font-size:.9rem;margin-bottom:1.1rem}
           <select id="filter-diff"><option value="">난이도 전체</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
           <select id="filter-src"><option value="">출처 전체</option></select>
           <select id="filter-batch" title="한 번에 등록한 묶음(모의고사 한 세트 등)"><option value="">등록 묶음 전체</option></select>
+          <select id="filter-date" title="문제를 올린(만든) 날짜로 찾기"><option value="">📅 올린 날짜 전체</option></select>
+          <span id="filter-range" class="row" style="display:none;gap:.3rem;align-items:center"><input type="date" id="filter-from" style="width:auto"> ~ <input type="date" id="filter-to" style="width:auto"></span>
           <select id="sort"><option value="new">최신순</option><option value="old">오래된순</option><option value="diff-desc">난이도 높은순</option><option value="diff-asc">난이도 낮은순</option></select>
           <label style="margin:0;display:flex;align-items:center;gap:.3rem;font-weight:600;font-size:.85rem" title="원본 문제와 그 문제로 만든 쌍둥이·변형을 한 줄로 묶어 보기"><input type="checkbox" id="db-twinview" style="width:auto"> 👯 원본별 묶어 보기</label>
           <button class="btn ghost sm" onclick="resetFilters()">필터 초기화</button>
@@ -2900,6 +2907,7 @@ function classifyMapResult(chunk, items){
 /* 본문 키워드로 단원 결과 점검: 강한 단서(f', ∫, Σ, log …)가 있는데 그 단서와 맞지 않는 대단원이면 false */
 const UNIT_CLUES = [
   { re:/f'|f\^\{?\\prime|g'\(|도함수|미분계수|미분가능|접선의 (방정식|기울기)|극댓값|극솟값|극대|극소|증가하|감소하/, ch:['미분','미분법','적분','적분법','수열의 극한'] },
+  { re:/에서 연속|연속이|연속일|연속인|연속함수|불연속/, ch:['함수의 극한과 연속','미분','미분법','적분','적분법','수열의 극한'] },
   { re:/\\int|∫|정적분|부정적분/, ch:['적분','적분법','미분','미분법','수열의 극한'] },
   { re:/\\sum|Σ|∑/, ch:['수열','수열의 극한','적분법','통계','확률'] },
   { re:/\\lim|lim_|극한/, ch:['함수의 극한과 연속','수열의 극한','미분','미분법','적분법'] },
@@ -3278,11 +3286,48 @@ function batchToSheet(key){
   go('sheet');
   toast(`🧺 ${list.length}문항을 원래 번호 순으로 담았습니다 — 아래에서 [모의고사(A3) 한글] · [교재 HTML] · [학습지] 중 고르세요`);
 }
+/* 📅 올린 날짜(createdAt) 필터: 값 = today | yesterday | 7d | 30d | month | d:YYYY-MM-DD | range(직접 기간) → [시작, 끝) ms */
+const dayKey = t=>{ const d = new Date(+t); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+const dayStart = t=>{ const d = new Date(+t); d.setHours(0,0,0,0); return d.getTime(); };
+function dateFilterRange(){
+  const el = $('#filter-date'); const v = el ? el.value : '';
+  const rg = $('#filter-range'); if(rg) rg.style.display = v === 'range' ? 'flex' : 'none';
+  if(!v) return null;
+  const today = dayStart(Date.now()), DAY = 86400000;
+  if(v === 'today') return [today, today + DAY];
+  if(v === 'yesterday') return [today - DAY, today];
+  if(v === '7d') return [today - 6*DAY, today + DAY];
+  if(v === '30d') return [today - 29*DAY, today + DAY];
+  if(v === 'month'){ const d = new Date(); return [new Date(d.getFullYear(), d.getMonth(), 1).getTime(), today + DAY]; }
+  if(v.startsWith('d:')){ const [y,m,d] = v.slice(2).split('-').map(Number); const a = new Date(y, m-1, d).getTime(); return [a, a + DAY]; }
+  if(v === 'range'){
+    const f = $('#filter-from').value, t = $('#filter-to').value;
+    const a = f ? new Date(f+'T00:00:00').getTime() : 0, b = t ? new Date(t+'T00:00:00').getTime() + DAY : Infinity;
+    return (f || t) ? [a, b] : null;
+  }
+  return null;
+}
+function dateFilterLabel(){
+  const el = $('#filter-date'); if(!el || !el.value) return '';
+  if(el.value === 'range') return (($('#filter-from').value||'처음')+' ~ '+($('#filter-to').value||'오늘')).replace(/-/g,'.');
+  const o = el.options[el.selectedIndex]; return o ? o.textContent.replace(/ — \d+문항$/, '')+' 올린 문제' : '';
+}
+function renderDateFilterOptions(){
+  const el = $('#filter-date'); if(!el) return;
+  const cur = el.value, byDay = new Map();
+  for(const p of state.problems){ if(!p.createdAt) continue; const k = dayKey(p.createdAt); byDay.set(k, (byDay.get(k)||0)+1); }
+  const days = [...byDay.entries()].sort((a,b)=>a[0] < b[0] ? 1 : -1).slice(0, 60);
+  const lab = k=>{ const [y,m,d] = k.split('-').map(Number); const w = '일월화수목금토'[new Date(y, m-1, d).getDay()]; return `${y !== new Date().getFullYear() ? y+'. ' : ''}${m}. ${d}. (${w})`; };
+  el.innerHTML = '<option value="">📅 올린 날짜 전체</option><option value="today">오늘</option><option value="yesterday">어제</option><option value="7d">최근 7일</option><option value="30d">최근 30일</option><option value="month">이번 달</option><option value="range">기간 직접 선택…</option>'
+    + (days.length ? '<optgroup label="날짜별 (올린 문제 수)">'+days.map(([k,n])=>`<option value="d:${k}">${lab(k)} — ${n}문항</option>`).join('')+'</optgroup>' : '');
+  el.value = cur; if(el.value !== cur && cur.startsWith('d:')){ el.add(new Option(cur.slice(2), cur)); el.value = cur; }
+}
 function problemsFiltered(){
   const q = $('#q').value.trim().toLowerCase();
   const fs = $('#filter-subject').value, fc = $('#filter-chapter').value,
         fd = $('#filter-diff').value, fsrc = $('#filter-src').value, fg = $('#filter-grade').value,
         fr = $('#filter-reviewed').value, fbatch = ($('#filter-batch')||{}).value || '';
+  const dateR = dateFilterRange();
   let list = state.problems.filter(p=>{
     if(fs && p.subject!==fs) return false;
     if(fc && p.chapter!==fc) return false;
@@ -3291,6 +3336,7 @@ function problemsFiltered(){
     if(fd && String(p.difficulty)!==fd) return false;
     if(fsrc && p.srcName!==fsrc) return false;
     if(fbatch && batchKeyOf(p)!==fbatch) return false;
+    if(dateR && !((p.createdAt||0) >= dateR[0] && (p.createdAt||0) < dateR[1])) return false;
     if(state.filterTag && !(p.tags||[]).includes(state.filterTag)) return false;
     if(state.dashFilter === 'noSol' && (p.solution || p.answer)) return false;
     if(state.dashFilter === 'check' && !(p.tags||[]).some(t=>t==='검수주의' || t==='검산불일치' || t==='검산확인')) return false;
@@ -3346,7 +3392,7 @@ function problemCardHTML(p, idx){
       <div class="trow"><span class="tl">정보</span><span>${p.grade?`<span class="tag diff">${esc(p.grade)}</span>`:''}<span class="tag diff">${'●'.repeat(p.difficulty||3)}</span></span></div>
       ${(p.tags||[]).length?`<div class="trow"><span class="tl">나만의</span><span>${(p.tags||[]).map(t=>`<span class="tag user">#${esc(t)}</span>`).join('')}</span></div>`:''}
     </div>
-    <div class="pc-date">${new Date(p.updatedAt||p.createdAt).toLocaleDateString('ko-KR')}</div>
+    <div class="pc-date" title="만든 시각 ${fmtDT(p.createdAt, true)}${(p.updatedAt||0) > (p.createdAt||0) + 60000 ? ' · 마지막 수정 '+fmtDT(p.updatedAt, true) : ''}">🕒 ${fmtDT(p.createdAt)}${(p.updatedAt||0) > (p.createdAt||0) + 60000 ? ` <span style="opacity:.75">· 수정 ${fmtDT(p.updatedAt)}</span>` : ''}</div>
   </div>`;
 }
 function cardCheck(ev, id, idx){
@@ -3374,6 +3420,7 @@ function renderDB(){
   const fb = $('#filter-batch'), curB = fb.value;
   fb.innerHTML = '<option value="">등록 묶음 전체</option>'+batchList().slice(0, 60).map(b=>`<option value="${esc(b.key)}">${esc(b.name)} (${b.n})</option>`).join('');
   fb.value = curB;
+  renderDateFilterOptions();
   renderBatchBanner();
   const fs = $('#filter-subject').value, fchap = $('#filter-chapter'); const curC = fchap.value;
   const chaps = fs ? Object.keys(CURRICULUM[fs]||{}) : [...new Set(state.problems.map(p=>p.chapter).filter(Boolean))];
@@ -3392,7 +3439,7 @@ function renderDB(){
   const wrap = $('#plist');
   $('#db-count').textContent = state.lastResults
     ? `유사 검색 결과 ${list.length}건 — 전체로 돌아가려면 [필터 초기화]`
-    : (state.dashFilter ? (state.dashFilter === 'noSol' ? '📝 정답·해설 없는 문제만 · ' : '⚠ 수식·정답 확인 필요만 · ') : '') + `${list.length}건 / 전체 ${state.problems.length}건` + (pages>1?` · ${state.page}/${pages} 페이지`:'');
+    : (dateFilterRange() ? '📅 '+dateFilterLabel()+' · ' : '') + (state.dashFilter ? (state.dashFilter === 'noSol' ? '📝 정답·해설 없는 문제만 · ' : '⚠ 수식·정답 확인 필요만 · ') : '') + `${list.length}건 / 전체 ${state.problems.length}건` + (pages>1?` · ${state.page}/${pages} 페이지`:'');
   if($('#db-twinview') && $('#db-twinview').checked && !state.lastResults){ renderTwinGroups(list); return; }
   wrap.innerHTML = pageList.length
     ? pageList.map((p,i)=>problemCardHTML(p, (state.page-1)*PAGE+i)).join('')
@@ -3431,26 +3478,64 @@ function renderTwinGroups(list){
     else cards.push(`<div class="pcard tg-orig"><div class="hint">원본이 삭제되었습니다</div></div>`);
     cards.push('<div class="tg-arrow">➜</div>');
     ch.forEach(c=>{ shown.push(c); cards.push(problemCardHTML(c, idx++)); });
-    const ids = [h, ...ch.map(c=>c.id)].filter(id=>byId.has(id));
+    const ids = [h, ...ch.map(c=>c.id)].filter(id=>byId.has(id)), selN = ids.filter(id=>state.cart.includes(id)).length;
     return `<div class="tgroup" style="grid-column:1/-1"><div class="tg-head"><span class="tg-no">${o && o.origNo ? esc(o.origNo)+'번' : '원본'}</span>
-      <span>${esc(o ? (o.srcName||'') : '')}</span><span class="hint">쌍둥이 ${nT} · 변형 ${nV}</span><span style="flex:1"></span>
-      <button class="btn ghost sm" onclick="${o?`openTwinMaker(['${h}'])`:''}" ${o?'':'disabled'}>👯 더 만들기</button>
-      <button class="btn ghost sm" onclick="twinGroupToCart(${esc(JSON.stringify(ids))})">🧺 이 줄 담기</button></div>
+      <span>${esc(o ? (o.srcName||'') : '')}</span><span class="hint">쌍둥이 ${nT} · 변형 ${nV}</span>
+      <span class="tg-sel ${selN?'on':''}">선택 ${selN}/${ids.length}</span><span style="flex:1"></span>
+      <span class="tg-btns">
+        <button class="btn ${selN===ids.length?'gold':'ghost'} sm" onclick="twinSelect('${h}','all',true)" title="원본 → 쌍둥이 → 변형 순서로 모두 담기">☑ 모두 선택</button>
+        ${nT?`<button class="btn ghost sm" onclick="twinSelect('${h}','twin',true)">쌍둥이만</button>`:''}
+        ${nV?`<button class="btn ghost sm" onclick="twinSelect('${h}','var',true)">변형만</button>`:''}
+        <button class="btn ghost sm" onclick="twinSelect('${h}','all',false)" ${selN?'':'disabled'}>☐ 모두 해제</button>
+        <button class="btn ghost sm" onclick="${o?`openTwinMaker(['${h}'])`:''}" ${o?'':'disabled'}>👯 더 만들기</button></span></div>
       <div class="tg-row">${cards.join('')}</div></div>`;
   }).join('');
   const looseHtml = loose.length ? `<div class="hint" style="grid-column:1/-1;margin:.4rem 0">쌍둥이·변형이 없는 문제 ${loose.length}개${loose.length>30?' (앞 30개만 표시)':''}</div>` + loose.slice(0, 30).map(p=>{ shown.push(p); return problemCardHTML(p, idx++); }).join('') : '';
   state.viewList = shown.map(p=>p.id); state.viewListPaged = false;
+  state._twinHeads = heads;
+  const bar = heads.length ? `<div class="tg-allbar" style="grid-column:1/-1"><b>👯 묶음 ${heads.length}개 전체</b>
+      <button class="btn sm" onclick="twinSelect('*','all',true)">☑ 원본+쌍둥이·변형 모두 선택</button>
+      <button class="btn ghost sm" onclick="twinSelect('*','kids',true)">쌍둥이·변형만</button>
+      <button class="btn ghost sm" onclick="twinSelect('*','twin',true)">쌍둥이만</button>
+      <button class="btn ghost sm" onclick="twinSelect('*','var',true)">변형만</button>
+      <button class="btn ghost sm" onclick="twinSelect('*','orig',true)">원본만</button>
+      <button class="btn danger sm" onclick="twinSelect('*','all',false)">☐ 모두 해제</button></div>` : '';
   $('#db-count').textContent = `👯 원본 ${heads.length}개 묶음` + (loose.length ? ` · 묶음 없는 문제 ${loose.length}개` : '') + (pages>1 ? ` · ${state.page}/${pages} 페이지` : '');
-  wrap.innerHTML = (html || '') + looseHtml || `<div class="empty" style="grid-column:1/-1">보이는 문제 중 쌍둥이·변형이 있는 원본이 없습니다. 문제를 선택하고 [👯 쌍둥이·변형]으로 만들어 보세요.</div>`;
+  wrap.innerHTML = bar + (html || '') + looseHtml || `<div class="empty" style="grid-column:1/-1">보이는 문제 중 쌍둥이·변형이 있는 원본이 없습니다. 문제를 선택하고 [👯 쌍둥이·변형]으로 만들어 보세요.</div>`;
   renderMath(wrap);
   renderPagination(pages);
   hydrateCardImages(shown);
+}
+/* 묶음 선택: head = 원본 id 또는 '*'(보이는 묶음 전체), which = all|kids|twin|var|orig, on = 선택/해제. 담는 순서는 원본 → 쌍둥이 → 변형 */
+function twinSelect(head, which, on){
+  const kids = twinChildrenMap(), byId = new Map(state.problems.map(p=>[p.id, p]));
+  const heads = head === '*' ? (state._twinHeads || []) : [head];
+  const ids = [];
+  for(const h of heads){
+    const ch = kids.get(h) || [];
+    if((which === 'all' || which === 'orig') && byId.has(h)) ids.push(h);
+    if(which === 'all' || which === 'kids' || which === 'twin') ch.filter(c=>c.twinKind === '쌍둥이').forEach(c=>ids.push(c.id));
+    if(which === 'all' || which === 'kids' || which === 'var') ch.filter(c=>c.twinKind === '변형').forEach(c=>ids.push(c.id));
+  }
+  let n = 0;
+  if(on){ ids.forEach(id=>{ if(!state.cart.includes(id)){ state.cart.push(id); n++; } }); }
+  else { const rm = new Set(ids); const before = state.cart.length; state.cart = state.cart.filter(id=>!rm.has(id)); n = before - state.cart.length; }
+  persistCart(); renderDB();
+  const what = { all:'원본·쌍둥이·변형', kids:'쌍둥이·변형', twin:'쌍둥이', var:'변형', orig:'원본' }[which];
+  toast(on ? `☑ ${what} ${n}문항을 선택했습니다 (담은 문제 ${state.cart.length}개)` : `☐ ${what} ${n}문항 선택을 해제했습니다`);
 }
 function twinGroupToCart(ids){
   ids.forEach(id=>{ if(!state.cart.includes(id)) state.cart.push(id); });
   persistCart(); renderDB(); toast(`🧺 ${ids.length}문항을 담았습니다 (원본 → 쌍둥이 → 변형 순)`);
 }
 function hasImg(p){ return (p.imgN>0) || (p.images && p.images.length>0); }
+/* 생성·수정 시각: 카드는 '10.28 14:32'(올해가 아니면 연도 포함), full=true 면 초까지 */
+function fmtDT(t, full){
+  if(!t) return '';
+  const d = new Date(+t), now = new Date(), z = n=>String(n).padStart(2,'0');
+  const date = (d.getFullYear() !== now.getFullYear() ? d.getFullYear()+'.' : '') + (d.getMonth()+1)+'.'+d.getDate();
+  return (full ? d.getFullYear()+'.'+(d.getMonth()+1)+'.'+d.getDate() : date)+' '+z(d.getHours())+':'+z(d.getMinutes())+(full ? ':'+z(d.getSeconds()) : '');
+}
 async function hydrateCardImages(pageList){
   // 현재 페이지(최대 30장)의 이미지 썸네일만 DB에서 비동기 로드
   for(const p of pageList){
@@ -3501,6 +3586,14 @@ function renderTree(){
     h = bySrc.size ? [...bySrc.entries()].sort((a,b)=>b[1]-a[1]).map(([s,n])=>
       `<div class="titem ${fsrc===s?'sel':''}" data-t="src" data-v="${esc(s)}"><span>${esc(s)}</span><span class="n">${n}</span></div>`).join('')
       : '<div class="hint" style="padding:.5rem">출처가 등록된 문제가 없습니다.</div>';
+  } else if(state.treeTab==='date'){
+    const byDay = new Map();
+    for(const p of state.problems){ if(!p.createdAt) continue; const k = dayKey(p.createdAt); byDay.set(k, (byDay.get(k)||0)+1); }
+    const cur = $('#filter-date').value;
+    h = byDay.size ? [...byDay.entries()].sort((a,b)=>a[0] < b[0] ? 1 : -1).map(([k,n])=>{
+        const [y,m,d] = k.split('-').map(Number), w = '일월화수목금토'[new Date(y, m-1, d).getDay()];
+        return `<div class="titem ${cur==='d:'+k?'sel':''}" data-t="date" data-v="${k}"><span>${y !== new Date().getFullYear() ? y+'. ' : ''}${m}. ${d}. (${w})</span><span class="n">${n}</span></div>`; }).join('')
+      : '<div class="hint" style="padding:.5rem">올린 문제가 없습니다.</div>';
   } else {
     const byTag = new Map();
     for(const p of state.problems) for(const t of (p.tags||[])) byTag.set(t,(byTag.get(t)||0)+1);
@@ -3530,6 +3623,7 @@ $('#tree-body').addEventListener('click', e=>{
   }
   if(t==='src'){ $('#filter-src').value = $('#filter-src').value===v ? '' : v; }
   if(t==='mine'){ state.filterTag = state.filterTag===v ? null : v; }
+  if(t==='date'){ const el = $('#filter-date'); if(el.value === 'd:'+v) el.value = ''; else { if(![...el.options].some(o=>o.value==='d:'+v)) el.add(new Option(v, 'd:'+v)); el.value = 'd:'+v; } }
   state.page = 1; state.lastResults = null;
   renderDB();
 });
@@ -3592,7 +3686,7 @@ function savePreset(){
   const ps = getPresets();
   ps.push({name, f:{q:$('#q').value, subject:$('#filter-subject').value, chapter:$('#filter-chapter').value,
     grade:$('#filter-grade').value, reviewed:$('#filter-reviewed').value, diff:$('#filter-diff').value,
-    src:$('#filter-src').value, tag:state.filterTag||''}});
+    src:$('#filter-src').value, tag:state.filterTag||'', date:$('#filter-date').value, from:$('#filter-from').value, to:$('#filter-to').value}});
   localStorage.setItem('sp-lab-presets', JSON.stringify(ps.slice(0,20)));
   renderPresets();
   toast('검색 필터를 저장했습니다.');
@@ -3616,6 +3710,8 @@ function applyPreset(i){
   $('#filter-diff').value = p.f.diff||'';
   $('#filter-src').value = p.f.src||'';
   state.filterTag = p.f.tag||null;
+  $('#filter-from').value = p.f.from||''; $('#filter-to').value = p.f.to||'';
+  { const el = $('#filter-date'), v = p.f.date||''; if(v && ![...el.options].some(o=>o.value===v)) el.add(new Option(v.replace(/^d:/,''), v)); el.value = v; }
   state.lastResults = null; state.page = 1;
   renderDB();
 }
@@ -3627,10 +3723,11 @@ function delPreset(i){
 function resetFilters(){
   $('#q').value=''; $('#filter-subject').value=''; $('#filter-chapter').value='';
   $('#filter-diff').value=''; $('#filter-src').value=''; $('#filter-grade').value=''; $('#filter-reviewed').value=''; $('#filter-batch').value=''; $('#db-twinview').checked = false;
+  $('#filter-date').value=''; $('#filter-from').value=''; $('#filter-to').value='';
   state.lastResults = null; state.filterTag = null; state.dashFilter = null; state.page = 1;
   renderDB();
 }
-['filter-subject','filter-chapter','filter-grade','filter-reviewed','filter-diff','filter-src','filter-batch','sort','db-twinview'].forEach(id=>
+['filter-subject','filter-chapter','filter-grade','filter-reviewed','filter-diff','filter-src','filter-batch','filter-date','filter-from','filter-to','sort','db-twinview'].forEach(id=>
   $('#'+id).addEventListener('change', ()=>{ state.page=1; renderDB(); }));
 async function toggleReviewed(id){
   const p = state.problems.find(x=>x.id===id); if(!p) return;
@@ -3762,6 +3859,7 @@ function openDetail(id){
     <button class="close" onclick="closeModal()">✕</button>
     <div class="spread" style="margin-bottom:.6rem">
       <h3 style="margin:0">문제 상세·수정 ${no?`<span class="hint"># ${no}</span>`:''}
+        <span class="hint" style="font-weight:400;font-size:.72rem">🕒 만든 시각 ${fmtDT(p.createdAt, true)}${(p.updatedAt||0) > (p.createdAt||0) + 60000 ? ' · 수정 '+fmtDT(p.updatedAt, true) : ''}</span>
         <span class="hint" style="font-weight:400;font-size:.72rem;cursor:pointer" title="맥의 Claude Code에 '문항 ${esc(p.id)} 그림 다시 그려줘'처럼 알려 줄 때 쓰는 번호 — 누르면 복사" onclick="navigator.clipboard&&navigator.clipboard.writeText('${esc(p.id)}').then(()=>toast('문항 ID를 복사했습니다'))">ID ${esc(p.id)} 📋</span></h3>
       <div class="row">
         <button class="btn ghost sm" ${pos<=0?'disabled':''} onclick="openDetail('${pos>0?nav[pos-1]:''}')">← 이전</button>
