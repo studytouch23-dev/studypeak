@@ -140,7 +140,7 @@ Sheet 학습지  { id, title, entries[{passageId, itemIds[]}] | 단독 문항 } 
 | `korlab/js/upload.js` | `upRead`(문제지 + 해설지) → `upClassify`(규칙으로 먼저 분류, [3점] 없는 문항은 2점) → `upPreviewHtml` → `upSave`(원본 조각 `upCrops`) |
 | `korlab/js/library.js` | `renderPassages` · `renderSet`(지문 / 문항 / 변형 묶음, 도구 줄) · `itemHtml`·`typeChips` · `renderSetEdit`/`saveSetEdit`(`setUserType` — 직접 고르면 확정) · `renderItems`(유형·검토·변형 필터) |
 | `korlab/js/polish.js` | `polishSet`: 줄 이음 추정 자리만 ‹n›으로 번호 매겨 AI가 0/1로 답함(글자는 AI가 못 고침) |
-| `korlab/js/aiwork.js` | 🤖 **22유형 분류** `classifyExam`/`aiClassifySet`/`aiClassifySingles` → `applyType`·`applyHead`(목록 밖 값 거부, `typeBy:user`·`clsBy:user` 는 건드리지 않음) · 🤖 **정답 근거** `evidenceSet` → `applyEvidence`(지문·<보기>·선지에 실제로 있는 것만) · `evSpans`·`focusEv` |
+| `korlab/js/aiwork.js` | 🤖 **22유형 분류** `classifyExam`/`aiClassifySet`/`aiClassifySingles` → `applyType`·`applyHead`(목록 밖 값 거부, `typeBy:user`·`clsBy:user` 는 건드리지 않음) · 🤖 **정답 근거** `evidenceSet` → `applyEvidence`(지문·<보기>·선지에 실제로 있는 것만) · `evSpans`·`focusEv` · 🤖 **정답 풀기·대조** `solveExam`(빈 정답은 채우고 `ansBy:'ai'`, 정답표와 다르면 `ansAi` 로 알림만) |
 | `korlab/js/export.js` | [분류표·LMS 엑셀] 화면: 문항 표(바로 저장되는 select·input), 점검·검토 요망 표, 내려받기 2종 |
 | `korlab/js/variant.js` | ✨ **변형 6종** `vaRun`: `vaPrompt` → `vaShape`(형식 + 근거 대조) → `vaVerify`(블라인드: 가벼운 모델 → 어긋나면 센 모델) → `vaRepair`(한 번) → 통과만 자동 저장, 나머지는 보류 목록 |
 | `korlab/js/sheet.js` | 학습지: `shHtml`(세트 2단, 번호 다시 매김, 정답·해설 쪽) → `shPreview`·`shPrint`(`window.print`) |
@@ -148,7 +148,7 @@ Sheet 학습지  { id, title, entries[{passageId, itemIds[]}] | 단독 문항 } 
 | `tools/fix-pua.py` | 소스 안의 보이지 않는 사용자 영역 글자를 `\uE000` 꼴 이스케이프로 되돌림 — 편집 뒤 커밋 전에 한 번 |
 
 **데이터 꼴(추가된 칸)** — 지문: `cat`·`sub`(LMS 값)·`author`·`clsBy`·`madeFrom`(새 지문의 바탕). 문항: `typeId`·`subTypes[]`(복합)·`nature`(화작·매체 성격, LMS 치환용)·`typeBy`(`rule`·`ai`·`user`)·`review{alt,why}`·`note`·`ev{quotes[],x[[선지,낱말]],neg}`,
-단독 문항은 `cat`·`sub`·`title`, 변형은 `variantOf`·`vkind`(twin·shift·ox·essay·view·newp)·`kind`(ox·essay)·`model`·`rubric[]`·`verify{status,notes[]}`. `type` 은 해설지가 붙인 이름(참고용)으로만 남긴다.
+단독 문항은 `cat`·`sub`·`title`, AI가 채운 정답은 `ansBy:'ai'`(사람이 고르면 지워짐)·정답표와 다른 AI 풀이는 `ansAi`, 변형은 `variantOf`·`vkind`(twin·shift·ox·essay·view·newp)·`kind`(ox·essay)·`model`·`rubric[]`·`verify{status,notes[]}`. `type` 은 해설지가 붙인 이름(참고용)으로만 남긴다.
 
 **분류 원칙(국어 프로젝트 컨텍스트 그대로)**
 - 유형은 마스터 22종뿐. 화법과 작문·매체는 유형 없음(`typeId=''`) — 분류표에는 `—`, LMS 파일에서만 `독서 / 독서이론 + R코드`로 치환(fallback, 파일명 `_fallback`).
