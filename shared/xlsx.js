@@ -4,7 +4,7 @@
  *   '' (빈 문자열) 은 "빈 문자열 셀"(inlineStr)로 쓴다 — LMS가 자기닫힘 빈 셀을 건너뛰어 열이 밀리는 것을 막는다. null 은 셀을 만들지 않는다. */
 (function(root, factory){ const o = factory(); if(typeof module === 'object' && module.exports) module.exports = o; else root.SPX = o; })(typeof self !== 'undefined' ? self : this, function(){
   'use strict';
-  const xe = s=>String(s).replace(/[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const xe = s=>String(s).replace(/[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/gu, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const col = i=>{ let s = ''; for(i++; i > 0; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + (i - 1) % 26) + s; return s; };
   const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n', NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
   const XF = { text: 1, h1: 2, hg: 3, hi: 4, b: 5 };

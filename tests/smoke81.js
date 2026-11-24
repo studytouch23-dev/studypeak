@@ -76,7 +76,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
       if(/근거를 고른다/.test(t)) return { items: [
         { num: 1, neg: true, evidence: ['녹지와 수면이 줄어든 곳일수록 열섬의 세기가 커진다.', '이 문장은 지문 어디에도 없는 지어낸 근거이다'], x: [[3, '약해진다'], [1, '없는낱말']] },
         { num: 2, neg: false, evidence: ['교외와의 차이는 새벽에 가장 크다', '밤에 천천히 내보낸다'], x: [[2, '바람이'], [3, '교외의'], [4, '밤에만'], [5, '나무가'], [9, '없는']] },
-        { num: 3, neg: false, evidence: ['나무와 물은 증발 과정에서 열을 빼앗아 기온을 낮춘다.'], x: [] }] };
+        { num: 3, neg: false, evidence: ['그래서 열섬은 ㉠ 〔한낮보다 해가 진 뒤에 더 뚜렷하다.〕'], x: [] }] };
       return {};
     };
     await evidenceSet(P1().id);
@@ -118,7 +118,8 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     out.twin = { saved: vs().length, v: vs()[0] && [vs()[0].vkind, vs()[0].answer, vs()[0].typeId, vs()[0].verify.status, vs()[0].choices[0].slice(0, 2), vs()[0].num, vs()[0].passageId === P1().id, vs()[0].ev.x.length, /① 주체가 바뀜/.test(vs()[0].wrong)].join('|'),
       results: K.va.results.map(x => x.status + (x.saved ? ':saved' : ':held')).join(), heldNote: (K.va.results.find(x => !x.saved) || { rec: { verify: { notes: [] } } }).rec.verify.notes.join(' / '),
       kinds: calls.slice(before).map(c => c.kind + '@' + c.model).join(' '), cards: document.querySelectorAll('#va-results .vres').length, failCard: document.querySelectorAll('#va-results .vres.fail').length };
-    await vaKeep(K.va.results.findIndex(x => !x.saved)); out.twin.kept = vs().length; vaDrop(0); out.twin.afterDrop = K.va.results.length;
+    SPAI.state.running = true; await vaKeep(K.va.results.find(x => !x.saved).rec.id); out.twin.blocked = vs().length; SPAI.state.running = false;
+    await vaKeep(K.va.results.find(x => !x.saved).rec.id); out.twin.kept = vs().length; vaDrop(K.va.results[0].rec.id); out.twin.afterDrop = K.va.results.length;
     // 블라인드: 가벼운 모델만 틀리면 '주의', 둘 다 틀리면 '실패'
     K.va.results = []; K.va.picks = { [byNum(1).id]: true }; blindMode = 'light-wrong'; await vaRun(); out.blindWarn = K.va.results.map(x => x.status + (x.saved ? ':saved' : ':held') + ' ' + x.rec.verify.notes.join('/')).join();
     K.va.results = []; blindMode = 'both-wrong'; await vaRun(); out.blindFail = K.va.results.map(x => x.status + (x.saved ? ':saved' : ':held') + ' ' + x.rec.verify.notes.join('/')).join(); blindMode = 'ok';
@@ -135,7 +136,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     K.va.pid = P2().id; K.va.kind = 'newp'; go('variant'); out.newpLit = [...document.querySelectorAll('#va-kinds .chip')].map(c => c.dataset.kind).includes('newp');
     K.va.pid = P1().id; K.va.kind = 'newp'; K.va.results = []; renderVariant(); await vaRun();
     const np = K.passages.find(p => p.madeFrom);
-    out.newp = np && { view: K.view, cur: K.cur === np.id, title: np.title, cat: np.cat + '/' + np.sub, src: np.src.name, items: itemsOf(np.id).map(i => [i.num, i.typeId, i.verify.status, !!i.variantOf].join(':')).join(','), n: K.passages.length };
+    out.newp = np && { chip: /새 지문/.test($('#view-set .qitem').textContent) && /검증 통과/.test($('#view-set .qitem').textContent), view: K.view, cur: K.cur === np.id, title: np.title, cat: np.cat + '/' + np.sub, src: np.src.name, items: itemsOf(np.id).map(i => [i.num, i.typeId, i.verify.status, !!i.variantOf].join(':')).join(','), n: K.passages.length };
     // 변형·새 지문은 원래 시험의 분류표에 섞이지 않는다
     out.rowsAfter = KX.rows(K.passages, K.items, NAME, { section: '' }).length;
     // ── 정답 풀기·대조: 정답 없는 문항은 AI 풀이로 채우고(표시), 정답표와 다른 문항은 알려 준다 ──
@@ -146,6 +147,10 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     out.solve = { calls: calls.slice(nb).map(c => c.kind + '@' + c.model).join(' '), i3: [byNum(3).answer, byNum(3).ansBy].join(), i1: [byNum(1).answer, byNum(1).ansAi].join(), i5: [byNum(5).answer, byNum(5).ansAi || ''].join(),
       warns: ckS.warns.filter(w => /AI/.test(w)).join(' / '), yellow: document.querySelectorAll('#ex-table td.rule select[aria-label$="정답"]').length, noAnsErr: ckS.errors.some(e => /정답이 없음/.test(e)) };
     await exSetField(byNum(3).id, 'answer', '②'); out.solve.confirmed = [byNum(3).answer, byNum(3).ansBy || ''].join();
+    // 출처 이름을 바꾸면 딸린 문항도 함께 옮겨 간다
+    go('set', P2().id); K.editing = true; renderSet(); $('#ed-src').value = '새 이름 모의'; await saveSetEdit();
+    out.rename = [KX.rows(K.passages, K.items, '새 이름 모의', {}).length, KX.rows(K.passages, K.items, NAME, { section: '' }).length].join();
+    go('set', P2().id); K.editing = true; renderSet(); $('#ed-src').value = NAME; await saveSetEdit();
     // ── 백업 왕복: 분류·근거·변형이 그대로 ──
     const data = JSON.stringify({ app: 'sp-korlab', version: 2, passages: K.passages, items: K.items.map(i => i.num === 5 && !i.variantOf ? Object.assign({}, i, { typeId: 'ZZ9', subTypes: ['R01', '<img>'], nature: '<b>' }) : i), images: [] });
     const cnt = [K.passages.length, K.items.length].join();
@@ -183,15 +188,16 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   check('쌍둥이: 통과한 것만 자동 저장(선지 번호 정리·X 낱말·오답 풀이)', r.twin.saved === 1 && r.twin.v === 'twin|②|R01|pass|① |1|true|4|true', r.twin.v);
   check('쌍둥이: 근거가 지문에 없으면 수리 한 번 → 그래도 실패면 보류', r.twin.results === 'fail:held,pass:saved' && /근거 인용문이 지문에 없음/.test(r.twin.heldNote) && r.twin.cards === 2 && r.twin.failCard === 1, r.twin.results + ' / ' + r.twin.heldNote);
   check('호출 순서: 만들기(센) → 블라인드(가벼운) → 수리(센)', /^gen@strong-model blind@light-model gen@strong-model repair@strong-model$/.test(r.twin.kinds), r.twin.kinds);
-  check('보류 문항: [그래도 저장] · [버리기]', r.twin.kept === 2 && r.twin.afterDrop === 1, r.twin.kept + ' ' + r.twin.afterDrop);
+  check('보류 문항: [그래도 저장] · [버리기]', r.twin.blocked === 1 && r.twin.kept === 2 && r.twin.afterDrop === 1, r.twin.kept + ' ' + r.twin.afterDrop);
   check('블라인드: 가벼운 모델만 틀리면 주의(보류), 둘 다 틀리면 실패', /^warn:held 가벼운 모델은 다르게/.test(r.blindWarn) && /^fail:held .*정답\(②\)과 다름.*유일 정답 의심/.test(r.blindFail), r.blindWarn + ' || ' + r.blindFail);
   check('OX 분해: 5문항, 블라인드와 답이 다른 1개는 보류', r.ox.n === 4 && r.ox.kind === 'ox' && r.ox.held === 1 && /다름/.test(r.ox.heldWhy), JSON.stringify(r.ox));
   check('서술형: 모범 답안·채점 기준·배점', r.essay === 'essay|낮에 저장된 열이 밤에 나오기 때문이다.|2|5|R05|pass', r.essay);
   check('세트 화면: 변형 문항 묶음이 원 문항과 따로', r.setVar.n >= 6 && r.setVar.model && r.setVar.orig === 3 && r.setVar.chip, JSON.stringify(r.setVar));
-  check('새 지문: 독서에서만, 검증 통과 문항만 딸려 저장되고 그 세트로 이동', r.newpLit === false && r.newp && r.newp.view === 'set' && r.newp.cur && r.newp.title === '도시 숲의 냉각 효과' && r.newp.cat === '독서/과학/기술' && r.newp.src === '자체 제작 (새 지문)' && r.newp.items === '1:R01:pass:false', JSON.stringify(r.newp));
+  check('새 지문: 독서에서만, 검증 통과 문항만 딸려 저장되고 그 세트로 이동', r.newpLit === false && r.newp && r.newp.view === 'set' && r.newp.cur && r.newp.title === '도시 숲의 냉각 효과' && r.newp.cat === '독서/과학/기술' && /^자체 제작 — 도시 숲의 냉각 효과 /.test(r.newp.src) && r.newp.items === '1:R01:pass:false' && r.newp.chip, JSON.stringify(r.newp));
   check('변형·새 지문은 원래 시험의 표에 섞이지 않음', r.rowsAfter === 6, r.rowsAfter);
   check('정답 풀기·대조: 세트 2 + 단독 1 호출(센 모델), 빈 정답은 채우고 AI 표시, 정답표와 다르면 알림만', r.solve.calls === 'blind@strong-model blind@strong-model blind@strong-model' && r.solve.i3 === '②,ai' && r.solve.i1 === '③,2' && r.solve.i5 === '③,2' && !r.solve.noAnsErr, JSON.stringify(r.solve));
   check('정답 풀기·대조: 점검에 "정답표는 ③, AI 풀이는 ②" · "AI가 풀어 채운 정답" 안내, 표에서 고르면 확정', /1번: 정답표는 ③, AI 풀이는 ②/.test(r.solve.warns) && /AI가 풀어 채운 정답 \(1문항\): 3번/.test(r.solve.warns) && r.solve.yellow === 1 && r.solve.confirmed === '②,', r.solve.yellow + ' ' + r.solve.confirmed);
+  check('출처 이름 바꾸기: 지문과 문항이 같은 시험으로 함께 이동', r.rename === '2,4', r.rename);
   check('백업 왕복: 분류·근거·변형 유지, 목록 밖 유형은 버림', r.backup.same && r.backup.type === 'R06+R05' && r.backup.ev === 1 && r.backup.cat === '문학/현대시/지어낸 시' && r.backup.bad === '|R01|' && r.backup.variants >= 6 && r.backup.verify === 'pass' && /저장된 열/.test(r.backup.essay), JSON.stringify(r.backup));
   check('대시보드 유형 분포 · 문제 검색(유형·변형)', /유형 분포/.test(r.dash) && /R06 1/.test(r.dash) && r.search === 1 && r.searchVar >= 6, r.search + ' ' + r.searchVar);
   check('페이지 오류 없음', errors.length === 0, errors.join(' / '));

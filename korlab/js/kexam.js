@@ -89,6 +89,7 @@
       else if(!KT.subs(f.cat).includes(f.sub)) errors.push(`${range}: (${f.cat}, ${f.sub}) 조합이 LMS 카테고리에 없음`);
       for(const m of KT.titleIssues(f.cat, f.title)) (m === '제목이 비어 있음' ? errors : warns).push(`${range} 지문 제목: ${m}`);
       if(f.cat === '문학' && !f.author) warns.push(`${range}: 문학인데 작성자(작가)가 비어 있음`);
+      for(const r of g.rows) if(r.cat !== f.cat || r.sub !== f.sub) errors.push(`${r.num}번: 같은 묶음의 첫 문항(${f.num}번)과 대분류·소분류가 다름 — LMS는 한 그룹에 한 분류만 받음`);
     });
     const seen = new Set(), noAns = [], noPts = [], byAi = [];
     const list = a=>a.slice(0, 15).join(', ') + (a.length > 15 ? ' …' : '');
@@ -103,7 +104,8 @@
       if(r.ansAi && r.answer) warns.push(`${r.num}번: 정답표는 ${CIRC[r.answer - 1]}, AI 풀이는 ${CIRC[r.ansAi - 1] || '?'} — 어느 쪽이 맞는지 확인`);
       if(r.ansBy === 'ai') byAi.push(r.num);
       if(l.fb){ fallback.push(r.num); if(l.est && l.type) warns.push(`${r.num}번(${r.cat}): 성격 '${r.nature || '미정'}' 은 치환표에 없어 ${l.type.slice(0, 3)} 로 추정`); }
-      if(r.review) flags.push({ num: r.num, type: r.typeId || r.nature || '', alt: r.review.alt || '', why: r.review.why || '' });
+      if(l.fb && l.type && KT.catOfType(l.type.slice(0, 3)) !== '독서') warns.push(`${r.num}번: 치환 유형 ${l.type.slice(0, 3)} 는 독서 유형이 아님 — 독서 / 독서이론으로 올리면 LMS가 거부할 수 있음([백업·설정]의 치환 코드 확인)`);
+      if(r.review) flags.push({ id: r.id, num: r.num, type: r.typeId || r.nature || '', alt: r.review.alt || '', why: r.review.why || '' });
       if((r.subTypes || []).length && KT.typed(r.cat)) aux.push({ num: r.num, main: r.typeId, subs: r.subTypes.slice() });
     }
     if(noAns.length) errors.push(`정답이 없음 (${noAns.length}문항): ${list(noAns)}번 — 정답·해설 PDF를 함께 올리거나 표에서 넣어 주세요`);

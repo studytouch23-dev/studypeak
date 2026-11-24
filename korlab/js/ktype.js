@@ -68,6 +68,7 @@
     if(/화법/.test(t) && /작문/.test(t)) return { cat: '화법과 작문', sub: opt.hwaMix };
     if(/화법/.test(t)) return { cat: '화법과 작문', sub: '화법' };
     if(/작문/.test(t)) return { cat: '화법과 작문', sub: '작문' };
+    if(/매체/.test(t) && /언어|문법/.test(t)) return null;               // "언어와 매체"는 구역 이름 — 문법인지 매체인지는 문항을 보고 가른다(catGuess)
     if(/매체/.test(t)) return { cat: '매체', sub: '매체' };
     if(/언어|문법/.test(t)) return { cat: '문법', sub: '' };
     if(/독서|비문학/.test(t)) return { cat: '독서', sub: '' };

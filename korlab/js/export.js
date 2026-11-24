@@ -24,7 +24,7 @@ function renderExport(){
       ${secs.length ? `<div><label for="ex-sec">선택 과목</label><select id="ex-sec" onchange="K.ex.section=this.value;renderExport()">${optList(secs, K.ex.section)}</select></div>` : ''}
       <div><label for="ex-name">Exam Name (LMS 시험 이름)</label><input id="ex-name" value="${esc(EX.name[key])}" onchange="EX.name[exKey()]=this.value.trim()"></div>
       <div><label for="ex-dur">시간 (분)</label><input id="ex-dur" type="number" value="${EX.dur}" onchange="EX.dur=+this.value||80"></div>
-      <div><label for="ex-file">LMS 파일 이름 (영문만)</label><input id="ex-file" value="${esc(EX.file[key])}" onchange="EX.file[exKey()]=KX.ascii(this.value.replace(/\\.xlsx$/i,''))+'.xlsx';this.value=EX.file[exKey()]"></div></div>
+      <div><label for="ex-file">LMS 파일 이름 (영문만)</label><input id="ex-file" value="${esc(EX.file[key])}" onchange="EX.file[exKey()]=(KX.ascii(this.value.replace(/\\.xlsx$/i,''))||'korean_exam_template')+'.xlsx';this.value=EX.file[exKey()]"></div></div>
       <div class="row" style="margin-top:.8rem">
         <button class="btn" id="ex-ai" onclick="classifyExam(K.ex.src)">🤖 AI로 유형 분류 (이 시험 전체)</button>
         <button class="btn ghost" id="ex-solve" onclick="solveExam(K.ex.src)" title="정답표가 없으면 AI가 풀어 채우고, 있으면 AI 풀이와 견줘 다른 문항을 알려 줍니다">🤖 정답 풀기·대조</button>
@@ -36,7 +36,7 @@ function renderExport(){
     ${ck.errors.length ? `<div class="card errbox" id="ex-errors"><b>업로드 전에 고쳐야 할 것 ${ck.errors.length}건</b><ul>${ck.errors.slice(0, 30).map(e=>`<li>${esc(e)}</li>`).join('')}</ul></div>` : `<div class="card okbox" id="ex-ok"><b>점검 통과</b> — 유형 빈칸 0 · 대분류별 유형 일치 · 그룹 유형 = 첫 문항 유형 · (대분류, 소분류) 조합 확인</div>`}
     ${ck.warns.length ? `<div class="card warnbox" style="margin-bottom:1rem"><b>확인해 볼 것 ${ck.warns.length}건</b><ul>${ck.warns.slice(0, 30).map(e=>`<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
     ${ck.flags.length ? `<div class="card" id="ex-flags"><h3>검토 요망 ${ck.flags.length}건</h3><div class="tblwrap"><table class="tbl"><tr><th>문항</th><th>부여 유형</th><th>대안 유형</th><th>근거</th><th></th></tr>
-      ${ck.flags.map(f=>{ const r = rs.find(x=>x.num === f.num); return `<tr><td>${f.num}</td><td>${esc(KT.label(f.type) || f.type)}</td><td>${esc(KT.label(f.alt) || f.alt || '—')}</td><td>${esc(f.why)}</td>
+      ${ck.flags.map(f=>{ const r = { id: f.id }; return `<tr><td>${f.num}</td><td>${esc(KT.label(f.type) || f.type)}</td><td>${esc(KT.label(f.alt) || f.alt || '—')}</td><td>${esc(f.why)}</td>
         <td style="white-space:nowrap">${f.alt ? `<a href="#" onclick="exUseAlt('${escJs(r.id)}');return false">대안으로</a> · ` : ''}<a href="#" onclick="exClearFlag('${escJs(r.id)}');return false">이대로 확정</a></td></tr>`; }).join('')}</table></div></div>` : ''}
     ${ck.aux.length ? `<div class="card"><h3>복합 유형 — LMS 파일에서는 대표 유형만 들어갑니다</h3><p class="hint">${ck.aux.map(a=>`${a.num}번 ${a.main} + ${a.subs.join(' + ')}`).join(' · ')}</p></div>` : ''}
     <div class="card"><h3>문항 표</h3><div class="tblwrap"><table class="tbl" id="ex-table"><tr><th>번호</th><th>대분류</th><th>소분류</th><th>지문 제목</th><th>작성자</th><th>유형 / 성격</th><th>보조</th><th>정답</th><th>배점</th></tr>
@@ -58,14 +58,17 @@ function exRowHtml(r, first, span){
     <td><select onchange="exSetField('${id}','points',this.value)" aria-label="${r.num}번 배점">${optList(['2', '3'], String(r.points || ''), '?')}</select></td></tr>`;
 }
 /* 표에서 고친 것은 바로 저장한다. 지문에 딸린 문항이면 지문을, 단독 문항이면 그 문항을 고친다 */
+/* AI 작업이 도는 동안에는 저장을 막는다 — 작업이 쥐고 있는 옛 사본이 방금 고친 것을 덮어쓰지 않게 */
+function aiBusyBlock(){ if(!SPAI.state.running) return false; toast('AI 작업이 끝난 뒤에 고쳐 주세요(아래 [중지]로 멈출 수 있습니다).'); if(K.view === 'export') renderExport(); return true; }
 async function exSetHead(itemId, field, value){
-  const it = K.items.find(i=>i.id === itemId); if(!it) return;
+  const it = K.items.find(i=>i.id === itemId); if(!it || aiBusyBlock()) return;
   const p = it.passageId ? K.passages.find(x=>x.id === it.passageId) : null, h = p || it, store = p ? 'passages' : 'items';
+  const mates = !p && it.group ? K.items.filter(x=>x !== it && !x.passageId && !x.variantOf && x.group === it.group && (x.section || '') === (it.section || '') && x.src && it.src && x.src.name === it.src.name) : [];   // "[1~4] 어휘력"처럼 머리말만 같은 단독 문항 묶음
   value = String(value || '').trim();
   if(field === 'cat'){
     if(value && !KT.CATS.includes(value)) return;
     h.cat = value; h.sub = KT.subs(value).length === 1 ? KT.subs(value)[0] : KT.subOf(value, h.genre, h.title);
-    for(const x of (p ? itemsOf(p.id) : [it])){                 // 대분류가 바뀌면 유형은 그 대분류의 것으로 다시 어림
+    for(const x of (p ? itemsOf(p.id) : [it].concat(mates))){                 // 대분류가 바뀌면 유형은 그 대분류의 것으로 다시 어림
       const g = KT.guess({ stem: KPDF.plain(x.stem), view: KPDF.plain(x.view), viewLabel: x.viewLabel, solType: x.type }, value);
       Object.assign(x, { typeId: g.id || '', nature: g.nature || '', subTypes: [], typeBy: 'rule', review: null, updatedAt: Date.now() });
       if(x !== h) await DB.put('items', x);
@@ -73,29 +76,30 @@ async function exSetHead(itemId, field, value){
   }else if(field === 'sub'){ if(value && !KT.subs(h.cat).includes(value)) return; h.sub = value; }
   else h[field] = value;
   h.clsBy = 'user'; h.updatedAt = Date.now();
+  for(const m of mates){ Object.assign(m, { cat: h.cat, sub: h.sub, title: h.title, clsBy: 'user', updatedAt: Date.now() }); await DB.put('items', m); }
   await DB.put(store, h); renderExport();
 }
 async function exSetType(itemId, typeId, sub2){
-  const it = K.items.find(i=>i.id === itemId); if(!it) return;
+  const it = K.items.find(i=>i.id === itemId); if(!it || aiBusyBlock()) return;
   if(setUserType(it, typeId == null ? it.typeId : typeId, sub2 == null ? (it.subTypes || [])[0] || '' : sub2, '')) await DB.put('items', it);
   renderExport();
 }
 async function exSetNature(itemId, nature){
-  const it = K.items.find(i=>i.id === itemId); if(!it) return;
+  const it = K.items.find(i=>i.id === itemId); if(!it || aiBusyBlock()) return;
   if(setUserType(it, '', '', nature)) await DB.put('items', it);
   renderExport();
 }
 async function exSetField(itemId, field, value){
-  const it = K.items.find(i=>i.id === itemId); if(!it) return;
+  const it = K.items.find(i=>i.id === itemId); if(!it || aiBusyBlock()) return;
   if(field === 'points') it.points = +value || null; else { it.answer = value; delete it.ansBy; delete it.ansAi; }      // 사람이 고른 정답으로 확정
   it.updatedAt = Date.now(); await DB.put('items', it); renderExport();
 }
 async function exUseAlt(itemId){
-  const it = K.items.find(i=>i.id === itemId); if(!it || !it.review || !KT.has(it.review.alt)) return;
+  const it = K.items.find(i=>i.id === itemId); if(!it || !it.review || !KT.has(it.review.alt) || aiBusyBlock()) return;
   setUserType(it, it.review.alt, '', ''); await DB.put('items', it); renderExport();
 }
 async function exClearFlag(itemId){
-  const it = K.items.find(i=>i.id === itemId); if(!it) return;
+  const it = K.items.find(i=>i.id === itemId); if(!it || aiBusyBlock()) return;
   it.review = null; it.typeBy = 'user'; it.updatedAt = Date.now(); await DB.put('items', it); renderExport();
 }
 const exSafeName = s=>String(s || '시험').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -112,7 +116,7 @@ async function exDownloadLms(){
   if(ck.errors.length && !confirm(`아직 고쳐야 할 것이 ${ck.errors.length}건 있습니다. 이대로 올리면 LMS가 거부할 수 있습니다.\n\n${ck.errors.slice(0, 6).join('\n')}\n\n그래도 파일을 만들까요?`)) return;
   try{
     const key = exKey(), blob = await SPX.blob(KX.lmsSheets(rs, { name: EX.name[key] || K.ex.src, subject: '국어', duration: EX.dur }));
-    downloadBlob(KX.ascii(String(EX.file[key] || '').replace(/\.xlsx$/i, '')) + '.xlsx' || 'korean_exam_template.xlsx', blob);
+    downloadBlob((KX.ascii(String(EX.file[key] || '').replace(/\.xlsx$/i, '')) || 'korean_exam_template') + '.xlsx', blob);
     toast('LMS 업로드 파일을 내려받았습니다.');
   }catch(e){ toast('⚠ ' + (e.message || e)); }
 }

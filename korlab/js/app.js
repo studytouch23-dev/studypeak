@@ -139,7 +139,7 @@ async function exportBackup(withImages){
 }
 const IMG_RE = /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/;
 const cleanId = v=>String(v == null ? '' : v).replace(/[^\w.-]/g, '');
-const STR_P = ['title', 'author', 'genre', 'body', 'head', 'section', 'summary', 'theme', 'batch'], STR_I = ['section', 'group', 'stem', 'view', 'viewLabel', 'answer', 'explain', 'wrong', 'type', 'batch', 'title', 'note', 'model'];
+const STR_P = ['title', 'author', 'genre', 'body', 'head', 'section', 'summary', 'theme', 'batch'], STR_I = ['section', 'group', 'stem', 'view', 'viewLabel', 'answer', 'explain', 'wrong', 'type', 'batch', 'title', 'author', 'note', 'model'];
 const cleanCat = (o, r)=>{ const c = KT.CATS.includes(r.cat) ? r.cat : ((KT.catOf(r.area) || {}).cat || ''); o.cat = c; o.sub = KT.subs(c).includes(r.sub) ? r.sub : ((r.cat == null && (KT.catOf(r.area) || {}).sub) || ''); };
 const strArr = (a, n)=>(Array.isArray(a) ? a : []).slice(0, n || 50).map(String);
 function cleanRecord(r, strKeys){                            // 남이 준 백업도 안전하게: id 는 [\w.-], 글 칸은 글자, 나머지 모양은 앱이 만드는 대로만
@@ -162,7 +162,7 @@ async function importBackup(file){
       o.typeBy = ['rule', 'ai', 'user'].includes(i.typeBy) ? i.typeBy : ''; o.review = i.review && typeof i.review === 'object' ? { alt: String(i.review.alt || ''), why: String(i.review.why || '') } : null;
       if(i.ansBy === 'ai') o.ansBy = 'ai'; if(+i.ansAi >= 1 && +i.ansAi <= 5) o.ansAi = +i.ansAi;
       if(i.ev && typeof i.ev === 'object') o.ev = { quotes: strArr(i.ev.quotes, 12), x: (Array.isArray(i.ev.x) ? i.ev.x : []).slice(0, 12).filter(Array.isArray).map(v=>[+v[0] || 0, String(v[1] || '')]), neg: !!i.ev.neg };
-      if(i.variantOf){ o.variantOf = cleanId(i.variantOf); o.vkind = String(i.vkind || '').replace(/[^a-z]/g, ''); o.kind = ['ox', 'essay'].includes(i.kind) ? i.kind : '';
+      if(i.variantOf || i.vkind){ if(i.variantOf) o.variantOf = cleanId(i.variantOf); o.vkind = String(i.vkind || '').replace(/[^a-z]/g, ''); o.kind = ['ox', 'essay'].includes(i.kind) ? i.kind : '';
         o.rubric = strArr(i.rubric, 12); o.verify = i.verify && typeof i.verify === 'object' ? { status: String(i.verify.status || '').replace(/[^a-z]/g, ''), notes: strArr(i.verify.notes, 12) } : null; }
       return o; });
     const imgs = (Array.isArray(d.images) ? d.images : []).map(x=>({ id: cleanId(x.id), imgs: (Array.isArray(x.imgs) ? x.imgs : []).filter(u=>typeof u === 'string' && IMG_RE.test(u)) })).filter(x=>x.id && x.imgs.length);

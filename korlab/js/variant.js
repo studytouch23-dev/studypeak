@@ -18,8 +18,9 @@ const VA_RULES = `[출제 원칙]
 - 지문의 ㉠·ⓐ·[A] 같은 기호는 지문에 실제로 있는 것만 쓴다. 지문에서 〔 〕로 보이는 곳이 밑줄이다.
 - evidence: 정답을 확정짓는 지문(또는 네가 쓴 <보기>) 문장 1~2개를 글자 그대로 복사한다. 바꿔 쓰지 않는다.
 - wrongs: [선지 번호, 그 선지를 틀리게 만든 낱말(선지 글자 그대로, 한 어절), 왜 틀렸는지 한 문장]. 긍정 발문이면 오답 4개 각각, 부정 발문이면 정답 선지 하나만.
+- neg: 발문이 틀린 것·아닌 것을 고르라고 하면 true, 아니면 false.
 - type 은 아래 목록의 ID 만 쓴다.`;
-const VA_MC = '{"items":[{"stem":"발문","viewLabel":"","view":"","choices":["① …","② …","③ …","④ …","⑤ …"],"answer":3,"type":"R01","points":2,"explain":"정답 해설 한두 문장","evidence":["지문 그대로"],"wrongs":[[1,"낱말","이유"]]}]}';
+const VA_MC = '{"items":[{"stem":"발문","viewLabel":"","view":"","choices":["① …","② …","③ …","④ …","⑤ …"],"answer":3,"neg":false,"type":"R01","points":2,"explain":"정답 해설 한두 문장","evidence":["지문 그대로"],"wrongs":[[1,"낱말","이유"]]}]}';
 function vaPrompt(kind, p, src, n, to){
   const cat = p.cat || '독서', types = KT.typesOf(cat).map(t=>`${t.id} ${KT.name(t.id)} — ${t.d}`).join('\n');
   const base = `너는 수능 국어 출제 경험이 많은 출제자다. 아래 [지문]만을 근거로 변형 문항을 만든다.\n${VA_RULES}\n[유형 목록 — ${cat}]\n${types || '(유형 없음 — type 은 "")'}\n${GUARD}\n\n`;
@@ -33,8 +34,11 @@ function vaPrompt(kind, p, src, n, to){
 }
 const circ = (c, k)=>KPDF.CIRC[k] + ' ' + String(c || '').replace(/^\s*[①-⑤]\s*/, '').trim();
 /* AI가 만든 것 → 문항 꼴로 다듬고 형식·근거를 코드로 검사. notes: [{ hard, msg }] */
-function vaShape(kind, p, src, raw, body){
-  const notes = [], cat = p.cat || '', it = { stem: String(raw.stem || '').trim(), view: String(raw.view || '').trim(), viewLabel: String(raw.viewLabel || '').trim().slice(0, 12), choices: [], answer: '', explain: String(raw.explain || '').trim(),
+function vaShape(kind, p, src, raw, body, to){
+  const notes = [], cat = p.cat || '', want = kind === 'shift' ? to : kind === 'view' && KT.typed(cat) ? (cat === '문학' ? 'L07' : cat === '독서' ? 'R06' : '') : '';   // 유형 전환·<보기> 새로 쓰기는 요청한 유형으로 고정
+  raw = raw && typeof raw === 'object' ? raw : {};
+  if(want && KT.has(want) && KT.catOfType(want) === cat) raw = Object.assign({}, raw, { type: want });
+  const it = { stem: String(raw.stem || '').trim(), view: String(raw.view || '').trim(), viewLabel: String(raw.viewLabel || '').trim().slice(0, 12), choices: [], answer: '', explain: String(raw.explain || '').trim(),
     points: +raw.points || (kind === 'essay' ? 5 : 2), typeId: KT.has(raw.type) && KT.catOfType(raw.type) === cat ? raw.type : (kind === 'twin' && src ? src.typeId || '' : ''), subTypes: [], nature: src && !KT.typed(cat) ? src.nature || '' : '', typeBy: 'ai', review: null, note: '' };
   if(!it.stem) notes.push({ hard: true, msg: '발문이 비어 있음' });
   if(kind === 'ox'){ it.kind = 'ox'; it.answer = /^o$/i.test(String(raw.answer).trim()) ? 'O' : /^x$/i.test(String(raw.answer).trim()) ? 'X' : ''; if(!it.answer) notes.push({ hard: true, msg: 'O/X 정답이 없음' }); it.points = null; }
@@ -58,7 +62,7 @@ function vaShape(kind, p, src, raw, body){
   const x = [];
   if(kind === 'ox'){ const w = String(raw.wrong || ''); if(it.answer === 'X' && KEV.key(w).length >= 2 && KEV.find(it.stem, w)) x.push([0, w]); }
   else for(const v of (Array.isArray(raw.wrongs) ? raw.wrongs : []).slice(0, 5)){ const no = +(v && v[0]), w = String((v && v[1]) || ''); if(it.choices[no - 1] && KEV.key(w).length >= 2 && KEV.find(it.choices[no - 1], w)){ x.push([no, w]); if(v[2]) it.wrong = (it.wrong ? it.wrong + ' ' : '') + `${KPDF.CIRC[no - 1]} ${String(v[2]).trim()}`; } }
-  it.ev = { quotes, x, neg: /않|아닌|없는|틀린|거리가 먼/.test(KPDF.plain(it.stem).replace(/\{\/?u\}/g, '')) };
+  it.ev = { quotes, x, neg: typeof raw.neg === 'boolean' ? raw.neg : /않은|않는|아닌|없는|틀린|거리가 먼/.test(KPDF.plain(it.stem).replace(/\{\/?u\}/g, '').slice(-18)) };   // 부정 발문인지: 출제 쪽이 알려 준 값, 없으면 발문 끝자락으로
   return { it, notes };
 }
 /* 블라인드 풀이: 정답·해설을 가리고 선지마다 O/X 판정을 받는다 → [{ answer, judge }] (문항 순서대로) */
@@ -94,8 +98,8 @@ async function vaVerify(body, shaped){
 }
 async function vaRepair(kind, p, src, s, body){               // 실패한 문항을 사유와 함께 돌려보내 한 번 고치게 한다
   const res = await SPAI.json([{ type: 'text', text: `아래 변형 문항은 검증에서 문제가 나왔다. 문제를 고쳐 같은 형식의 JSON 으로 다시 낸다(문항 1개).\n[검증에서 나온 문제]\n- ${s.notes.map(n=>n.msg).join('\n- ')}\n${VA_RULES}\n${GUARD}\nJSON 하나만: {"items":[ …고친 문항 1개… ]}\n\n[고칠 문항]\n${JSON.stringify(s.raw)}\n\n[지문]\n${aiText(body)}` }], 3000, { model: SPAI.settings().strongModel });
-  const raw = Array.isArray(res.items) ? res.items[0] : null; if(!raw) return s;
-  const t = vaShape(kind, p, src, raw, body); t.raw = raw; t.src = s.src; t.repaired = true;
+  const raw = Array.isArray(res.items) ? res.items[0] : null; if(!raw || typeof raw !== 'object') return s;
+  const t = vaShape(kind, p, src, raw, body, s.to); t.raw = raw; t.src = s.src; t.repaired = true;
   await vaVerify(body, [t]);
   return t.status === 'fail' ? s : t;                           // 고쳐도 실패면 처음 것을(사유와 함께) 그대로 보여 준다
 }
@@ -106,10 +110,10 @@ function vaItemRecord(p, src, s, kind, k){
 }
 async function vaRun(){
   const p = K.passages.find(x=>x.id === K.va.pid); if(!p){ toast('지문을 먼저 고르세요.'); return; }
-  const kind = K.va.kind, picks = itemsOf(p.id).filter(i=>K.va.picks[i.id]), n = Math.max(1, Math.min(3, +K.va.n || 1));
+  const kind = K.va.kind, to = K.va.to, picks = itemsOf(p.id).filter(i=>K.va.picks[i.id]), n = Math.max(1, Math.min(3, +K.va.n || 1));   // 고른 값은 시작할 때 한 번만 읽는다(도는 중에 화면을 바꿔도 그대로)
   if(kind !== 'newp' && !picks.length){ toast('바탕이 될 문항을 하나 이상 고르세요.'); return; }
   if(kind === 'newp' && p.cat !== '독서'){ toast('새 지문 만들기는 독서 지문에서만 됩니다.'); return; }
-  if(kind === 'shift' && !KT.has(K.va.to)){ toast('바꿀 유형을 고르세요.'); return; }
+  if(kind === 'shift' && !KT.has(to)){ toast('바꿀 유형을 고르세요.'); return; }
   if(!aiReady()) return;
   const log = m=>{ K.va.log.push(m); const el = $('#va-log'); if(el) el.textContent = K.va.log.slice(-4).join('\n'); };
   K.va.log = []; SPAI.start(); busy('✨ 변형을 만드는 중…');
@@ -122,8 +126,8 @@ async function vaRun(){
       const body = String((res.passage && res.passage.body) || '').trim();
       if(KEV.key(body).length < 300) throw new Error('새 지문이 너무 짧게 왔습니다. 다시 눌러 주세요.');
       const now = Date.now(), np = { id: uid() + 'np', title: String(res.passage.title || '새 지문').slice(0, 80), author: '', cat: '독서', sub: p.sub || '', genre: p.genre || '', body, head: '다음 글을 읽고 물음에 답하시오.', range: [1, 0], section: '',
-        src: { name: '자체 제작 (새 지문)', kind: '자체 제작', year: String(new Date().getFullYear()), grade: '' }, summary: '', theme: '', madeFrom: p.id, clsBy: 'ai', batch: 'v' + now.toString(36), createdAt: now, updatedAt: now };
-      let shaped = (Array.isArray(res.items) ? res.items : []).slice(0, 6).map(raw=>Object.assign(vaShape('newp', np, null, raw, body), { raw, src: null }));
+        src: { name: '자체 제작 — ' + String(res.passage.title || '새 지문').slice(0, 60) + ' ' + now.toString(36).slice(-4), kind: '자체 제작', year: String(new Date().getFullYear()), grade: '' }, summary: '', theme: '', madeFrom: p.id, clsBy: 'ai', batch: 'v' + now.toString(36), createdAt: now, updatedAt: now };
+      let shaped = (Array.isArray(res.items) ? res.items : []).filter(x=>x && typeof x === 'object').slice(0, 6).map(raw=>Object.assign(vaShape('newp', np, null, raw, body), { raw, src: null }));
       log(`문항 ${shaped.length}개 검증 중…`); await vaVerify(body, shaped);
       for(let k = 0; k < shaped.length; k++) if(shaped[k].status === 'fail' && !SPAI.state.cancel){ log(`${k + 1}번 수리 중…`); shaped[k] = await vaRepair('newp', np, null, shaped[k], body); }
       const ok = shaped.filter(s=>s.status !== 'fail');
@@ -136,8 +140,8 @@ async function vaRun(){
     for(const src of picks){
       if(SPAI.state.cancel) break;
       log(`${src.num}번 — ${VKINDS[kind]} 만드는 중…`);
-      const res = await SPAI.json([{ type: 'text', text: vaPrompt(kind, p, src, n, K.va.to) }], 3500 + n * 1500, { model: strong });
-      let shaped = (Array.isArray(res.items) ? res.items : []).slice(0, kind === 'ox' ? 5 : n).map(raw=>Object.assign(vaShape(kind, p, src, raw, p.body), { raw, src }));
+      const res = await SPAI.json([{ type: 'text', text: vaPrompt(kind, p, src, n, to) }], 3500 + n * 1500, { model: strong });
+      let shaped = (Array.isArray(res.items) ? res.items : []).filter(x=>x && typeof x === 'object').slice(0, kind === 'ox' ? 5 : n).map(raw=>Object.assign(vaShape(kind, p, src, raw, p.body, to), { raw, src, to }));
       if(!shaped.length){ log(`${src.num}번 — 만든 것이 없음`); continue; }
       log(`${src.num}번 — ${shaped.length}개 검증 중…`); await vaVerify(p.body, shaped);
       for(let k = 0; k < shaped.length; k++) if(shaped[k].status === 'fail' && !SPAI.state.cancel){ log(`${src.num}번 — 수리 후 다시 검증…`); shaped[k] = await vaRepair(kind, p, src, shaped[k], p.body); }
@@ -152,8 +156,8 @@ async function vaRun(){
   finally{ SPAI.done(); busy(''); }
   await loadAll(); if(K.view === 'variant') renderVariant();
 }
-async function vaKeep(k){ const r = K.va.results[k]; if(!r || r.saved) return; await DB.put('items', r.rec); r.saved = true; await loadAll(); renderVariant(); toast('저장했습니다.'); }
-function vaDrop(k){ K.va.results.splice(k, 1); renderVariant(); }
+async function vaKeep(id){ const r = K.va.results.find(x=>x.rec.id === id); if(!r || r.saved || aiBusyBlock()) return; await DB.put('items', r.rec); r.saved = true; await loadAll(); renderVariant(); toast('저장했습니다.'); }
+function vaDrop(id){ K.va.results = K.va.results.filter(x=>x.rec.id !== id); renderVariant(); }
 function renderVariant(){
   const el = $('#view-variant'), V = K.va;
   if(!K.passages.length){ el.innerHTML = '<h2>변형 만들기</h2><div class="card empty">아직 지문이 없습니다. <b>시험지 올리기</b>에서 PDF를 먼저 올려 주세요.</div>'; return; }
@@ -177,7 +181,7 @@ function renderVariant(){
       <div class="row" style="margin-top:.8rem"><button class="btn" id="va-run" onclick="vaRun()">✨ ${V.kind === 'newp' ? '새 지문 + 문항 만들기' : `변형 만들기${nPick ? ` (${nPick}문항)` : ''}`}</button>
         <a href="#" onclick="go('set','${escJs(p.id)}');return false" class="hint">이 지문 세트 보기 →</a><pre id="va-log" class="hint" style="margin:0;white-space:pre-wrap">${esc(V.log.slice(-4).join('\n'))}</pre></div></div>
     ${V.results.length ? `<div class="card" id="va-results"><h3>이번에 만든 것</h3>${V.results.map((r, k)=>`<div class="vres ${r.status}">
-        <div class="row"><span class="chip ${r.status === 'pass' ? 'g' : 'w'}">${r.status === 'pass' ? '검증 통과' : r.status === 'warn' ? '주의' : '검증 실패'}</span>${r.saved ? '<span class="chip g">저장됨</span>' : `<button class="btn sm" onclick="vaKeep(${k})">${r.status === 'fail' ? '그래도 저장' : '저장'}</button><button class="btn ghost sm" onclick="vaDrop(${k})">버리기</button>`}
+        <div class="row"><span class="chip ${r.status === 'pass' ? 'g' : 'w'}">${r.status === 'pass' ? '검증 통과' : r.status === 'warn' ? '주의' : '검증 실패'}</span>${r.saved ? '<span class="chip g">저장됨</span>' : `<button class="btn sm" onclick="vaKeep('${escJs(r.rec.id)}')">${r.status === 'fail' ? '그래도 저장' : '저장'}</button><button class="btn ghost sm" onclick="vaDrop('${escJs(r.rec.id)}')">버리기</button>`}
           ${(r.rec.verify.notes || []).length ? `<span class="hint">${esc(r.rec.verify.notes.join(' / '))}</span>` : ''}</div>
         ${itemHtml(r.rec, { explain: true, cat: p.cat || '', ev: vaEv(r.rec) })}</div>`).join('')}</div>` : ''}
     ${vars.length ? `<div class="card"><h3>이 지문의 저장된 변형 ${vars.length}개</h3>${vars.map(it=>itemHtml(it, { explain: true, cat: p.cat || '', del: true, ev: vaEv(it) })).join('')}</div>` : ''}`;

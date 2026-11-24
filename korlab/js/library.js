@@ -44,7 +44,7 @@ function itemHtml(it, opts){
   const ko = Object.assign({}, opts, { spans: null });
   const head = `<div class="row" style="margin-bottom:.3rem"><b>${it.variantOf ? '변형 ' : ''}${it.num}.</b>
       ${ev && ev.has ? `<button class="evdot ev${ev.color}" onclick="focusEv(${+it.num})" title="이 문항의 근거만 보기">근거</button>` : ''}
-      ${it.variantOf ? `<span class="chip g">${esc(VKINDS[it.vkind] || '변형')}</span>${it.verify ? `<span class="chip ${it.verify.status === 'pass' ? 'g' : 'w'}" title="${esc((it.verify.notes || []).join(' / '))}">${it.verify.status === 'pass' ? '검증 통과' : '검증 주의'}</span>` : ''}` : ''}
+      ${it.vkind ? `<span class="chip g">${esc(VKINDS[it.vkind] || '변형')}</span>${it.verify ? `<span class="chip ${it.verify.status === 'pass' ? 'g' : 'w'}" title="${esc((it.verify.notes || []).join(' / '))}">${it.verify.status === 'pass' ? '검증 통과' : '검증 주의'}</span>` : ''}` : ''}
       ${typeChips(it, cat)}${it.points ? `<span class="chip">${it.points}점</span>` : ''}
       ${it.kind === 'essay' ? '' : it.answer ? `<span class="chip ${it.ansBy === 'ai' ? 'w' : 'g'}"${it.ansBy === 'ai' ? ' title="AI가 풀어 채운 정답 — 확인 필요"' : ''}>정답 ${esc(it.answer)}${it.ansBy === 'ai' ? ' (AI)' : ''}</span>` : '<span class="chip w">정답 없음</span>'}${it.oldHangul ? '<span class="chip w" title="옛한글이 들어 있어 글자가 깨져 보일 수 있습니다 — 원본 보기로 확인">옛한글</span>' : ''}
       ${opts.link && it.passageId ? `<a href="#" onclick="go('set','${escJs(it.passageId)}');return false" class="hint">지문 보기 →</a>` : ''}
@@ -133,7 +133,7 @@ function setUserType(it, typeId, sub2, nature){
   return true;
 }
 async function saveSetEdit(){
-  const p = K.passages.find(x=>x.id === K.cur); if(!p) return;
+  const p = K.passages.find(x=>x.id === K.cur); if(!p || aiBusyBlock()) return;
   const cat = $('#ed-cat').value, sub = $('#ed-sub').value, title = $('#ed-title').value.trim(), catChanged = cat !== (p.cat || '');
   if(catChanged || sub !== (p.sub || '') || title !== (p.title || '')) p.clsBy = 'user';
   Object.assign(p, { title, author: $('#ed-author').value.trim(), cat, sub, body: $('#ed-body').value, updatedAt: Date.now() });
@@ -151,10 +151,11 @@ async function saveSetEdit(){
     if(it.ev && oldBody !== [it.stem, it.view, it.choices.join('\n')].join('|')) delete it.ev;      // 글이 바뀌면 근거 표시는 다시 찾아야 한다
     await DB.put('items', it);
   }
+  for(const v of K.items.filter(i=>i.passageId === p.id && (!i.src || i.src.name !== p.src.name))){ v.src = Object.assign({}, v.src, { name: p.src.name }); await DB.put('items', v); }   // 출처 이름을 바꾸면 딸린 문항(변형 포함)도 함께
   K.editing = false; await loadAll(); renderSet(); toast('저장했습니다.');
 }
 async function deleteSet(id){
-  const p = K.passages.find(x=>x.id === id); if(!p) return;
+  const p = K.passages.find(x=>x.id === id); if(!p || aiBusyBlock()) return;
   const its = K.items.filter(i=>i.passageId === id);
   if(!confirm(`이 지문과 딸린 문항 ${its.length}개(변형 포함)를 지울까요?`)) return;
   for(const it of its){ await DB.del('items', it.id); await DB.del('images', it.id); }
@@ -162,6 +163,7 @@ async function deleteSet(id){
   await loadAll(); toast('지웠습니다.'); go('passages');
 }
 async function deleteItem(id){
+  if(aiBusyBlock()) return;
   if(!confirm('이 문항을 지울까요?')) return;
   await DB.del('items', id); await DB.del('images', id); await loadAll();
   if(K.view === 'set') renderSet(); else if(K.view === 'items') renderItems(); else if(K.view === 'variant') renderVariant();

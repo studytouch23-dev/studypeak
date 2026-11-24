@@ -3,7 +3,7 @@
  * 표시 토큰: {hC#N,N}…{/h} 형광펜(C 색 번호, N 문항 번호들) · {hn#C#N} 번호 배지 · {x}…{/x} 틀린 낱말 */
 (function(root, factory){ const o = factory(); if(typeof module === 'object' && module.exports) module.exports = o; else root.KEV = o; })(typeof self !== 'undefined' ? self : this, function(){
   'use strict';
-  const TOKEN = /^\{\/?[ub]\}/, SKIP = /[\s\uE000\uE001 ]/, PUNCT = /[“”"'‘’`´·․ㆍ.,…~～\-–—]/;
+  const TOKEN = /^\{\/?[ub]\}/, SKIP = /[\s\uE000\uE001 ]/, PUNCT = /[“”"'‘’`´·․ㆍ.,…~～\-–—〔〕]/;       // 〔 〕: AI에게 밑줄을 보여 줄 때 쓰는 괄호 — 그대로 베껴 와도 찾게
   /* 견줄 글자만 남긴 글과, 그 글자가 원문 어디에 있었는지 */
   function compact(raw){
     raw = String(raw || '');

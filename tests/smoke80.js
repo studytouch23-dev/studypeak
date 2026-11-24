@@ -26,6 +26,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   check('배점 → Level·권장 시간', KT.level(2).level === 'General' && KT.level(2).time === '01:30' && KT.level(3).level === 'Differential' && KT.level(3).time === '02:30');
 
   // ── 글자에서 분류 읽기 ──
+  check('"언어와 매체"는 구역 이름일 뿐 — 대분류로 읽지 않음(문항을 보고 가름)', KT.catOf('언어와 매체') === null && KT.catOf('[35~39] 언어').cat === '문법');
   check('영역 이름 → 대분류·소분류', KT.catOf('화법').sub === '화법' && KT.catOf('화법과 작문').sub === '화법과 작문' && KT.catOf('작문').cat === '화법과 작문' && KT.catOf('언어').cat === '문법' && KT.catOf('매체').sub === '매체' && KT.catOf('') === null);
   check('갈래 글자 → LMS 소분류', KT.subOf('독서', '주제 통합', '') === '주제복합' && KT.subOf('독서', '기술', '') === '과학/기술' && KT.subOf('독서', '사회', '') === '사회/경제/법' && KT.subOf('독서', '독서 이론', '') === '독서이론'
     && KT.subOf('문학', '현대 소설', '') === '현대소설' && KT.subOf('문학', '고전시가', '') === '고전시' && KT.subOf('문학', '현대시', '수필') === '현대시' && KT.subOf('문법', '', '국어의 음운 변동') === '음운' && KT.subOf('문법', '', '인용 표현') === '문장' && KT.subOf('문법', '', '중세 국어의 표기법') === '국어사');
@@ -49,6 +50,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   const raw = '도시는 {u}낮에{/u} 열을 저장\uE001한다. 밤에 그 열이\n나온다. 녹지는 열을 빼앗는다.';
   const a = KEV.find(raw, '낮에 열을  저장한다'), b = KEV.find(raw, '그 열이 나온다.'), none = KEV.find(raw, '낮에 열을 내보낸다');
   check('인용문 찾기: 띄어쓰기·밑줄 표시·줄바꿈·문장부호 무시, 없는 문장은 못 찾음', !!a && raw.slice(a[0], a[1]).startsWith('낮에') && !!b && none === null, JSON.stringify([a, b, none]));
+  check('AI가 밑줄 괄호 〔 〕째 베껴 와도 찾음', !!KEV.find('철학자는 {u}㉠ 존재의 의미{/u}를 물었다.', '철학자는 〔㉠ 존재의 의미〕를 물었다'));
   const mk = KEV.mark(raw, [{ s: a[0], e: a[1], color: 1, num: 2 }, { s: b[0], e: b[1], color: 2, num: 3 }]), html = KEV.html(mk);
   check('형광펜 토큰: 밑줄·줄바꿈에서 끊었다 다시 열고 번호 배지를 붙임', (mk.match(/\{h1#2\}/g) || []).length === 2 && (mk.match(/\{h2#3\}/g) || []).length === 2 && /\{hn#1#2\}/.test(mk) && (mk.match(/\{\/h\}/g) || []).length === 4
     && /<mark class="ev ev1" data-q="2">/.test(html) && /<sup class="evn ev2" data-q="3">3<\/sup>/.test(html) && mk.replace(/\{hn#\d+#\d+\}|\{h\d+#[\d,]+\}|\{\/h\}/g, '') === raw, mk);
@@ -93,6 +95,11 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   const bad = KX.check([{ num: 1, cat: '독서', sub: '과학/기술/생명', title: '', typeId: '', subTypes: [], nature: '', answer: 0, points: 0, gkey: 'a' },
     { num: 2, cat: '문학', sub: '현대시', title: '현대시 — 봄', author: '', typeId: 'R01', subTypes: [], nature: '', answer: 2, points: 2, gkey: 'b' }, { num: 3, cat: '매체', sub: '매체', title: '(가) 방송', typeId: '', subTypes: [], nature: '', answer: 1, points: 2, gkey: 'c' }]);
   check('점검: 소분류 조합·제목·유형 빈칸·다른 대분류 유형·정답·배점을 잡아냄', ['조합이 LMS 카테고리에 없음', '제목이 비어 있음', '질문 유형은 필수', '문학 문항에 쓸 수 없음', '정답이 없음', '배점 없음'].every(m => bad.errors.some(e => e.includes(m))) && bad.warns.some(w => /접두어/.test(w)), bad.errors.join(' / '));
+  const mix = KX.check([{ id: 'a', num: 1, cat: '문법', sub: '단어', title: '어휘', typeId: 'G02', subTypes: [], answer: 1, points: 2, gkey: 'g' }, { id: 'b', num: 2, cat: '문학', sub: '현대시', title: '어휘', author: 'x', typeId: 'L01', subTypes: [], answer: 1, points: 2, gkey: 'g', review: { alt: '', why: 'w' } }]);
+  check('점검: 한 묶음 안에서 분류가 다르면 오류, 검토 요망 표는 문항 id 로', mix.errors.some(e => /2번: 같은 묶음의 첫 문항\(1번\)과 대분류·소분류가 다름/.test(e)) && mix.flags[0].id === 'b', mix.errors.join(' / '));
+  KT.opt.mediaLang = 'G05'; const g5 = KX.check([{ id: 'm', num: 40, cat: '매체', sub: '매체', title: '(가) 방송', typeId: '', subTypes: [], nature: '매체 언어·표현 분석', answer: 1, points: 2, gkey: 'm' }]); KT.opt.mediaLang = 'R08';
+  check('점검: 치환 유형이 독서 유형이 아니면 경고', g5.warns.some(w => /G05 는 독서 유형이 아님/.test(w)), g5.warns.join(' / '));
+  check('엑셀 글자: 드문 한자·이모지는 남기고 제어 문자만 지움', SPX.xe('\u{20000}a\u0001<') === '\u{20000}a&lt;');
   check('LMS 파일 이름은 ASCII', KX.lmsFileName('2027학년도 9월 모의평가', '화법과 작문', true) === '2027_09_mock_korean_speech_writing_exam_template_fallback.xlsx' && KX.lmsFileName('2025학년도 수능', '언어와 매체', false) === '2025_csat_korean_language_media_exam_template.xlsx'
     && /^[\x20-\x7E]+$/.test(KX.lmsFileName('바탕 5회', '', false)) && KX.ascii('2026 바탕 5회 국어') === '2026_5');
 
