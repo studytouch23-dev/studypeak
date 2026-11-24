@@ -1,8 +1,8 @@
 # 스터디피크 국어 랩 — 기획안 (v0.1, 2026-11-24)
 
-> 상태(2026-11-24): **1단계 "쌓기"의 첫 묶음 완성** — 글자 층 있는 PDF 읽기, 정답·해설지 붙이기, 지문·세트 화면, 고치기, 띄어쓰기 AI 다듬기, 백업.
-> 다음: 변형 만들기 + 검증(2단계). 맨 아래 **진행 상황·코드 지도**를 먼저 볼 것.
-> 사용자 답: 대상은 고등 내신 + 수능·모의고사 모두, 변형 6종 골고루. 국어 유형표·국어 프로젝트 지침은 아직 못 받음(claude.ai 프로젝트는 여기서 열 수 없음 → zip 요청함).
+> 상태(2026-11-25): **쌓기 → 분류 → 근거 → 변형 → 엑셀·학습지**까지 한 바퀴 완성. 국어 유형표(엄태욱 마스터 22종)와 LMS 규격을 받아 반영함.
+> 맨 아래 **진행 상황·코드 지도**를 먼저 볼 것. 유형·소분류 문자열은 `korlab/js/ktype.js` 한 곳에만 있다 — LMS 등록 값이라 고치지 말 것.
+> 남은 것: 한글(HWPX)·수능형 모의고사 양식, 스캔본·캡처 읽기, 기기 간 동기화, 옛한글.
 > 수학 랩(`lab/`)과 같은 메커니즘(올리기 → AI 변환 → 분류 → 변형 생성 → 검증 → 학습지·HWPX·LMS)을
 > 국어의 단위인 **"지문 + 문항 세트"**에 맞게 다시 설계한 것.
 
@@ -117,31 +117,62 @@ Sheet 학습지  { id, title, entries[{passageId, itemIds[]}] | 단독 문항 } 
 - AI 수능 국어 풀이: https://v.daum.net/v/20251115070121527 · https://www.etoday.co.kr/news/view/2528216
 - 2028 수능 국어(화법과 언어·독서와 작문·문학, 선택과목 폐지): https://www.korea.kr/news/policyNewsView.do?newsId=148942032
 
-## 진행 상황·코드 지도 (2026-11-24)
+## 진행 상황·코드 지도 (2026-11-25)
 
 **핵심 발견**: 평가원·교육청 시험지와 한글에서 만든 PDF에는 글자 층이 있어서, **AI 없이** 글자(오타 0)·밑줄·상자·그림 자리를 PDF에서 직접 읽을 수 있다.
-실제 2025 수능·2025 6월 모평(각 20쪽, 2단 A3)에서 지문 14 · 문항 56(공통 34 + 선택 2과목 × 11)이 경고 없이 나뉘고, EBS 해설지로 정답 56개·유형 이름·해설·지문 제목이 붙었다(읽기 약 2초).
-SNT 검사지(크롬이 만든 PDF, 번호가 배지 모양)도 문항 60 · 지문 9로 나뉜다. 이 실제 PDF들은 저작권 때문에 저장소에 넣지 않는다 — 테스트는 같은 짜임의 지어낸 시험지(`tests/kor-fixture.js`)로.
+실제 2025 수능·2025 6월 모평(각 20쪽, 2단 A3)에서 지문 14 · 문항 56(공통 34 + 선택 2과목 × 11)이 경고 없이 나뉘고, EBS 해설지로 정답 56개·해설·지문 제목이 붙는다(읽기 약 2초).
+같은 시험지가 **AI 없이 규칙만으로** 대분류·소분류·제목(문학은 작가 「작품」)·22유형까지 채워져 LMS 점검 오류 0건 · 배점 합계 100점이 나온다(발문과 해설지 이름이 어긋나는 5문항 안팎만 "검토 요망").
+이 실제 PDF들은 저작권 때문에 저장소에 넣지 않는다 — 테스트는 같은 짜임의 지어낸 시험지(`tests/kor-fixture.js`)로.
+
+**쓰는 순서(화면)**: ① 시험지 올리기 → ② 분류표·LMS 엑셀(문항 표에서 고치기, 🤖 AI 분류, 엑셀 2종) → ③ 지문·작품 → 세트 화면(🤖 정답 근거 형광펜, ✨ 변형 만들기) → ④ 학습지(인쇄·PDF).
 
 | 파일 | 내용 |
 |---|---|
-| `korlab/index.html` | 화면 틀·스타일(수학 랩과 같은 초록 틀). 스크립트는 아래 순서로 불러옴 |
+| `korlab/index.html` | 화면 틀·스타일(수학 랩과 같은 초록 틀). 스크립트는 아래 순서로 불러옴. `#print-root` 는 학습지 인쇄용(화면에서는 숨김) |
 | `shared/core.js` (`SP`) | `$`·`esc`·`escJs`·`uid`·`toast`·`downloadBlob`·`lsJson`·`openDB`(IndexedDB) |
-| `shared/ai.js` (`SPAI`) | Claude 호출 `SPAI.json(content, maxTokens)`·`settings`(수학 랩과 같은 localStorage 키)·`start/done/cancel` |
-| `korlab/js/kpdf.js` (`KPDF`) | **PDF 읽기 엔진, 순수 함수 — Node 에서도 돈다.** `extractPage`(글자 조각 + 가로·세로선 + 그림 자리) → `segment`(단 나누기 → 줄 → 머리말 제거 → [N~M] 세트·문항·단독 문항, 밑줄 `{u}`·상자 `{b}`·`[그림]`, 사각형) · `parseSolutionText`(EBS식 해설지) · `plain`(줄 이음 표시 걷기) |
-| `korlab/js/app.js` | 상태 `K`, `DB`('sp-korlab': passages·items·images·sheets), `go(view)`, `kHtml`(표시 문법 → HTML), 대시보드, 백업·설정(가져오기는 `cleanRecord`로 값 정리) |
-| `korlab/js/upload.js` | 시험지 올리기 `upRead`(문제지 + 해설지) → `upPreviewHtml` → `upSave`(원본 조각 `upCrops`: 쪽을 그려 사각형대로 JPEG) |
-| `korlab/js/library.js` | `renderPassages`(지문·작품 카드) · `renderSet`(왼쪽 지문 / 오른쪽 문항, 원본 보기) · `renderSetEdit`/`saveSetEdit` · `renderItems`(문제 검색) |
-| `korlab/js/polish.js` | `polishSet`: 줄 이음 추정 자리만 ‹n›으로 번호 매겨 AI가 0/1로 답함 → 그 자리만 바꿈(글자는 AI가 못 고침, 길이 안 맞으면 버림) |
-| `tests/smoke78.js`·`smoke79.js` | 엔진(Node) · 화면 흐름(`openKor` — tools/_common.js) |
+| `shared/ai.js` (`SPAI`) | Claude 호출 `SPAI.json(content, maxTokens, {model})`·`settings`(수학 랩과 같은 localStorage 키: 기본 모델 = 가벼운 모델, `strongModel` = 센 모델)·`start/done/cancel` |
+| `shared/xlsx.js` (`SPX`) | 작은 xlsx 쓰개(JSZip). `''` 는 **빈 문자열 셀(inlineStr)** 로 쓴다 — LMS가 자기닫힘 빈 셀을 건너뛰어 열이 밀리는 것을 막음. `null` 은 셀 없음 |
+| `korlab/js/kpdf.js` (`KPDF`) | **PDF 읽기 엔진, 순수 함수 — Node 에서도 돈다.** `extractPage` → `segment`(세트·문항·단독 문항, 줄 잇기) · `parseSolutionText`(EBS식 해설지) |
+| `korlab/js/ktype.js` (`KT`) | **유형 체계 — 순수 함수.** 22유형(`TYPES`, 판정 기준 포함)·대분류·LMS 소분류(`subs`)·화작·매체 "성격"과 fallback 치환표(`NATURES`·`fallbackOf`)·Level/시간(`level`) · 규칙 분류 `guess`(발문 규칙 + 해설지 이름 규칙) · `catOf`/`subOf`/`catGuess` · 문학 제목 `credits`/`litTitle` · `titleIssues`. 확인 필요 표기 4건은 `KT.opt`(설정에서 바꿈) |
+| `korlab/js/kev.js` (`KEV`) | **인용문 대조 — 순수 함수.** `compact`/`find`(띄어쓰기·표시 무시하고 글자만 견줌) · `mark`(형광펜·X 토큰 박기) · `html` |
+| `korlab/js/kexam.js` (`KX`) | **시험 → 표 → 엑셀 — 순수 함수.** `rows`(시험 + 선택 과목, 변형 제외) · `groups` · `classSheets`(분류표 2시트) · `lmsSheets`(ExamTemplate + 숨김 `_Lookup`, 화작·매체 fallback) · `check`(업로드 전 점검·검토 요망·보조 유형·fallback) · `lmsFileName`(ASCII) |
+| `korlab/js/app.js` | 상태 `K`, `DB`('sp-korlab': passages·items·images·sheets), `go(view)`, `kHtml`(표시 문법 + 형광펜 → HTML), 대시보드, 백업·설정(LMS 표기 설정, 가져오기는 `cleanRecord`로 값 정리 — 분류값은 목록에 있는 것만), 예전 저장분 `migrateRecord`(area → cat/sub) |
+| `korlab/js/upload.js` | `upRead`(문제지 + 해설지) → `upClassify`(규칙으로 먼저 분류, [3점] 없는 문항은 2점) → `upPreviewHtml` → `upSave`(원본 조각 `upCrops`) |
+| `korlab/js/library.js` | `renderPassages` · `renderSet`(지문 / 문항 / 변형 묶음, 도구 줄) · `itemHtml`·`typeChips` · `renderSetEdit`/`saveSetEdit`(`setUserType` — 직접 고르면 확정) · `renderItems`(유형·검토·변형 필터) |
+| `korlab/js/polish.js` | `polishSet`: 줄 이음 추정 자리만 ‹n›으로 번호 매겨 AI가 0/1로 답함(글자는 AI가 못 고침) |
+| `korlab/js/aiwork.js` | 🤖 **22유형 분류** `classifyExam`/`aiClassifySet`/`aiClassifySingles` → `applyType`·`applyHead`(목록 밖 값 거부, `typeBy:user`·`clsBy:user` 는 건드리지 않음) · 🤖 **정답 근거** `evidenceSet` → `applyEvidence`(지문·<보기>·선지에 실제로 있는 것만) · `evSpans`·`focusEv` |
+| `korlab/js/export.js` | [분류표·LMS 엑셀] 화면: 문항 표(바로 저장되는 select·input), 점검·검토 요망 표, 내려받기 2종 |
+| `korlab/js/variant.js` | ✨ **변형 6종** `vaRun`: `vaPrompt` → `vaShape`(형식 + 근거 대조) → `vaVerify`(블라인드: 가벼운 모델 → 어긋나면 센 모델) → `vaRepair`(한 번) → 통과만 자동 저장, 나머지는 보류 목록 |
+| `korlab/js/sheet.js` | 학습지: `shHtml`(세트 2단, 번호 다시 매김, 정답·해설 쪽) → `shPreview`·`shPrint`(`window.print`) |
+| `tests/smoke78~82.js` | 78 PDF 엔진 · 79 올리기·세트·다듬기·백업 · 80 유형 체계·엑셀 엔진(Node) · 81 분류·엑셀·근거·변형(AI 스텁) · 82 학습지 |
+| `tools/fix-pua.py` | 소스 안의 보이지 않는 사용자 영역 글자를 `\uE000` 꼴 이스케이프로 되돌림 — 편집 뒤 커밋 전에 한 번 |
+
+**데이터 꼴(추가된 칸)** — 지문: `cat`·`sub`(LMS 값)·`author`·`clsBy`·`madeFrom`(새 지문의 바탕). 문항: `typeId`·`subTypes[]`(복합)·`nature`(화작·매체 성격, LMS 치환용)·`typeBy`(`rule`·`ai`·`user`)·`review{alt,why}`·`note`·`ev{quotes[],x[[선지,낱말]],neg}`,
+단독 문항은 `cat`·`sub`·`title`, 변형은 `variantOf`·`vkind`(twin·shift·ox·essay·view·newp)·`kind`(ox·essay)·`model`·`rubric[]`·`verify{status,notes[]}`. `type` 은 해설지가 붙인 이름(참고용)으로만 남긴다.
+
+**분류 원칙(국어 프로젝트 컨텍스트 그대로)**
+- 유형은 마스터 22종뿐. 화법과 작문·매체는 유형 없음(`typeId=''`) — 분류표에는 `—`, LMS 파일에서만 `독서 / 독서이론 + R코드`로 치환(fallback, 파일명 `_fallback`).
+- 유형은 대분류별로 따로(독서 R · 문학 L · 문법 G). 다른 대분류 코드는 저장 단계와 점검 단계에서 모두 막는다.
+- 복합 유형: 분류표는 `A + B`, LMS 파일은 대표 유형만 + 화면에 보조 유형 요약. 유형 분포는 대표 유형으로 센다.
+- 지문 제목은 학생에게 보인다: 독서 = 내용 요약, 문학 = `작가 「작품」`만, 문법 = 단원명(해설지의 문항 이름을 씀), 화작·매체 = 글의 종류. 접두어·대괄호 메모는 점검에서 경고.
+- 애매한 것은 멈추지 않고 `review`(검토 요망: 부여·대안·근거)로 남긴다.
+- **확인 필요 4건**(설정에서 바꿈): `극·수필`/`극 수필` · R06·R07 대시 공백 · 화작 소분류 `화법과 작문`/`화법과 작문 융합` · 매체 언어 분석 치환 `R08`/`G05`.
+
+**정답 근거 규칙**(사용자의 exam-answer-highlight 스킬과 같은 원칙): 문항마다 다른 색, 정답 선지 + 그 정답을 확정짓는 지문 문장 1~2개를 같은 색으로, 틀린 곳은 낱말 하나에 X
+(긍정 발문 → 오답 4개 각각 / 부정 발문 → 정답 선지 안). AI가 내놓은 인용문은 지문에 실제로 있을 때만 받는다.
 
 **줄 이음(가장 까다로운 부분)**: PDF는 줄 끝에서 낱말이 끊겼는지(사라|지고) 띄어 쓴 건지 알려 주지 않는다. `needSpace`가 문서 안 어절 통계 + 조사·어미 목록으로 추정하고,
-확실하지 않은 자리는 `\uE000`(붙임)/`\uE001`(띄움) 표시로 남긴다 → 화면에 주황 점, [🤖 띄어쓰기 다듬기]로 확정. 소스 파일에 이 글자를 날것으로 넣지 말고 반드시 `\uE000` 이스케이프로 쓸 것(Write 도구가 이스케이프를 실제 글자로 바꿔 버린 적이 있음 — heredoc/python 으로 쓸 것).
+확실하지 않은 자리는 `\uE000`(붙임)/`\uE001`(띄움) 표시로 남긴다 → 화면에 주황 점, [🤖 띄어쓰기 다듬기]로 확정. 소스 파일에 이 글자를 날것으로 넣지 말고 반드시 이스케이프로 쓸 것
+(편집 도구가 이스케이프를 실제 글자로 바꿔 저장하는 일이 있다 → `python3 tools/fix-pua.py`).
 
 **알려진 한계(다음에 할 것)**
-- 옛한글(한양 PUA)은 표준 글자로 못 바꿈 → `oldHangul` 표시 + 원본 보기로 확인. 변환표를 넣으면 해결.
+- 규칙 분류는 발문 낱말과 해설지 이름만 본다 — 지문·선지를 읽는 판정은 🤖 AI 분류. 해설지 없이 올리면 대분류부터 어림이라 AI 분류를 권함.
+- 문학 소분류: 시 두 편 + 수필처럼 갈래가 섞인 세트는 규칙으로는 `갈래 복합`을 못 잡는다(해설지에 한 갈래만 적혀 있을 때) → AI 분류나 표에서 고치기.
+- 변형의 블라인드 풀이는 모델의 국어 풀이 실력에 기대므로 "통과"가 정답 보증은 아니다 — 수업에 쓰기 전 사람이 한 번 본다. 새 지문은 사실관계 확인 필요.
+- 학습지는 브라우저 인쇄(PDF 저장)까지. 한글(HWPX)·수능형 모의고사 양식은 아직.
+- 옛한글(한양 PUA)은 표준 글자로 못 바꿈 → `oldHangul` 표시 + 원본 보기로 확인.
 - 선택지가 2줄 묶음 괄호 모양(언매 37번 같은 짝 문장)이면 줄 순서가 어긋남 → 원본 보기·고치기.
-- [A] 구간 괄호(세로선)는 "[A]" 글자만 그 줄에 남음. 표·그림 속 글자는 `[그림]` + 원본 조각.
+- [A] 구간 괄호(세로선)는 "[A]" 글자만 그 줄에 남음. 표·그림 속 글자는 `[그림]` + 원본 조각(학습지에는 원본 조각으로 실림).
 - 스캔 PDF·캡처 이미지(글자 층 없음)는 아직 — 수학 랩의 영역 인식 + AI 전사 방식을 붙일 예정.
-- 동기화 없음(이 브라우저 IndexedDB만) — 백업 JSON으로 옮김. 원본 조각이 시험지 1회분에 약 12MB라 동기화 때는 글만 올리는 쪽으로.
+- 동기화 없음(이 브라우저 IndexedDB만) — 백업 JSON으로 옮김.
 - 해설지 형식은 EBS식만. 빠른 정답표만 있는 PDF도 정답은 붙음.

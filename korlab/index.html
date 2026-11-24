@@ -7,6 +7,7 @@
 <meta name="robots" content="noindex">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 /* 수학 랩(lab/)과 같은 초록·회색 틀 */
 :root{
@@ -88,6 +89,45 @@ details.pv{border:1px solid var(--line);border-radius:12px;padding:.55rem .8rem;
 details.pv summary{cursor:pointer;font-weight:700}
 details.pv[open] summary{margin-bottom:.5rem}
 .warnbox{background:var(--warn-bg);color:var(--warn);border-radius:10px;padding:.6rem .8rem;font-size:.86rem;margin:.6rem 0}
+/* 유형 · 근거 형광펜 · 표 */
+.chip.t{background:#eef2ff;border-color:transparent;color:#3730a3;font-weight:700}.chip i{font-style:normal;font-weight:500;opacity:.7;margin-left:.35em}
+mark.ev{color:inherit;border-radius:3px;padding:.05em 0;transition:opacity .15s}mark.ev.dim,sup.evn.dim{opacity:.18}
+.ev1{background:#fde68a}.ev2{background:#bbf7d0}.ev3{background:#fbcfe8}.ev4{background:#bfdbfe}.ev5{background:#fed7aa}.ev6{background:#ddd6fe}.ev7{background:#99f6e4}.ev8{background:#d9f99d}
+sup.evn{font-family:"Pretendard Variable",sans-serif;font-size:.62rem;font-weight:800;border-radius:99px;padding:0 .38em;margin-right:.15em;color:#111827;text-indent:0;vertical-align:.5em;line-height:1}
+.evdot{border:0;border-radius:99px;padding:.1rem .55rem;font-size:.72rem;font-weight:800;color:#111827;cursor:pointer}
+.qitem .ch.ev{font-weight:600}
+.xw{color:var(--danger);font-weight:700;text-decoration:line-through;text-decoration-thickness:2px}
+.toolbar{padding:.7rem 1rem}
+.tblwrap{overflow-x:auto}
+.tbl{border-collapse:collapse;width:100%;font-size:.84rem}
+.tbl th{text-align:left;background:var(--line-2);padding:.4rem .5rem;white-space:nowrap;position:sticky;top:0}
+.tbl td{padding:.3rem .45rem;border-top:1px solid var(--line-2);vertical-align:top}
+.tbl tr.gfirst td{border-top:2px solid var(--line)}
+.tbl select,.tbl input{padding:.25rem .35rem;font-size:.82rem;width:auto;max-width:260px}
+.tbl td.rule select{background:var(--warn-bg)}
+.errbox{background:#fef2f2;border-color:#fecaca;color:#991b1b;font-size:.88rem}.okbox{background:var(--green-50);border-color:transparent;color:var(--green-2);font-size:.88rem}
+.errbox ul,.warnbox ul{margin:.3rem 0 0 1.1rem}
+.pick{display:block;font-weight:400;padding:.25rem .2rem;border-radius:8px;cursor:pointer}.pick:hover{background:var(--line-2)}.pick input{width:auto;margin-right:.3rem}
+.vres{border:1px solid var(--line);border-radius:12px;padding:.7rem .8rem;margin-bottom:.6rem}.vres.fail{border-color:#fecaca}.vres.warn{border-color:#fde68a}
+/* 학습지 (화면 미리보기와 인쇄가 같은 모양) */
+.sheet{font-family:"Noto Serif KR","Nanum Myeongjo","AppleMyungjo","Batang",serif;font-size:10.5pt;line-height:1.75;color:#000}
+.sheet .stitle{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:10px;font-family:"Pretendard Variable",sans-serif}.sheet .stitle b{font-size:14pt}
+.sheet .sset{column-count:2;column-gap:22px;column-rule:1px solid #bbb;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid #000}
+.sheet .shead{font-family:"Pretendard Variable",sans-serif;font-weight:700;margin-bottom:5px}
+.sheet .spassage{border:1px solid #000;padding:6px 9px;margin-bottom:9px}.sheet .spassage .pl{margin:0}.sheet .spassage .pl.prose{text-indent:1em;text-align:justify}
+.sheet .sq{break-inside:avoid;margin:0 0 11px}.sheet .sstem{padding-left:1.5em;text-indent:-1.5em;font-weight:600}.sheet .sch{padding-left:2.4em;text-indent:-1.3em}
+.sheet .sview{border:1px solid #000;margin:5px 0 5px 1em;padding:8px 8px 5px;position:relative;font-size:9.8pt}.sheet .svl{position:absolute;top:-.8em;left:50%;transform:translateX(-50%);background:#fff;padding:0 .5em;font-size:9pt}.sheet .sview .pl{margin:0}
+.sheet .slines{height:6.5em;margin:6px 0 0 1em;background:repeating-linear-gradient(#fff,#fff 1.55em,#999 1.55em,#999 calc(1.55em + 1px))}
+.sheet .simg img{max-width:100%;display:block;margin:3px 0}.sheet .sox{font-weight:400;white-space:nowrap}
+.sheet .sans{break-before:page;font-family:"Pretendard Variable",sans-serif;font-size:9.5pt;line-height:1.55}.sheet .sans h2{font-size:12pt;margin:0 0 6px}
+.sheet .sans table{border-collapse:collapse;width:100%}.sheet .sans th,.sheet .sans td{border:1px solid #999;padding:3px 6px;vertical-align:top;text-align:left}.sheet .sans th{background:#eee;white-space:nowrap}.sheet .sev{color:#444;margin-top:2px}
+.sheet .bx{border:1px solid #000}.sheet u{text-underline-offset:3px}
+.sheet-preview{max-width:860px;overflow:auto}
+#print-root{display:none}
+@media print{
+  @page{size:A4;margin:13mm 11mm}
+  body{background:#fff}#layout,#toast,#busy{display:none !important}#print-root{display:block}
+}
 #toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:var(--green-2);color:#fff;padding:.6rem 1.1rem;border-radius:99px;font-size:.88rem;font-weight:700;z-index:100;display:none;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:92vw}
 #busy{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:60;background:#111827;color:#fff;padding:.5rem .9rem;border-radius:10px;display:none;align-items:center;gap:.7rem;font-size:.86rem}
 @media(max-width:900px){
@@ -105,8 +145,9 @@ details.pv[open] summary{margin-bottom:.5rem}
       <button data-view="passages">지문·작품 <span class="cnt" id="n-passages">0</span></button>
       <button data-view="upload">시험지 올리기</button>
       <button data-view="items">문제 검색 <span class="cnt" id="n-items">0</span></button>
-      <button data-view="variant">변형 만들기 <span class="soon">준비 중</span></button>
-      <button data-view="sheet">학습지·모의고사 <span class="soon">준비 중</span></button>
+      <button data-view="export">분류표·LMS 엑셀</button>
+      <button data-view="variant">변형 만들기</button>
+      <button data-view="sheet">학습지</button>
       <button data-view="data">백업·설정</button>
     </nav>
     <div class="sb-foot"><a href="../lab/">수학 랩으로 →</a><br>데이터는 이 브라우저에만 저장됩니다.</div>
@@ -119,20 +160,30 @@ details.pv[open] summary{margin-bottom:.5rem}
       <section class="view" id="view-set"></section>
       <section class="view" id="view-upload"></section>
       <section class="view" id="view-items"></section>
-      <section class="view" id="view-variant"><h2>변형 만들기</h2><p class="vd">다음 단계에서 만듭니다 — 쌍둥이 · 유형 전환 · OX 분해 · 서술형 전환 · &lt;보기&gt; 새로 쓰기 · 새 지문, 그리고 검증 네 단계.</p></section>
-      <section class="view" id="view-sheet"><h2>학습지·모의고사</h2><p class="vd">변형 만들기 다음 단계에서 만듭니다 — 세트 단위 학습지, 수능형 모의고사 양식, 한글 파일, LMS 엑셀.</p></section>
+      <section class="view" id="view-export"></section>
+      <section class="view" id="view-variant"></section>
+      <section class="view" id="view-sheet"></section>
       <section class="view" id="view-data"></section>
     </main>
   </div>
 </div>
 <div id="busy"><span id="busy-label">작업 중…</span><button class="btn sm ghost" onclick="SPAI.cancel()">⏹ 중지</button></div>
 <div id="toast"></div>
+<div id="print-root"></div>
 <script src="../shared/core.js"></script>
 <script src="../shared/ai.js"></script>
+<script src="../shared/xlsx.js"></script>
 <script src="js/kpdf.js"></script>
+<script src="js/ktype.js"></script>
+<script src="js/kev.js"></script>
+<script src="js/kexam.js"></script>
 <script src="js/app.js"></script>
 <script src="js/upload.js"></script>
 <script src="js/library.js"></script>
 <script src="js/polish.js"></script>
+<script src="js/aiwork.js"></script>
+<script src="js/export.js"></script>
+<script src="js/variant.js"></script>
+<script src="js/sheet.js"></script>
 </body>
 </html>

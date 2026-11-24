@@ -31,7 +31,7 @@ async function pagesOf(buf){
   check('세트의 문항이 다음 쪽으로 넘어가도 같은 세트(3번)', it(3).setIdx === 0 && it(3).rects[0].page === 1);
   check('시: 행마다 줄바꿈 유지, 밑줄 ⓐ', P(s2.body).split('\n').length === 5 && /^ⓐ \{u\}아직 덜 마른 빨래\{\/u\} 사이로$/m.test(P(s2.body)), JSON.stringify(P(s2.body)));
   check('세트 범위 밖 번호는 단독 문항(6번), 선택지 속 밑줄', it(6).setIdx === -1 && it(4).setIdx === 1 && it(6).choices[0] === '① 부장님께 서류 {u}결재{/u}를 받았다.', it(6).choices[0]);
-  check('줄 이음 추정 표시가 남고 plain 으로 걷힘', r.stats.unsureJoins > 0 && K.joinCount(s1.body) > 0 && !/[]/.test(P(s1.body)), r.stats.unsureJoins);
+  check('줄 이음 추정 표시가 남고 plain 으로 걷힘', r.stats.unsureJoins > 0 && K.joinCount(s1.body) > 0 && !/[\uE000\uE001]/.test(P(s1.body)), r.stats.unsureJoins);
   check('원본 조각 사각형이 쪽 안에 있음', r.items.every(i => i.rects.length && i.rects.every(q => q.w > 20 && q.h > 8 && q.x >= 0 && q.y >= 0)));
   check('띄어쓰기 추정: 조사·어미 조각은 붙이고 그 밖은 띄움', K.needSpace('현상', '을', new Map())[0] === false && K.needSpace('내용을', '떠올리는', new Map())[0] === true && K.needSpace('화민성속', '(化民成俗)의', new Map())[0] === false);
 

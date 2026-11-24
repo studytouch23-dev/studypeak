@@ -5,7 +5,7 @@ const UP = { examFile: null, solFile: null, doc: null, seg: null, sol: null, bus
 function renderUpload(){
   const s = UP.seg;
   $('#view-upload').innerHTML = `
-    <h2>시험지 올리기</h2><p class="vd">문제지 PDF를 올리면 <b>[1~3] 지문 + 문항</b> 세트와 단독 문항으로 자동으로 나눕니다. 정답·해설 PDF를 함께 올리면 정답·해설·유형 이름까지 붙습니다.</p>
+    <h2>시험지 올리기</h2><p class="vd">문제지 PDF를 올리면 <b>[1~3] 지문 + 문항</b> 세트와 단독 문항으로 자동으로 나눕니다. 정답·해설 PDF를 함께 올리면 정답·해설·지문 제목까지 붙고, 문항은 22유형으로 먼저 분류됩니다.</p>
     <div class="card"><div class="grid4">
       <div><label for="up-exam">문제지 PDF</label><input id="up-exam" type="file" accept=".pdf,application/pdf" onchange="UP.examFile=this.files[0]||null;upAutoName()"></div>
       <div><label for="up-sol">정답·해설 PDF (선택)</label><input id="up-sol" type="file" accept=".pdf,application/pdf" onchange="UP.solFile=this.files[0]||null"></div>
@@ -41,6 +41,7 @@ async function upRead(){
       UP.sol = KPDF.parseSolutionText(KPDF.pagesToText(so.pages));
       upAttachSolution();
     }
+    upClassify();
     if(!UP.seg.items.length) throw new Error('문항 번호를 찾지 못했습니다. 번호가 "1." 꼴로 시작하는 시험지인지 확인해 주세요.');
     st(`읽기 완료 — 지문 ${UP.seg.stats.sets}개 · 문항 ${UP.seg.stats.items}개`);
   }catch(e){ UP.seg = null; st('⚠ ' + (e.message || e)); toast('⚠ ' + (e.message || e)); }
@@ -66,25 +67,62 @@ function upAttachSolution(){
     const sec = upSolSection(s.section); if(!sec) continue;
     const exact = sec.sets.find(x=>x.from === s.from && x.to === s.to), wide = sec.sets.find(x=>x.from <= s.from && x.to >= s.to && upArea(x.area));
     const info = exact || wide;                              // 영역은 "[35~39] 언어"처럼 더 넓은 묶음에만 적혀 있을 수 있다
-    if(info) Object.assign(s, { area: upArea(info.area) || upArea(info.genre) || (wide ? upArea(wide.area) : ''), genre: info.genre || '', title: info.title || '', summary: info.summary.trim(), theme: info.theme || '' });
+    if(info) Object.assign(s, { areaText: [info.area, wide && wide.area].find(a=>KT.catOf(a)) || '', genre: info.genre || '', title: info.title || '', summary: info.summary.trim(), theme: info.theme || '' });
   }
   for(const it of UP.seg.items){                             // 단독 문항의 영역
     if(it.setIdx >= 0) continue;
     const sec = upSolSection(it.section), wide = sec && sec.sets.find(x=>x.from <= it.num && x.to >= it.num && upArea(x.area));
-    it.area = wide ? upArea(wide.area) : '';
+    it.areaText = wide ? wide.area : '';
   }
   UP.seg.stats.answers = hit;
 }
-const upArea = a=>AREAS.find(x=>String(a || '').includes(x)) || '';
+const upArea = a=>KT.catOf(a);
+/* 화법·작문·매체 지문의 머리말("(가)는 학생회 학생들의 대화이고, (나)는 …이다")에서 글의 종류만 뽑아 제목으로 */
+function headTitle(head){
+  const h = KPDF.plain(head).replace(/물음에 답하시오\.?/, '').trim(), parts = [];
+  h.replace(/\(([가-라])\)는\s*([^,.]+?)(?:이고|이며|이다|입니다|이다\.)/g, (m, a, b)=>{ parts.push(`(${a}) ${b.trim()}`); return m; });
+  if(parts.length) return parts.join(' / ');
+  const m = h.match(/^다음은\s*(.+?)(?:이다|입니다)/);
+  return m ? m[1].trim() : '';
+}
+/* 올리자마자 규칙으로 먼저 분류: 대분류·소분류·제목(문학은 작가 「작품」)·22유형. 해설지 정보가 있으면 그것을 근거로 쓴다 — AI 분류는 [분류표·LMS 엑셀]에서 */
+function upGuessItem(it, cat){
+  const g = KT.guess({ stem: KPDF.plain(it.stem), view: KPDF.plain(it.view), viewLabel: it.viewLabel, solType: it.type }, cat);
+  it.typeId = g.id || ''; it.nature = g.nature || ''; it.typeBy = 'rule'; it.subTypes = [];
+  it.review = g.alt ? { alt: g.alt, why: `발문은 ${g.id}, 해설지 유형 이름("${it.type}")은 ${g.alt} 쪽` } : null;
+}
+function upClassify(){
+  const S = UP.seg; if(!S) return;
+  for(const s of S.sets){
+    const body = KPDF.plain(s.body), c = KT.catOf(s.areaText) || KT.catGuess(s.section, s.items.map(i=>KPDF.plain(i.stem)), body);
+    s.cat = c.cat;
+    const cs = KT.credits(body), l1 = s.cat === '문학' ? KT.litTitle(s.title) : null;
+    const lit = s.cat !== '문학' ? null : (l1 && (l1.title.match(/「/g) || []).length >= cs.length && !/\/\s*(\([가-힣]\))?\s*$/.test(l1.title) ? l1 : KT.titleFromCredits(cs) || l1);   // 해설지 제목이 잘렸으면 지문 끝의 "- 작가, 「작품」 -" 을 쓴다
+    if(lit){ s.title = lit.title; s.author = lit.author; } else s.author = '';
+    if(!s.title && !KT.typed(s.cat)) s.title = headTitle(s.head);
+    s.sub = c.sub || KT.subOf(s.cat, s.genre, s.title);
+    if(s.cat === '문법' && !s.title) s.title = (s.items[0] && s.items[0].type) || KT.UNIT[s.sub] || '';
+    for(const it of s.items) upGuessItem(it, s.cat);
+  }
+  for(const it of S.items){
+    if(it.setIdx >= 0) continue;
+    const c = KT.catOf(it.areaText) || KT.catGuess(it.section, [KPDF.plain(it.stem)], '');
+    it.cat = c.cat; it.sub = c.sub || KT.subOf(it.cat, '', it.type) || KT.subOf(it.cat, '', KPDF.plain(it.stem + ' ' + (it.view || '')).slice(0, 400));
+    it.title = it.cat === '문법' ? (it.type || KT.UNIT[it.sub] || '') : '';          // 문법 단독 문항: 해설지의 단원 이름을 제목으로(제목 규칙 — 단원명만)
+    upGuessItem(it, it.cat);
+  }
+  if(S.items.some(i=>i.points === 3) && S.items.every(i=>!i.points || i.points === 3)) S.items.forEach(i=>{ if(!i.points) i.points = 2; });   // 수능형: [3점] 표시가 없는 문항은 2점
+  S.stats.typed = S.items.filter(i=>i.typeId || i.nature).length;
+}
 function upPreviewHtml(){
   const s = UP.seg, singles = s.items.filter(i=>i.setIdx < 0);
   const secName = x=>x.section ? `(${x.section}) ` : '';
   return `<div class="card"><div class="spread"><div class="row"><b>미리보기</b><span class="chip g">지문 ${s.stats.sets}</span><span class="chip g">문항 ${s.stats.items}</span>
-      ${UP.sol ? `<span class="chip g">정답 ${s.stats.answers || 0}</span>` : '<span class="chip">정답·해설 없음</span>'}<span class="chip ${s.stats.unsureJoins ? 'w' : ''}">띄어쓰기 추정 ${s.stats.unsureJoins}곳</span></div>
+      ${UP.sol ? `<span class="chip g">정답 ${s.stats.answers || 0}</span>` : '<span class="chip">정답·해설 없음</span>'}<span class="chip g">유형 어림 ${s.stats.typed || 0}</span><span class="chip ${s.stats.unsureJoins ? 'w' : ''}">띄어쓰기 추정 ${s.stats.unsureJoins}곳</span></div>
       <button class="btn" id="up-save" onclick="upSave()">이대로 저장</button></div>
     ${s.warnings.length ? `<div class="warnbox">확인이 필요한 곳: ${s.warnings.map(esc).join(' · ')}</div>` : ''}
     <p class="hint" style="margin:.5rem 0">펼쳐서 확인하세요. 틀린 곳은 저장한 뒤 세트 화면의 [고치기]에서 바로잡을 수 있습니다.</p>
-    ${s.sets.map((x, k)=>`<details class="pv"><summary>${esc(secName(x))}[${x.from}~${x.to}] ${x.area ? esc(x.area) + ' · ' : ''}${esc(x.title || snippet(x.body, 28) || '(그림 지문)')} <span class="hint">문항 ${x.items.map(i=>i.num).join(', ')}</span></summary>
+    ${s.sets.map((x, k)=>`<details class="pv"><summary>${esc(secName(x))}[${x.from}~${x.to}] ${x.cat ? esc(x.cat) + (x.sub ? ' · ' + esc(x.sub) : '') + ' — ' : ''}${esc(x.title || snippet(x.body, 28) || '(그림 지문)')} <span class="hint">문항 ${x.items.map(i=>i.num).join(', ')}</span></summary>
       <div class="split"><div class="passage" style="position:static;max-height:420px">${kHtml(x.body, { joins: true, passage: true })}</div><div>${x.items.map(it=>itemHtml(Object.assign({ id: 'pv' + k + '-' + it.num }, it), { joins: true })).join('')}</div></div></details>`).join('')}
     ${singles.length ? `<details class="pv"><summary>지문 없는 단독 문항 <span class="hint">${singles.map(i=>secName(i) + i.num).join(', ')}</span></summary>${singles.map((it, k)=>itemHtml(Object.assign({ id: 'pvs' + k }, it), { joins: true })).join('')}</details>` : ''}</div>`;
 }
@@ -118,14 +156,15 @@ async function upSave(){
     const passages = [], items = [], owners = [];
     UP.seg.sets.forEach((s, k)=>{
       const id = uid() + 'p' + k;
-      passages.push({ id, title: s.title || '', area: s.area || '', genre: s.genre || '', body: s.body, head: s.head || '', range: [s.from, s.to], section: s.section || '', src, summary: s.summary || '', theme: s.theme || '',
+      passages.push({ id, title: s.title || '', author: s.author || '', cat: s.cat || '', sub: s.sub || '', genre: s.genre || '', body: s.body, head: s.head || '', range: [s.from, s.to], section: s.section || '', src, summary: s.summary || '', theme: s.theme || '',
         oldHangul: !!s.oldHangul, batch, createdAt: now, updatedAt: now });
       owners.push({ id, rects: s.rects }); s._id = id;
     });
     UP.seg.items.forEach((it, k)=>{
       const id = uid() + 'i' + k, set = it.setIdx >= 0 ? UP.seg.sets[it.setIdx] : null;
       items.push({ id, passageId: set ? set._id : null, num: it.num, section: it.section || '', group: it.group || '', stem: it.stem, view: it.view || '', viewLabel: it.viewLabel || '', choices: it.choices || [],
-        answer: it.answer || '', explain: it.explain || '', wrong: it.wrong || '', type: it.type || '', points: it.points || null, area: set ? '' : (it.area || upArea(it.section)), oldHangul: !!it.oldHangul, src, batch, createdAt: now + k, updatedAt: now });
+        answer: it.answer || '', explain: it.explain || '', wrong: it.wrong || '', type: it.type || '', points: it.points || null,
+        typeId: it.typeId || '', subTypes: [], nature: it.nature || '', typeBy: it.typeBy || '', review: it.review || null, note: '', ...(set ? {} : { cat: it.cat || '', sub: it.sub || '', title: it.title || '' }), oldHangul: !!it.oldHangul, src, batch, createdAt: now + k, updatedAt: now });
       owners.push({ id, rects: it.rects });
     });
     await DB.putMany('passages', passages); await DB.putMany('items', items);
@@ -134,7 +173,7 @@ async function upSave(){
     await loadAll();
     UP.seg = null; UP.sol = null; UP.doc = null; UP.examFile = null; UP.solFile = null; UP.name = '';
     toast(`지문 ${passages.length}개 · 문항 ${items.length}개를 저장했습니다.`);
-    K.f = { area: '', q: '', src: name }; go('passages');
+    K.f = { cat: '', q: '', src: name }; K.ex = { src: name, section: '' }; go('passages');
   }catch(e){ toast('⚠ 저장 실패: ' + (e.message || e)); if(btn) btn.disabled = false; }
   UP.busy = false;
 }

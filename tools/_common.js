@@ -84,6 +84,7 @@ async function openKor(opts){ // 국어 랩(korlab/) 열기 — CDN 대신 로�
   await page.route('**/*', route => { const u = route.request().url(); return /^https?:\/\/(127\.0\.0\.1|localhost)/.test(u) ? route.continue() : route.abort(); });
   await page.goto(`http://127.0.0.1:${port}/korlab/`, { waitUntil: 'domcontentloaded' });
   await page.addScriptTag({ path: path.join(ROOT,'tests','node_modules','pdfjs-dist','build','pdf.min.js') });
+  await page.addScriptTag({ path: path.join(ROOT,'tests','node_modules','jszip','dist','jszip.min.js') });
   await page.evaluate(() => { pdfjsLib.GlobalWorkerOptions.workerSrc = KCFG.worker; });
   await page.waitForFunction(() => window.__korReady, null, { timeout: 15000 });
   const close = async () => { await browser.close(); server.close(); };
