@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SNT 자기 교정 표준 검사 신청</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* 레이아웃: 흰 바탕의 좁은 한 단(최대 720px). 색은 먹색 + 주황 하나, 나머지는 회색 단계로만 구분 */
+  --bg:#FFFFFF; --ink:#14181F; --mute:#6A717D; --line:#E6E8EC; --soft:#F5F6F8; --accent:#EE7424;
+  --font:'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+  color-scheme: light;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+html { scroll-behavior:smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior:auto; } }
+body { background:var(--bg); color:var(--ink); font-family:var(--font); font-size:16px; line-height:1.7; word-break:keep-all; -webkit-text-size-adjust:100%; }
+.or { color:var(--accent); }
+.wrap { max-width:720px; margin:0 auto; padding:0 22px; }
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+
+.nav { position:sticky; top:0; z-index:10; background:rgba(255,255,255,.94); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
+.nav .wrap { display:flex; align-items:center; justify-content:space-between; gap:12px; height:58px; }
+.brand { font-weight:900; font-size:17px; white-space:nowrap; letter-spacing:-.2px; }
+.brand .x { color:var(--mute); font-weight:400; margin:0 5px; }
+.nav nav { display:flex; gap:22px; font-size:14px; color:var(--mute); }
+.nav nav a { color:inherit; text-decoration:none; white-space:nowrap; }
+.nav nav a:hover { color:var(--ink); }
+@media (max-width:640px) { .nav nav { display:none; } }
+.btn { display:inline-block; background:var(--ink); color:#fff; font-weight:700; font-size:16px; padding:14px 28px; border-radius:10px; text-decoration:none; border:0; cursor:pointer; font-family:inherit; }
+.btn:hover { background:#000; }
+.btn.sm { font-size:14px; padding:9px 16px; border-radius:8px; }
+.btn.line { background:#fff; color:var(--ink); border:1px solid var(--ink); }
+.btn.accent { background:var(--accent); }
+.btn.accent:hover { background:#DB6417; }
+.btn:disabled { opacity:.45; cursor:default; }
+
+.hero { padding:64px 0 44px; }
+.eyebrow { font-size:13px; font-weight:700; color:var(--accent); letter-spacing:.3px; }
+h1 { font-size:clamp(36px,9.4vw,58px); font-weight:900; line-height:1.14; letter-spacing:-1.6px; margin-top:10px; }
+h1 span { white-space:nowrap; }
+.hook { margin-top:20px; font-size:clamp(17px,4.4vw,20px); font-weight:500; line-height:1.6; }
+.hook b { font-weight:900; }
+.lead { margin-top:8px; font-size:15px; color:var(--mute); max-width:33em; }
+.cta-row { margin-top:28px; display:flex; flex-wrap:wrap; gap:10px; }
+.stats { margin-top:44px; display:grid; grid-template-columns:repeat(4,1fr); border-top:1px solid var(--ink); border-bottom:1px solid var(--line); }
+.stats > div { padding:18px 0 16px; }
+.stats .n { font-size:clamp(20px,5.2vw,28px); font-weight:900; line-height:1.15; letter-spacing:-.5px; font-variant-numeric:tabular-nums; }
+.stats .n i { font-style:normal; font-size:.52em; font-weight:700; margin-left:2px; }
+.stats .l { font-size:12.5px; color:var(--mute); margin-top:3px; }
+@media (max-width:480px) { .stats { grid-template-columns:repeat(2,1fr); } .stats > div:nth-child(-n+2) { border-bottom:1px solid var(--line); } }
+
+section { padding:56px 0 0; scroll-margin-top:62px; }
+h2 { font-size:25px; font-weight:900; letter-spacing:-.6px; line-height:1.3; }
+.sub { color:var(--mute); font-size:15px; margin:4px 0 24px; }
+
+.axes { display:grid; gap:0; border-top:1px solid var(--ink); }
+.ax { display:grid; grid-template-columns:54px 1fr; gap:6px 14px; padding:22px 0; border-bottom:1px solid var(--line); }
+.ax .k { font-size:14px; font-weight:900; color:var(--mute); font-variant-numeric:tabular-nums; padding-top:3px; }
+.ax h3 { font-size:19px; font-weight:900; letter-spacing:-.3px; }
+.ax h3 small { font-size:13px; color:var(--mute); font-weight:500; margin-left:4px; }
+.ax h3 em { font-style:normal; font-size:11px; font-weight:800; color:var(--accent); border:1px solid var(--accent); padding:1px 7px; border-radius:99px; margin-left:6px; vertical-align:2px; }
+.ax p { grid-column:2; font-size:15px; color:#3D434D; }
+.ax .tags { grid-column:2; font-size:13px; color:var(--mute); }
+.ex { margin-top:20px; background:var(--soft); border-radius:14px; padding:22px; display:grid; grid-template-columns:1fr 1.2fr; gap:16px; align-items:center; }
+@media (max-width:640px) { .ex { grid-template-columns:1fr; } }
+.ex .t { font-size:12.5px; font-weight:700; color:var(--mute); }
+.ex .s { font-size:21px; font-weight:700; line-height:1.4; margin-top:2px; letter-spacing:-.3px; }
+.ex .s u { text-decoration-color:var(--accent); text-decoration-thickness:3px; text-underline-offset:4px; }
+.ex .vs { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.ex .vs > div { background:#fff; border-radius:10px; padding:12px 14px; font-size:13.5px; line-height:1.5; color:var(--mute); border:1px solid var(--line); }
+.ex .vs .kq { border-color:var(--ink); }
+.ex .lab { font-size:11.5px; font-weight:700; }
+.ex .vs b { display:block; font-size:17px; color:var(--ink); }
+
+.flow { border-top:1px solid var(--ink); counter-reset:s; }
+.flow li { list-style:none; display:grid; grid-template-columns:54px 108px 1fr; gap:14px; padding:16px 0; border-bottom:1px solid var(--line); counter-increment:s; align-items:baseline; }
+.flow li:before { content:"0" counter(s); font-size:14px; font-weight:900; color:var(--mute); font-variant-numeric:tabular-nums; }
+.flow .w { font-size:14px; color:var(--mute); }
+.flow .d { font-size:16.5px; font-weight:700; letter-spacing:-.2px; }
+@media (max-width:480px) { .flow li { grid-template-columns:34px 1fr; } .flow .d { grid-column:2; } }
+.lv { margin-top:28px; }
+.lv .cap { font-size:15px; color:#3D434D; }
+.ladder { display:flex; align-items:flex-end; gap:6px; height:84px; margin-top:16px; }
+.ladder div { flex:1; border-radius:8px 8px 0 0; display:flex; align-items:flex-end; justify-content:center; padding-bottom:9px; font-weight:900; font-size:14.5px; color:var(--mute); background:var(--soft); }
+.ladder .a { height:40%; } .ladder .b { height:58%; } .ladder .c { height:79%; background:var(--accent); color:#fff; } .ladder .d { height:100%; background:var(--ink); color:#fff; }
+.lv .line { margin-top:12px; font-size:14px; color:var(--mute); }
+.lv .line b { color:var(--accent); margin-right:6px; }
+
+.info { border-top:1px solid var(--ink); }
+.info div { display:grid; grid-template-columns:96px 1fr; gap:14px; padding:14px 0; border-bottom:1px solid var(--line); font-size:15.5px; }
+.info dt { color:var(--mute); }
+.info dd b { font-weight:700; }
+.note { margin-top:12px; font-size:13.5px; color:var(--mute); }
+
+.h3 { font-size:18px; font-weight:900; margin:34px 0 12px; letter-spacing:-.3px; }
+.h3 small { font-size:13.5px; font-weight:400; color:var(--mute); margin-left:6px; }
+.sched { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+@media (max-width:560px) { .sched { grid-template-columns:1fr; } }
+.sched .col { border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+.sched .hd { background:var(--ink); color:#fff; font-weight:700; font-size:15px; padding:10px 16px; display:flex; justify-content:space-between; }
+.sched .hd small { font-weight:400; opacity:.8; font-size:13px; }
+.sched .rw { display:flex; gap:12px; align-items:baseline; padding:11px 16px; border-top:1px solid var(--line); font-size:15.5px; }
+.sched .rw:first-of-type { border-top:0; }
+.sched .rw b { flex:0 0 38px; color:var(--accent); font-weight:900; }
+.sched .none { padding:14px 16px; color:var(--mute); font-size:14.5px; }
+.event { margin-top:14px; background:var(--ink); color:#fff; border-radius:14px; padding:22px 22px 20px; }
+.event .ek { font-size:13.5px; color:#FFB27A; font-weight:700; }
+.event .et { font-size:21px; font-weight:900; letter-spacing:-.4px; line-height:1.35; margin-top:2px; }
+.event .ew { font-size:19px; font-weight:700; margin-top:12px; }
+.event .ep { font-size:15px; margin-top:4px; color:#DDE3EC; } .event .ep b { color:#FFB27A; }
+.event .en { font-size:13.5px; margin-top:8px; color:#AEB9CB; }
+select { font:inherit; font-size:16px; padding:12px 13px; border:1px solid #CFD3DA; border-radius:10px; background:#fff; color:var(--ink); width:100%; }
+.hint { font-size:14.5px; color:var(--mute); padding:12px 0; }
+/* 일정 관리 (소유자 전용) */
+.admin { display:none; border:1px dashed var(--accent); border-radius:14px; padding:20px; margin-bottom:22px; }
+.admin.on { display:block; }
+.admin h3 { font-size:16px; font-weight:900; }
+.admin p { font-size:13.5px; color:var(--mute); margin:2px 0 14px; }
+.admin .add { display:grid; grid-template-columns:.9fr 1.1fr .9fr 1.1fr auto; gap:8px; align-items:end; }
+@media (max-width:640px) { .admin .add { grid-template-columns:1fr 1fr; } }
+.admin ul { margin:14px 0 0; }
+.admin li { list-style:none; display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 0; border-top:1px solid var(--line); font-size:15px; }
+.admin li small { color:var(--mute); margin-left:8px; }
+.admin .del { background:none; border:0; color:var(--mute); text-decoration:underline; cursor:pointer; font:inherit; font-size:13.5px; }
+.admin .foot { display:flex; gap:12px; align-items:center; margin-top:14px; flex-wrap:wrap; }
+.admin .msg { font-size:13.5px; color:var(--mute); }
+
+.form h3 { font-size:17px; font-weight:900; margin:34px 0 14px; padding-bottom:10px; border-bottom:1px solid var(--ink); letter-spacing:-.2px; }
+.form h3:first-child { margin-top:0; }
+.form h3 span { font-size:13px; color:var(--mute); font-weight:400; margin-left:8px; }
+.privacy { background:var(--soft); border-radius:10px; padding:14px 16px; font-size:14px; color:#3D434D; line-height:1.7; }
+.privacy b { display:inline-block; min-width:68px; color:var(--ink); }
+.check { display:flex; gap:10px; align-items:flex-start; margin-top:12px; font-size:15px; font-weight:700; cursor:pointer; }
+.check input { width:20px; height:20px; margin-top:3px; accent-color:var(--accent); flex:0 0 auto; }
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:16px 12px; }
+@media (max-width:560px) { .grid { grid-template-columns:1fr; } }
+.f { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.f.full { grid-column:1 / -1; }
+.f label, .f .lbl { font-size:14px; font-weight:700; }
+.f em { font-style:normal; color:var(--accent); margin-left:2px; }
+.f small { font-size:13px; color:var(--mute); font-weight:400; margin-left:4px; }
+input[type=text], input[type=tel], input[type=date], input[type=time], textarea { font:inherit; font-size:16px; padding:12px 13px; border:1px solid #CFD3DA; border-radius:10px; background:#fff; color:var(--ink); width:100%; }
+textarea { min-height:84px; resize:vertical; }
+input:focus, textarea:focus { outline:none; border-color:var(--ink); box-shadow:0 0 0 3px rgba(20,24,31,.08); }
+.seg { display:flex; flex-wrap:wrap; gap:8px; }
+.seg.col { flex-direction:column; }
+.seg label { flex:1 1 auto; position:relative; cursor:pointer; }
+.seg input { position:absolute; opacity:0; inset:0; }
+.seg span { display:block; text-align:center; padding:12px 14px; border:1px solid #CFD3DA; border-radius:10px; background:#fff; font-size:15px; }
+.seg.col span { text-align:left; display:flex; justify-content:space-between; gap:10px; }
+.seg span i { font-style:normal; color:var(--mute); font-size:13.5px; }
+.seg input:checked + span { border-color:var(--ink); box-shadow:inset 0 0 0 1px var(--ink); font-weight:700; }
+.seg input:focus-visible + span { outline:2px solid var(--accent); outline-offset:2px; }
+.fee { margin-top:10px; display:flex; justify-content:space-between; align-items:baseline; font-size:14.5px; color:var(--mute); padding:12px 0 0; border-top:1px solid var(--line); }
+.fee b { font-size:20px; color:var(--ink); font-variant-numeric:tabular-nums; }
+.errbox { display:none; margin-top:20px; background:#FFF3EC; border:1px solid #F5C3A3; color:#9A3E0B; border-radius:10px; padding:12px 15px; font-size:14.5px; }
+.errbox.on { display:block; }
+.submit { margin-top:20px; width:100%; font-size:17px; padding:17px; }
+.done { display:none; }
+.done.on { display:block; }
+.done .ok { font-size:13px; font-weight:700; color:var(--accent); }
+.done h3 { border:0; font-size:22px; margin:4px 0 6px; padding:0; }
+.done p { font-size:15px; color:var(--mute); }
+.done pre { margin-top:16px; background:var(--soft); border-radius:12px; padding:18px; font-family:inherit; font-size:15px; line-height:1.8; white-space:pre-wrap; }
+.done .row { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; align-items:center; }
+.copied { font-size:14px; color:var(--mute); }
+
+details { border-bottom:1px solid var(--line); padding:16px 0; }
+details:first-of-type { border-top:1px solid var(--ink); }
+summary { cursor:pointer; font-weight:700; font-size:16px; list-style:none; display:flex; justify-content:space-between; gap:12px; }
+summary::-webkit-details-marker { display:none; }
+summary:after { content:"+"; color:var(--mute); font-weight:400; font-size:20px; line-height:1; }
+details[open] summary:after { content:"–"; }
+details p { margin-top:8px; font-size:15px; color:#3D434D; }
+footer { margin-top:72px; border-top:1px solid var(--line); padding:32px 0 44px; }
+footer .m { font-size:clamp(19px,5vw,23px); font-weight:900; letter-spacing:-.4px; }
+footer .s { font-size:13.5px; color:var(--mute); margin-top:4px; }
+</style>
+</head>
+<body>
+
+<header class="nav"><div class="wrap">
+  <div class="brand">대치<span class="or">SNT</span><span class="x">×</span>엄태욱<span class="or">T</span></div>
+  <nav aria-label="페이지 안내">
+    <a href="#measure">측정 항목</a><a href="#result">결과 안내</a><a href="#guide">응시 안내</a><a href="#faq">자주 묻는 질문</a>
+  </nav>
+  <a class="btn sm accent" href="https://docs.google.com/forms/d/e/1FAIpQLSeMhpA9CnZDBxDAFNt81j-nN77fcsSfhIRoYbWAMFzaXfLRjA/viewform" target="_blank" rel="noopener">검사 신청</a>
+</div></header>
+
+<div class="hero"><div class="wrap">
+  <div class="eyebrow">대치HIGH · 특목 자사고 성적 예측</div>
+  <h1><span>SNT 자기 교정</span> <span>표준 검사</span></h1>
+  <p class="hook">점수만 알려 주는 레벨테스트는 많습니다.<br><b>‘안다’와 ‘안다고 착각한다’</b>를 가려내는 검사입니다.</p>
+  <p class="lead">문항마다 확신 · 애매 · 찍기를 함께 기록해, 맞힌 문제 안에 숨어 있는 불안한 실력까지 데이터로 보여 드립니다.</p>
+  <div class="cta-row">
+    <a class="btn accent" href="https://docs.google.com/forms/d/e/1FAIpQLSeMhpA9CnZDBxDAFNt81j-nN77fcsSfhIRoYbWAMFzaXfLRjA/viewform" target="_blank" rel="noopener">검사 신청하기</a>
+    <a class="btn line" href="#guide">응시 안내 보기</a>
+  </div>
+  <div class="stats">
+    <div><div class="n">60<i>문항</i></div></div>
+    <div><div class="n">80<i>분</i></div></div>
+    <div><div class="n" style="font-size:.78em;line-height:1.5;letter-spacing:-1px">예비 초6~고1</div></div>
+    <div><div class="n">고1~3<i>수준</i></div></div>
+  </div>
+</div></div>
+
+<main class="wrap">
+
+<section id="measure">
+  <h2>세 가지를 동시에 측정합니다</h2>
+  <p class="sub">입학 후 성적, 자기 인식, 영어의 영향을 한 번의 검사로 확인합니다.</p>
+  <div class="axes">
+    <div class="ax"><div class="k">01</div><h3>고1 내신 생존력</h3>
+      <p>중학교 성취도 A로는 보이지 않는 차이. 고1~3 수준 문항으로 입학 후 성적을 미리 봅니다.</p>
+      <div class="tags">어휘력 · 단어력 · 문장력 · 문단력 · 문법 · 독서 · 문학</div></div>
+    <div class="ax"><div class="k">02</div><h3>메타인지<small>자기객관화</small></h3>
+      <p>확신하고 틀린 문제, 찍어서 맞힌 문제를 가려내고, 문항별 풀이 시간으로 시간을 어디에 썼는지까지 봅니다.</p>
+      <div class="tags">확신 · 애매 · 찍기 · 풀이 시간</div></div>
+    <div class="ax"><div class="k">03</div><h3>영어 간섭도<em>SNT ONLY</em></h3>
+      <p>영어를 잘할수록 생기는 영어식 국어 읽기. 17문항으로 그 정도를 수치화합니다.</p>
+      <div class="tags">표현 간섭 · 독해 간섭 · 문법 간섭</div></div>
+  </div>
+</section>
+
+<section id="result">
+  <h2>결과는 이렇게 받습니다</h2>
+  <p class="sub">스터디피크 디지털 OMR로 채점하고 분석합니다.</p>
+  <ol class="flow">
+    <li><span class="w">검사 당일</span><span class="d">60문항 80분 응시</span></li>
+    <li><span class="w">시험 직후</span><span class="d">간단 성적 카카오톡 발송</span></li>
+    <li><span class="w">1주일 뒤</span><span class="d">분석 리포트 페이퍼 제공</span></li>
+    <li><span class="w">12월 25일</span><span class="d">프라이빗 무료 특강 및 출제 분석 설명회</span></li>
+  </ol>
+  <div class="lv">
+    <div class="cap">4단계 레벨로 현재 위치를 알려 드립니다. 리포트에는 영역별 점수, 확신도, 영어 간섭 판정과 시험지에 남긴 풀이 흔적 분석이 담깁니다.</div>
+    <div class="ladder" role="img" aria-label="레벨 4단계: ROOT, RISE, HIGH, HIGH+"><div class="a">ROOT</div><div class="b">RISE</div><div class="c">HIGH</div><div class="d">HIGH+</div></div>
+    <div class="line"><b>입반선</b>60점 이상 · HIGH부터 대치HIGH 입반</div>
+  </div>
+</section>
+
+<section id="guide">
+  <h2>응시 안내</h2>
+  <p class="sub">사전 예약제로 운영합니다. 원하는 방식과 차수를 골라 신청해 주세요.</p>
+  <dl class="info">
+    <div><dt>대상</dt><dd><b>예비 초6 ~ 예비 고1</b> <span style="color:var(--mute);font-size:14px">2027년 학년 기준</span></dd></div>
+    <div><dt>검사 형식</dt><dd><b>60문항 80분</b> · 한 문제 풀고 한 문제씩 답안 입력</dd></div>
+    <div><dt>응시 방식</dt><dd><b>오프라인</b> 대치SNT · <b>온라인</b> 중 선택</dd></div>
+    <div><dt>응시료</dt><dd><b>무료</b> 2027년 대치SNT 중3 정규반 및 문법 특강 신청자<br><b>2만 원</b> 그 외 응시자</dd></div>
+  </dl>
+  <h3 class="h3">시험 일정 <small>2026년 12월</small></h3>
+  <div class="sched" id="schedBox"></div>
+  <div class="event">
+    <div class="ek">학생과 학부모가 함께 듣는</div>
+    <div class="et">프라이빗 무료 특강 및 출제 분석 설명회</div>
+    <div class="ew">12월 25일 (금) 오전 10시 ~ 12시</div>
+    <div class="ep"><b>오프라인</b> 대치SNT &nbsp;·&nbsp; <b>온라인</b> 실시간 송출</div>
+    <div class="en">온라인으로 응시하신 분도 오프라인 설명회에 참석하실 수 있습니다.</div>
+  </div>
+</section>
+
+<section id="apply">
+  <h2>검사 신청</h2>
+  <p class="sub">신청서는 구글 설문지로 받습니다. 2분이면 끝납니다.</p>
+  <ol class="flow">
+    <li><span class="w">선택</span><span class="d">응시 방식과 차수 고르기</span></li>
+    <li><span class="w">입력</span><span class="d">학생 · 보호자 정보 적기 (학년은 예비 초6 ~ 예비 고1)</span></li>
+    <li><span class="w">제출</span><span class="d">제출하면 신청 완료</span></li>
+  </ol>
+  <a class="btn accent submit" href="https://docs.google.com/forms/d/e/1FAIpQLSeMhpA9CnZDBxDAFNt81j-nN77fcsSfhIRoYbWAMFzaXfLRjA/viewform" target="_blank" rel="noopener" style="display:block;text-align:center">신청서 작성하기</a>
+  <p class="note">버튼이 열리지 않으면 이 주소를 복사해 인터넷 창에 붙여 넣어 주세요.<br><span style="word-break:break-all">https://docs.google.com/forms/d/e/1FAIpQLSeMhpA9CnZDBxDAFNt81j-nN77fcsSfhIRoYbWAMFzaXfLRjA/viewform</span></p>
+</section>
+
+<section id="faq">
+  <h2>자주 묻는 질문</h2>
+  <p class="sub">신청 전에 많이 물으시는 내용입니다.</p>
+  <details><summary>수강 등록을 하지 않아도 볼 수 있나요?</summary><p>네. 수강 등록 없이도 응시료 2만 원으로 응시할 수 있습니다. 2027년 대치SNT 중3 정규반 및 문법 특강 신청자만 무료입니다.</p></details>
+  <details><summary>온라인으로도 응시할 수 있나요?</summary><p>네. 12월 12일, 19일, 20일 낮 12시에 온라인 시험이 있습니다. 신청서의 응시 방식에서 온라인을 고르시면 됩니다.</p></details>
+  <details><summary>결과는 언제, 어떻게 받나요?</summary><p>시험이 끝나면 간단 성적을 보호자 카카오톡으로 보내 드립니다. 분석 리포트는 1주일 뒤 페이퍼로 제공합니다.</p></details>
+  <details><summary>설명회는 언제, 어디서 하나요?</summary><p>12월 25일(금) 오전 10시부터 12시까지, 학생과 학부모가 함께 듣는 프라이빗 무료 특강 및 출제 분석 설명회를 엽니다. 대치SNT에서 진행하고 온라인으로 실시간 송출합니다. 온라인으로 응시하신 분도 오프라인 설명회에 참석하실 수 있습니다.</p></details>
+  <details><summary>영어 간섭도는 왜 측정하나요?</summary><p>영어 노출이 많은 학생은 국어 문장을 영어식으로 읽는 습관이 생기기도 합니다. 이 습관이 고등 국어 문법과 독해에 영향을 주는 정도를 17문항으로 확인합니다.</p></details>
+  <details><summary>시험지를 가져갈 수 있나요?</summary><p>시험지는 회수합니다. 시험지에 남긴 풀이 흔적까지 분석에 반영하기 때문입니다.</p></details>
+</section>
+
+</main>
+
+<footer><div class="wrap">
+  <div class="m">대치<span class="or">SNT</span> × 엄태욱<span class="or">T</span></div>
+  <div class="s">SNT 자기 교정 표준 검사 · 사전 예약제</div>
+</div></footer>
+
+<script type="application/json" id="state">{"sessions":[{"mode":"off","date":"2026-12-12","time":"10:00","note":""},{"mode":"off","date":"2026-12-12","time":"14:00","note":""},{"mode":"off","date":"2026-12-19","time":"10:00","note":""},{"mode":"off","date":"2026-12-19","time":"14:00","note":""},{"mode":"off","date":"2026-12-20","time":"10:00","note":""},{"mode":"on","date":"2026-12-12","time":"12:00","note":""},{"mode":"on","date":"2026-12-19","time":"12:00","note":""},{"mode":"on","date":"2026-12-20","time":"12:00","note":""}]}</script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var state; try { state = JSON.parse($('state').textContent); } catch (e) { state = { sessions: [] }; }
+  var DAYS = ['일', '월', '화', '수', '목', '금', '토'], MODE = { off: '오프라인', on: '온라인' };
+  function label(s) {
+    var d = new Date(s.date + 'T00:00:00'), t = (s.time || '').split(':'), h = +t[0], m = t[1] || '00';
+    return (d.getMonth() + 1) + '월 ' + d.getDate() + '일(' + DAYS[d.getDay()] + ') ' + (h === 12 ? '낮' : h < 12 ? '오전' : '오후') + ' ' + (h % 12 === 0 ? 12 : h % 12) + '시' + (m !== '00' ? ' ' + m + '분' : '');
+  }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  var box = $('schedBox');
+  ['off', 'on'].forEach(function (mode) {
+    var col = el('div', 'col'), hd = el('div', 'hd', MODE[mode]);
+    var list = (state.sessions || []).filter(function (s) { return s.mode === mode; }).sort(function (a, b) { return (a.date + a.time).localeCompare(b.date + b.time); });
+    if (mode === 'off') hd.appendChild(el('small', null, '대치SNT'));
+    col.appendChild(hd);
+    list.forEach(function (s, i) { var r = el('div', 'rw'); r.appendChild(el('b', null, (i + 1) + '차')); r.appendChild(el('span', null, label(s))); col.appendChild(r); });
+    box.appendChild(col);
+  });
+})();
+</script>
+</body>
+</html>
