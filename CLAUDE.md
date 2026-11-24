@@ -11,8 +11,9 @@ GitHub Pages 정적 사이트. `main` 브랜치가 www.studypeak.co.kr 로 배�
 - `sntkorean/index.html`: **SNT 자기 교정 표준 검사 신청 안내** (대치SNT × 엄태욱T). 단일 정적 페이지.
   신청은 구글 폼으로 연결되고 일정은 파일 안 `#state` JSON 에 있다. 수학 랩과 무관 — lab 테스트 대상 아님.
 - `lab/README.md`: 기능 현황표(스펙 대비 ✅/🔶/❌)와 로드맵. 기능 추가 시 갱신할 것.
-- `korlab/PLAN.md`: **스터디피크 국어 랩 기획안**(시중 조사·데이터 모델·변형 6종·검증 4단계·코드 방향·단계).
-  국어 랩 작업 전에 먼저 읽을 것. 아직 코드 없음 — `korlab/`에 여러 파일로 나눠 만들고 `lab/`은 건드리지 않는다.
+- `korlab/`: **스터디피크 국어 랩** (www.studypeak.co.kr/korlab/) — 지문 + 문항 세트 DB. 여러 파일(`korlab/js/*.js`) + 공용 부품(`shared/*.js`).
+  작업 전에 `korlab/PLAN.md`(기획·진행 상황·코드 지도·한계)를 먼저 읽을 것. `lab/`은 건드리지 않는다.
+  테스트는 `tests/smoke78.js`(PDF 읽기 엔진)·`smoke79.js`(화면). 실제 시험지 PDF는 저작권 때문에 저장소에 넣지 않는다.
 
 ## 작업 규칙
 

@@ -1,6 +1,8 @@
 # 스터디피크 국어 랩 — 기획안 (v0.1, 2026-11-24)
 
-> 상태: **기획 단계 — 아직 코드 없음.** 사용자(한지영 선생님) 확인 후 1단계부터 만든다.
+> 상태(2026-11-24): **1단계 "쌓기"의 첫 묶음 완성** — 글자 층 있는 PDF 읽기, 정답·해설지 붙이기, 지문·세트 화면, 고치기, 띄어쓰기 AI 다듬기, 백업.
+> 다음: 변형 만들기 + 검증(2단계). 맨 아래 **진행 상황·코드 지도**를 먼저 볼 것.
+> 사용자 답: 대상은 고등 내신 + 수능·모의고사 모두, 변형 6종 골고루. 국어 유형표·국어 프로젝트 지침은 아직 못 받음(claude.ai 프로젝트는 여기서 열 수 없음 → zip 요청함).
 > 수학 랩(`lab/`)과 같은 메커니즘(올리기 → AI 변환 → 분류 → 변형 생성 → 검증 → 학습지·HWPX·LMS)을
 > 국어의 단위인 **"지문 + 문항 세트"**에 맞게 다시 설계한 것.
 
@@ -114,3 +116,32 @@ Sheet 학습지  { id, title, entries[{passageId, itemIds[]}] | 단독 문항 } 
 - 강사의 Claude 활용 글: https://ai-labs.kiweb.or.kr/productivity/post/hagwon-teacher-claude-question-set-30min-mYkuX2yMzcgV5K3
 - AI 수능 국어 풀이: https://v.daum.net/v/20251115070121527 · https://www.etoday.co.kr/news/view/2528216
 - 2028 수능 국어(화법과 언어·독서와 작문·문학, 선택과목 폐지): https://www.korea.kr/news/policyNewsView.do?newsId=148942032
+
+## 진행 상황·코드 지도 (2026-11-24)
+
+**핵심 발견**: 평가원·교육청 시험지와 한글에서 만든 PDF에는 글자 층이 있어서, **AI 없이** 글자(오타 0)·밑줄·상자·그림 자리를 PDF에서 직접 읽을 수 있다.
+실제 2025 수능·2025 6월 모평(각 20쪽, 2단 A3)에서 지문 14 · 문항 56(공통 34 + 선택 2과목 × 11)이 경고 없이 나뉘고, EBS 해설지로 정답 56개·유형 이름·해설·지문 제목이 붙었다(읽기 약 2초).
+SNT 검사지(크롬이 만든 PDF, 번호가 배지 모양)도 문항 60 · 지문 9로 나뉜다. 이 실제 PDF들은 저작권 때문에 저장소에 넣지 않는다 — 테스트는 같은 짜임의 지어낸 시험지(`tests/kor-fixture.js`)로.
+
+| 파일 | 내용 |
+|---|---|
+| `korlab/index.html` | 화면 틀·스타일(수학 랩과 같은 초록 틀). 스크립트는 아래 순서로 불러옴 |
+| `shared/core.js` (`SP`) | `$`·`esc`·`escJs`·`uid`·`toast`·`downloadBlob`·`lsJson`·`openDB`(IndexedDB) |
+| `shared/ai.js` (`SPAI`) | Claude 호출 `SPAI.json(content, maxTokens)`·`settings`(수학 랩과 같은 localStorage 키)·`start/done/cancel` |
+| `korlab/js/kpdf.js` (`KPDF`) | **PDF 읽기 엔진, 순수 함수 — Node 에서도 돈다.** `extractPage`(글자 조각 + 가로·세로선 + 그림 자리) → `segment`(단 나누기 → 줄 → 머리말 제거 → [N~M] 세트·문항·단독 문항, 밑줄 `{u}`·상자 `{b}`·`[그림]`, 사각형) · `parseSolutionText`(EBS식 해설지) · `plain`(줄 이음 표시 걷기) |
+| `korlab/js/app.js` | 상태 `K`, `DB`('sp-korlab': passages·items·images·sheets), `go(view)`, `kHtml`(표시 문법 → HTML), 대시보드, 백업·설정(가져오기는 `cleanRecord`로 값 정리) |
+| `korlab/js/upload.js` | 시험지 올리기 `upRead`(문제지 + 해설지) → `upPreviewHtml` → `upSave`(원본 조각 `upCrops`: 쪽을 그려 사각형대로 JPEG) |
+| `korlab/js/library.js` | `renderPassages`(지문·작품 카드) · `renderSet`(왼쪽 지문 / 오른쪽 문항, 원본 보기) · `renderSetEdit`/`saveSetEdit` · `renderItems`(문제 검색) |
+| `korlab/js/polish.js` | `polishSet`: 줄 이음 추정 자리만 ‹n›으로 번호 매겨 AI가 0/1로 답함 → 그 자리만 바꿈(글자는 AI가 못 고침, 길이 안 맞으면 버림) |
+| `tests/smoke78.js`·`smoke79.js` | 엔진(Node) · 화면 흐름(`openKor` — tools/_common.js) |
+
+**줄 이음(가장 까다로운 부분)**: PDF는 줄 끝에서 낱말이 끊겼는지(사라|지고) 띄어 쓴 건지 알려 주지 않는다. `needSpace`가 문서 안 어절 통계 + 조사·어미 목록으로 추정하고,
+확실하지 않은 자리는 `\uE000`(붙임)/`\uE001`(띄움) 표시로 남긴다 → 화면에 주황 점, [🤖 띄어쓰기 다듬기]로 확정. 소스 파일에 이 글자를 날것으로 넣지 말고 반드시 `\uE000` 이스케이프로 쓸 것(Write 도구가 이스케이프를 실제 글자로 바꿔 버린 적이 있음 — heredoc/python 으로 쓸 것).
+
+**알려진 한계(다음에 할 것)**
+- 옛한글(한양 PUA)은 표준 글자로 못 바꿈 → `oldHangul` 표시 + 원본 보기로 확인. 변환표를 넣으면 해결.
+- 선택지가 2줄 묶음 괄호 모양(언매 37번 같은 짝 문장)이면 줄 순서가 어긋남 → 원본 보기·고치기.
+- [A] 구간 괄호(세로선)는 "[A]" 글자만 그 줄에 남음. 표·그림 속 글자는 `[그림]` + 원본 조각.
+- 스캔 PDF·캡처 이미지(글자 층 없음)는 아직 — 수학 랩의 영역 인식 + AI 전사 방식을 붙일 예정.
+- 동기화 없음(이 브라우저 IndexedDB만) — 백업 JSON으로 옮김. 원본 조각이 시험지 1회분에 약 12MB라 동기화 때는 글만 올리는 쪽으로.
+- 해설지 형식은 EBS식만. 빠른 정답표만 있는 PDF도 정답은 붙음.

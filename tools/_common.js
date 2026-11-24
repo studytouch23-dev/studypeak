@@ -75,6 +75,21 @@ async function openLab(opts){ // {stub, headless} → {browser, page, server, po
   return { browser, page, server, port, close };
 }
 
+async function openKor(opts){ // 국어 랩(korlab/) 열기 — CDN 대신 로컬 pdf.js·cMap 을 쓴다
+  const { server, port } = await serveRepo();
+  const browser = await getChromium().launch({ executablePath: process.env.PW_CHROMIUM || undefined, args: ['--no-sandbox'] });
+  const page = await browser.newPage();
+  page.on('pageerror', e => console.error('  [페이지 오류]', e.message));
+  await page.addInitScript(() => { window.KCFG = { cmap: '/tests/node_modules/pdfjs-dist/cmaps/', worker: '/tests/node_modules/pdfjs-dist/build/pdf.worker.min.js' }; });
+  await page.route('**/*', route => { const u = route.request().url(); return /^https?:\/\/(127\.0\.0\.1|localhost)/.test(u) ? route.continue() : route.abort(); });
+  await page.goto(`http://127.0.0.1:${port}/korlab/`, { waitUntil: 'domcontentloaded' });
+  await page.addScriptTag({ path: path.join(ROOT,'tests','node_modules','pdfjs-dist','build','pdf.min.js') });
+  await page.evaluate(() => { pdfjsLib.GlobalWorkerOptions.workerSrc = KCFG.worker; });
+  await page.waitForFunction(() => window.__korReady, null, { timeout: 15000 });
+  const close = async () => { await browser.close(); server.close(); };
+  return { browser, page, server, port, close };
+}
+
 async function loginCloud(page, email, pw){
   await page.evaluate(() => localStorage.setItem('sp-lab-cloud','1'));
   await page.evaluate(async ({email, pw}) => {
@@ -109,4 +124,4 @@ function runClaude(bin, prompt, opts){ // 맥의 Claude Code(Max 구독)로 1회
   return JSON.parse(txt.slice(a, b+1));
 }
 
-module.exports = { ROOT, req, getChromium, serveRepo, openLab, loginCloud, waitSynced, runClaude, supabaseStubInit };
+module.exports = { ROOT, req, getChromium, serveRepo, openLab, openKor, loginCloud, waitSynced, runClaude, supabaseStubInit };

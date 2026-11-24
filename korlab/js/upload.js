@@ -1,0 +1,140 @@
+/* 스터디피크 국어 랩 — 시험지 올리기: 문제지 PDF(+ 정답·해설 PDF) → 지문·문항으로 나눠 미리보기 → 저장
+ * 글자·밑줄은 KPDF 가 PDF에서 그대로 읽고(AI 없음), 원본 조각은 쪽을 그려 잘라 둔다([원본 보기]용) */
+'use strict';
+const UP = { examFile: null, solFile: null, doc: null, seg: null, sol: null, busy: false };
+function renderUpload(){
+  const s = UP.seg;
+  $('#view-upload').innerHTML = `
+    <h2>시험지 올리기</h2><p class="vd">문제지 PDF를 올리면 <b>[1~3] 지문 + 문항</b> 세트와 단독 문항으로 자동으로 나눕니다. 정답·해설 PDF를 함께 올리면 정답·해설·유형 이름까지 붙습니다.</p>
+    <div class="card"><div class="grid4">
+      <div><label for="up-exam">문제지 PDF</label><input id="up-exam" type="file" accept=".pdf,application/pdf" onchange="UP.examFile=this.files[0]||null;upAutoName()"></div>
+      <div><label for="up-sol">정답·해설 PDF (선택)</label><input id="up-sol" type="file" accept=".pdf,application/pdf" onchange="UP.solFile=this.files[0]||null"></div>
+      <div><label for="up-name">시험 이름 (출처)</label><input id="up-name" placeholder="예) 2025학년도 수능"></div>
+      <div><label for="up-kind">종류</label><select id="up-kind">${SRC_KINDS.map(k=>`<option>${k}</option>`).join('')}</select></div></div>
+      <div class="row" style="margin-top:.8rem"><button class="btn" id="up-read" onclick="upRead()">읽기</button>
+        <span class="hint" id="up-status">글자가 들어 있는 PDF(평가원·교육청 시험지, 한글에서 만든 PDF)를 읽습니다. 사진을 스캔한 PDF와 캡처 이미지는 다음 단계에서 지원합니다.</span></div></div>
+    <div id="up-preview">${s ? upPreviewHtml() : ''}</div>`;
+  if(UP.examFile && $('#up-name') && UP.name) $('#up-name').value = UP.name;
+}
+function upAutoName(){ const el = $('#up-name'); if(el && !el.value.trim() && UP.examFile) el.value = UP.examFile.name.replace(/\.pdf$/i, '').replace(/[_]+/g, ' ').trim(); }
+async function loadPdfPages(file, onPage){
+  if(!window.pdfjsLib) throw new Error('PDF 구성요소가 아직 로딩 중입니다. 잠시 후 다시 눌러 주세요.');
+  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, cMapUrl: KCFG.cmap, cMapPacked: true }).promise;
+  const pages = [];
+  for(let i = 1; i <= doc.numPages; i++){ pages.push(await KPDF.extractPage(await doc.getPage(i), pdfjsLib.OPS)); if(onPage) onPage(i, doc.numPages); }
+  return { doc, pages };
+}
+async function upRead(){
+  if(UP.busy) return;
+  if(!UP.examFile){ toast('문제지 PDF를 먼저 고르세요.'); return; }
+  UP.busy = true; UP.name = $('#up-name').value.trim(); UP.kind = $('#up-kind').value;
+  const st = t=>{ const el = $('#up-status'); if(el) el.textContent = t; };
+  try{
+    st('문제지를 읽는 중…');
+    const ex = await loadPdfPages(UP.examFile, (i, n)=>st(`문제지를 읽는 중… ${i}/${n}쪽`));
+    const chars = ex.pages.reduce((s, p)=>s + p.items.reduce((a, it)=>a + it.s.trim().length, 0), 0);
+    if(chars < 200 * ex.pages.length / 4) throw new Error('이 PDF에는 글자 정보가 거의 없습니다(스캔본으로 보입니다). 지금은 글자가 들어 있는 PDF만 읽을 수 있습니다.');
+    UP.doc = ex.doc; UP.seg = KPDF.segment(ex.pages); UP.sol = null;
+    if(UP.solFile){
+      st('정답·해설을 읽는 중…');
+      const so = await loadPdfPages(UP.solFile);
+      UP.sol = KPDF.parseSolutionText(KPDF.pagesToText(so.pages));
+      upAttachSolution();
+    }
+    if(!UP.seg.items.length) throw new Error('문항 번호를 찾지 못했습니다. 번호가 "1." 꼴로 시작하는 시험지인지 확인해 주세요.');
+    st(`읽기 완료 — 지문 ${UP.seg.stats.sets}개 · 문항 ${UP.seg.stats.items}개`);
+  }catch(e){ UP.seg = null; st('⚠ ' + (e.message || e)); toast('⚠ ' + (e.message || e)); }
+  UP.busy = false;
+  const pv = $('#up-preview'); if(pv) pv.innerHTML = UP.seg ? upPreviewHtml() : '';
+}
+/* 해설지의 구역(공통 / 화법과 작문 / 언어와 매체)과 문제지의 구역을 맞춰 정답·해설·유형·지문 정보를 붙인다 */
+function upSolSection(section){
+  if(!UP.sol) return null;
+  const n = s=>String(s || '').replace(/\s/g, '');
+  if(section) return UP.sol.sections.find(s=>n(s.name).includes(n(section))) || null;
+  return UP.sol.sections.find(s=>!/화법|작문|언어|매체/.test(s.name)) || UP.sol.sections[0] || null;
+}
+function upAttachSolution(){
+  let hit = 0;
+  for(const it of UP.seg.items){
+    const sec = upSolSection(it.section); if(!sec) continue;
+    const info = sec.items[it.num] || {};
+    it.answer = sec.answers[it.num] || info.answer || ''; it.explain = info.explain || ''; it.wrong = info.wrong || ''; it.type = info.type || '';
+    if(it.answer) hit++;
+  }
+  for(const s of UP.seg.sets){
+    const sec = upSolSection(s.section); if(!sec) continue;
+    const exact = sec.sets.find(x=>x.from === s.from && x.to === s.to), wide = sec.sets.find(x=>x.from <= s.from && x.to >= s.to && upArea(x.area));
+    const info = exact || wide;                              // 영역은 "[35~39] 언어"처럼 더 넓은 묶음에만 적혀 있을 수 있다
+    if(info) Object.assign(s, { area: upArea(info.area) || upArea(info.genre) || (wide ? upArea(wide.area) : ''), genre: info.genre || '', title: info.title || '', summary: info.summary.trim(), theme: info.theme || '' });
+  }
+  for(const it of UP.seg.items){                             // 단독 문항의 영역
+    if(it.setIdx >= 0) continue;
+    const sec = upSolSection(it.section), wide = sec && sec.sets.find(x=>x.from <= it.num && x.to >= it.num && upArea(x.area));
+    it.area = wide ? upArea(wide.area) : '';
+  }
+  UP.seg.stats.answers = hit;
+}
+const upArea = a=>AREAS.find(x=>String(a || '').includes(x)) || '';
+function upPreviewHtml(){
+  const s = UP.seg, singles = s.items.filter(i=>i.setIdx < 0);
+  const secName = x=>x.section ? `(${x.section}) ` : '';
+  return `<div class="card"><div class="spread"><div class="row"><b>미리보기</b><span class="chip g">지문 ${s.stats.sets}</span><span class="chip g">문항 ${s.stats.items}</span>
+      ${UP.sol ? `<span class="chip g">정답 ${s.stats.answers || 0}</span>` : '<span class="chip">정답·해설 없음</span>'}<span class="chip ${s.stats.unsureJoins ? 'w' : ''}">띄어쓰기 추정 ${s.stats.unsureJoins}곳</span></div>
+      <button class="btn" id="up-save" onclick="upSave()">이대로 저장</button></div>
+    ${s.warnings.length ? `<div class="warnbox">확인이 필요한 곳: ${s.warnings.map(esc).join(' · ')}</div>` : ''}
+    <p class="hint" style="margin:.5rem 0">펼쳐서 확인하세요. 틀린 곳은 저장한 뒤 세트 화면의 [고치기]에서 바로잡을 수 있습니다.</p>
+    ${s.sets.map((x, k)=>`<details class="pv"><summary>${esc(secName(x))}[${x.from}~${x.to}] ${x.area ? esc(x.area) + ' · ' : ''}${esc(x.title || snippet(x.body, 28) || '(그림 지문)')} <span class="hint">문항 ${x.items.map(i=>i.num).join(', ')}</span></summary>
+      <div class="split"><div class="passage" style="position:static;max-height:420px">${kHtml(x.body, { joins: true, passage: true })}</div><div>${x.items.map(it=>itemHtml(Object.assign({ id: 'pv' + k + '-' + it.num }, it), { joins: true })).join('')}</div></div></details>`).join('')}
+    ${singles.length ? `<details class="pv"><summary>지문 없는 단독 문항 <span class="hint">${singles.map(i=>secName(i) + i.num).join(', ')}</span></summary>${singles.map((it, k)=>itemHtml(Object.assign({ id: 'pvs' + k }, it), { joins: true })).join('')}</details>` : ''}</div>`;
+}
+/* 원본 조각: 필요한 쪽만 한 번씩 그려서 사각형대로 잘라 JPEG 으로 */
+async function upCrops(doc, owners){                         // owners: [{ id, rects }] → [{ id, imgs }]
+  const byPage = new Map();
+  owners.forEach(o=>(o.rects || []).forEach(r=>{ if(!byPage.has(r.page)) byPage.set(r.page, []); byPage.get(r.page).push([o, r]); }));
+  const out = new Map(owners.map(o=>[o.id, []]));
+  for(const [pi, list] of [...byPage].sort((a, b)=>a[0] - b[0])){
+    const page = await doc.getPage(pi + 1), vp0 = page.getViewport({ scale: 1 }), scale = Math.min(2, 1700 / vp0.width), vp = page.getViewport({ scale });
+    const c = document.createElement('canvas'); c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: g, viewport: vp }).promise;
+    for(const [o, r] of list){
+      const x = Math.max(0, Math.floor(r.x * scale)), y = Math.max(0, Math.floor(r.y * scale)), w = Math.min(c.width - x, Math.ceil(r.w * scale)), h = Math.min(c.height - y, Math.ceil(r.h * scale));
+      if(w < 8 || h < 8) continue;
+      const cc = document.createElement('canvas'); cc.width = w; cc.height = h; cc.getContext('2d').drawImage(c, x, y, w, h, 0, 0, w, h);
+      out.get(o.id).push(cc.toDataURL('image/jpeg', 0.82));
+    }
+    const st = $('#up-status'); if(st) st.textContent = `원본 조각을 자르는 중… ${pi + 1}쪽`;
+  }
+  return [...out].map(([id, imgs])=>({ id, imgs })).filter(x=>x.imgs.length);
+}
+async function upSave(){
+  if(UP.busy || !UP.seg) return;
+  UP.busy = true; const btn = $('#up-save'); if(btn) btn.disabled = true;
+  try{
+    const now = Date.now(), batch = 'k' + now.toString(36);
+    const name = ($('#up-name').value.trim() || UP.name || (UP.examFile && UP.examFile.name.replace(/\.pdf$/i, '')) || '올린 시험지'), kind = $('#up-kind').value;
+    const src = { name, kind, year: (name.match(/(20\d\d)/) || [])[1] || '', grade: '' };
+    const passages = [], items = [], owners = [];
+    UP.seg.sets.forEach((s, k)=>{
+      const id = uid() + 'p' + k;
+      passages.push({ id, title: s.title || '', area: s.area || '', genre: s.genre || '', body: s.body, head: s.head || '', range: [s.from, s.to], section: s.section || '', src, summary: s.summary || '', theme: s.theme || '',
+        oldHangul: !!s.oldHangul, batch, createdAt: now, updatedAt: now });
+      owners.push({ id, rects: s.rects }); s._id = id;
+    });
+    UP.seg.items.forEach((it, k)=>{
+      const id = uid() + 'i' + k, set = it.setIdx >= 0 ? UP.seg.sets[it.setIdx] : null;
+      items.push({ id, passageId: set ? set._id : null, num: it.num, section: it.section || '', group: it.group || '', stem: it.stem, view: it.view || '', viewLabel: it.viewLabel || '', choices: it.choices || [],
+        answer: it.answer || '', explain: it.explain || '', wrong: it.wrong || '', type: it.type || '', points: it.points || null, area: set ? '' : (it.area || upArea(it.section)), oldHangul: !!it.oldHangul, src, batch, createdAt: now + k, updatedAt: now });
+      owners.push({ id, rects: it.rects });
+    });
+    await DB.putMany('passages', passages); await DB.putMany('items', items);
+    let imgs = [];
+    try{ imgs = await upCrops(UP.doc, owners); if(imgs.length) await DB.putMany('images', imgs); }catch(e){ console.warn('원본 조각 저장 실패', e); }
+    await loadAll();
+    UP.seg = null; UP.sol = null; UP.doc = null; UP.examFile = null; UP.solFile = null; UP.name = '';
+    toast(`지문 ${passages.length}개 · 문항 ${items.length}개를 저장했습니다.`);
+    K.f = { area: '', q: '', src: name }; go('passages');
+  }catch(e){ toast('⚠ 저장 실패: ' + (e.message || e)); if(btn) btn.disabled = false; }
+  UP.busy = false;
+}

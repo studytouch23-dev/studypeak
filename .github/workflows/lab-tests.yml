@@ -4,7 +4,7 @@ name: 수학 랩 테스트
 
 on:
   pull_request:
-    paths: ['lab/**', 'tests/**', 'tools/**', '.github/workflows/lab-tests.yml']
+    paths: ['lab/**', 'korlab/**', 'shared/**', 'tests/**', 'tools/**', '.github/workflows/lab-tests.yml']
   workflow_dispatch:
 
 concurrency:
@@ -20,11 +20,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: tests/package-lock.json
       - name: 테스트 의존성 설치
         working-directory: tests
-        run: npm ci
+        run: npm install          # package-lock.json 은 저장소에 없다(tests/.gitignore)
       - name: 크로미움·한글 글꼴 설치
         working-directory: tests
         run: |
