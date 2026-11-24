@@ -8,6 +8,8 @@ GitHub Pages 정적 사이트. `main` 브랜치가 www.studypeak.co.kr 로 배�
 - `lab/units-sp.js`: 스터디피크 마스터 유형표를 단원 체계에 나눈 기본 DB — **자동 생성**.
   원본 `tools/data/studypeak-master.md`(문자열 원본 그대로, 오타도 고치지 말 것) → `node tools/build-sp-units.js`.
 - `lab/units-db.js`: 랩 세분류 DB(소단원·유형·상세유형) — 유형표에 없는 곳·[랩 세분류 합치기]용.
+- `sntkorean/index.html`: **SNT 자기 교정 표준 검사 신청 안내** (대치SNT × 엄태욱T). 단일 정적 페이지.
+  신청은 구글 폼으로 연결되고 일정은 파일 안 `#state` JSON 에 있다. 수학 랩과 무관 — lab 테스트 대상 아님.
 - `lab/README.md`: 기능 현황표(스펙 대비 ✅/🔶/❌)와 로드맵. 기능 추가 시 갱신할 것.
 
 ## 작업 규칙
