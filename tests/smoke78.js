@@ -40,6 +40,8 @@ async function pagesOf(buf){
   check('해설지: 지문 영역·갈래·제목·주제', sec.sets[0].area === '독서' && sec.sets[0].genre === '과학' && sec.sets[0].title === '도시 열섬 현상' && /열섬 현상의 원인/.test(sec.sets[0].theme) && sec.sets[1].genre === '현대시', JSON.stringify(sec.sets[0]));
   check('해설지: 문항 유형·정답 해설·오답 피하기', sec.items[1].type === '세부 내용 파악' && /커진다고 하였다/.test(sec.items[1].explain) && /^① 1문단/.test(sec.items[1].wrong) && sec.items[5].type === '시어의 의미 파악', JSON.stringify(sec.items[1]));
 
+  const q2 = K.parseSolutionText('■ [공통: 독서·문학]\n01. ③\n[1~3] 독서\n[1-3] 과학, ʻ도시 열섬 현상ʼ\n1. 세부 내용 파악\n정답해설 : 가.\n정답 ③').sections[0].sets[0];
+  check('글꼴 때문에 닮은 글자로 뽑힌 작은따옴표도 제목에서 걷어 냄', q2 && q2.title === '도시 열섬 현상' && q2.genre === '과학', JSON.stringify(q2));
   console.log(fails ? `\n${fails}개 실패` : '\n전체 통과');
   process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

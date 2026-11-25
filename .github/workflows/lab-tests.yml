@@ -28,6 +28,8 @@ jobs:
         run: |
           npx playwright-core install --with-deps chromium
           sudo apt-get install -y fonts-noto-cjk
+          # 일부 테스트는 크로미움 위치를 PW_CHROMIUM 에서 읽는다(없으면 Claude 작업 환경의 경로를 씀) → 방금 설치한 것으로 알려 준다
+          echo "PW_CHROMIUM=$(node -e "console.log(require('playwright-core').chromium.executablePath())")" >> "$GITHUB_ENV"
       - name: 스모크 테스트 전체 (node run-all.js)
         working-directory: tests
         run: node run-all.js

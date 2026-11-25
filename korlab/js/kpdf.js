@@ -21,7 +21,9 @@
 
   /* 한글(HWP)이 PDF에 넣는 사용자 영역 글자 → 표준 글자. 옛한글(한양 PUA)은 표가 커서 아직 그대로 둔다(원본 그림으로 확인) */
   const PUA = { 0xF0854: '『', 0xF0855: '』', 0xF0852: '「', 0xF0853: '」', 0xF00DA: '예:' };
-  const fixPua = t=>t.replace(/[\u{F0000}-\u{FFFFD}]/gu, c=>PUA[c.codePointAt(0)] != null ? PUA[c.codePointAt(0)] : c);
+  /* 글꼴에 따라 작은따옴표가 닮은 글자(U+02BB·02BC·02BD)로 뽑히는 PDF가 있다 → 표준 따옴표로 */
+  const fixQuote = t=>t.replace(/[\u02BB\u02BD]/g, '‘').replace(/\u02BC/g, '’');
+  const fixPua = t=>fixQuote(t.replace(/[\u{F0000}-\u{FFFFD}]/gu, c=>PUA[c.codePointAt(0)] != null ? PUA[c.codePointAt(0)] : c));
   const hasOldHangul = t=>/[\uE002-\uF8FF\u{F0000}-\u{FFFFD}]/u.test(String(t || ''));
 
   /* ── 1. 한 쪽 읽기: 글자 조각 + 가로선 ── */
@@ -388,7 +390,7 @@
 
   /* ── 6. 정답·해설지 읽기 (EBS식: "01. ③ 02. ④ …" 표 + "N. 유형" / "정답해설 :" / "정답 ③" / "[오답피하기]") ── */
   function parseSolutionText(text){                         // → { sections: [{ name, answers:{번호:정답}, items:{번호:{type, explain, wrong}}, sets:[{from,to,area,title,summary,theme}] }] }
-    const lines = String(text || '').split(/\r?\n/).map(s=>s.replace(/\s+$/, ''));
+    const lines = fixQuote(String(text || '')).split(/\r?\n/).map(s=>s.replace(/\s+$/, ''));
     const sections = []; let sec = null, item = null, set = null, mode = '';
     const vocab = buildVocab(lines.map(l=>({ text: l.trim() })));
     const add = (prev, t)=>{                                 // 해설지도 줄 끝에서 낱말이 끊긴다 — 같은 방식으로 추정
