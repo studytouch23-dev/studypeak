@@ -124,6 +124,15 @@ Sheet 학습지  { id, title, entries[{passageId, itemIds[]}] | 단독 문항 } 
 같은 시험지가 **AI 없이 규칙만으로** 대분류·소분류·제목(문학은 작가 「작품」)·22유형까지 채워져 LMS 점검 오류 0건 · 배점 합계 100점이 나온다(발문과 해설지 이름이 어긋나는 5문항 안팎만 "검토 요망").
 이 실제 PDF들은 저작권 때문에 저장소에 넣지 않는다 — 테스트는 같은 짜임의 지어낸 시험지(`tests/kor-fixture.js`)로.
 
+**시험지 보관함과 난도(2026-11-25 추가)**
+- 시험 정보는 지문·문항마다 `src { name, kind(종류), year(학년도), month(시행 월), grade(학년) }` 로 들어 있고, 이름별로 묶은 요약이 `K.exams`(app.js `buildExams`)다. 따로 시험 테이블은 두지 않는다 — 정보를 고치면 그 시험의 모든 레코드의 `src` 를 함께 바꾼다(`examSave`).
+- 올릴 때 `KT.examMeta(이름, 첫 쪽 맨 위 머리말)` 이 학년도·월·학년·종류를 읽는다(이름에 적힌 것이 먼저). 파일 이름으로 자동 입력된 이름은 `KT.examName` 의 표준 꼴("2026학년도 9월 모의평가 (고3)")로 바꾼다.
+- 찾기: [시험지 보관함] 학년·종류·학년도·월 칩 + 이름 검색 + **기출 달력**(줄 = 학년도, 칸 = 월) · [지문·작품] 학년·학년도·월·시험 선택 + 대분류 → 소분류 칩 + 나눠 보기 · 맨 위 **통합 검색**(시험지·지문·문항).
+- 수백 회를 쌓아도 느려지지 않게: `K.pMap`·`K.byP`·`K.byPv` 찾아보기(지문 → 문항), 목록은 50~60개씩 나눠 그림, 원본 조각은 기본으로 **그림·옛한글 있는 곳만** 저장(시험 1회 약 12MB → 1~2MB).
+- **난도 `diff` 1~5**(1 쉬움 ~ 5 최고난도) + `diffBy`: `rule`(올릴 때 `KT.diffGuess` — 배점·유형·<보기>·지문 길이·선지 길이로 어림) · `ai`(AI 분류가 함께 매김) · `rate`(실제 정답률 `rate` 에서 — `KT.rateToDiff`) · `user`(직접).
+  믿을 만한 순서는 rate > user > ai > rule. AI·어림은 rate·user 를 덮어쓰지 않는다. 정답률은 [분류표·LMS 엑셀]의 "난도 — 실제 정답률 넣기"에 표를 붙여 넣는다(`KT.parseRates`, 오답률이면 100에서 뺌).
+  쓰는 곳: 문제 검색·출력 화면에서 난도로 고르기, 변형 만들기의 목표 난도(같게·쉽게·어렵게 — 원 문항의 난도·정답률을 지시문에 넣음), 해설지·대시보드 분포. LMS 파일의 Level 은 규격대로 배점(2점 General / 3점 Differential)만 쓴다.
+
 **쓰는 순서(화면)**: ① 시험지 올리기 → ② 분류표·LMS 엑셀(문항 표에서 고치기, 🤖 AI 분류, 엑셀 2종) → ③ 지문·작품 → 세트 화면(🤖 정답 근거 형광펜, ✨ 변형 만들기) → ④ 출력·교재 만들기(학습지·시험지·교재 인쇄, 문제지와 정답·해설지는 따로, 같은 구성의 LMS 엑셀).
 인쇄 단추는 세트 화면·지문 목록·문제 검색·변형 만들기·분류표 화면에도 있어 고른 것을 들고 ④로 넘어간다(`shOpenWith`).
 
@@ -140,12 +149,13 @@ Sheet 학습지  { id, title, entries[{passageId, itemIds[]}] | 단독 문항 } 
 | `korlab/js/app.js` | 상태 `K`, `DB`('sp-korlab': passages·items·images·sheets), `go(view)`, `kHtml`(표시 문법 + 형광펜 → HTML), 대시보드, 백업·설정(LMS 표기 설정, 가져오기는 `cleanRecord`로 값 정리 — 분류값은 목록에 있는 것만), 예전 저장분 `migrateRecord`(area → cat/sub) |
 | `korlab/js/upload.js` | `upRead`(문제지 + 해설지) → `upClassify`(규칙으로 먼저 분류, [3점] 없는 문항은 2점) → `upPreviewHtml` → `upSave`(원본 조각 `upCrops`) |
 | `korlab/js/library.js` | `renderPassages` · `renderSet`(지문 / 문항 / 변형 묶음, 도구 줄) · `itemHtml`·`typeChips` · `renderSetEdit`/`saveSetEdit`(`setUserType` — 직접 고르면 확정) · `renderItems`(유형·검토·변형 필터) |
+| `korlab/js/exams.js` | **시험지 보관함** `renderExams`(칩으로 좁히기·목록·`examCalHtml` 기출 달력·정보 고치기 `examSave`·`examDropImages`·`examDelete`) · **대시보드** `renderDash`(할 일·최근 시험·학년×종류·분포·저장 공간 `storageFill`) · **통합 검색** `renderSearch` · `diffChip`(난도 표시) |
 | `korlab/js/polish.js` | `polishSet`: 줄 이음 추정 자리만 ‹n›으로 번호 매겨 AI가 0/1로 답함(글자는 AI가 못 고침) |
 | `korlab/js/aiwork.js` | 🤖 **22유형 분류** `classifyExam`/`aiClassifySet`/`aiClassifySingles` → `applyType`·`applyHead`(목록 밖 값 거부, `typeBy:user`·`clsBy:user` 는 건드리지 않음) · 🤖 **정답 근거** `evidenceSet` → `applyEvidence`(지문·<보기>·선지에 실제로 있는 것만) · `evSpans`·`focusEv` · 🤖 **정답 풀기·대조** `solveExam`(빈 정답은 채우고 `ansBy:'ai'`, 정답표와 다르면 `ansAi` 로 알림만) |
 | `korlab/js/export.js` | [분류표·LMS 엑셀] 화면: 문항 표(바로 저장되는 select·input), 점검·검토 요망 표, 내려받기 2종 |
 | `korlab/js/variant.js` | ✨ **변형 6종** `vaRun`: `vaPrompt` → `vaShape`(형식 + 근거 대조) → `vaVerify`(블라인드: 가벼운 모델 → 어긋나면 센 모델) → `vaRepair`(한 번) → 통과만 자동 저장, 나머지는 보류 목록 |
 | `korlab/js/sheet.js` | **출력·교재 만들기**: `shCompose`/`shNumbered`(고른 지문 세트 + 단독 문항, 번호 다시 매김, 문항 단위 켜고 끄기 `SH.off`) → `shHtml('q'｜'a'｜'book')`(문제지 / 정답·해설지(빠른 정답 + 해설·근거·오답 풀이) / 교재(표지·차례 + 세트별 해설)) → `shPreview`·`shPrint`(`#print-root` + `window.print`, 문서 제목 = PDF 파일 이름) · `shRows` → `shDownloadLms`(5지선다만)·`shDownloadClass` · `shOpenWith`(다른 화면에서 고른 채 넘어오기) · `shSave`/`shLoad`(sheets 저장소) |
-| `tests/smoke78~82.js` | 78 PDF 엔진 · 79 올리기·세트·다듬기·백업 · 80 유형 체계·엑셀 엔진(Node) · 81 분류·엑셀·근거·변형(AI 스텁) · 82 학습지 |
+| `tests/smoke78~83.js` | 78 PDF 엔진 · 79 올리기·세트·다듬기·백업 · 80 유형 체계·엑셀 엔진(Node) · 81 분류·엑셀·근거·변형(AI 스텁) · 82 출력·교재 · 83 시험지 보관함·대시보드·통합 검색·난도 |
 | `tools/fix-pua.py` | 소스 안의 보이지 않는 사용자 영역 글자를 `\uE000` 꼴 이스케이프로 되돌림 — 편집 뒤 커밋 전에 한 번 |
 
 **본문 표시 문법**: `{u}밑줄{/u}` · `{b}상자{/b}` · `{[:A}구간{/[}`([A] 괄호 — PDF의 세로선 두 토막 + "[A]" 글자, 또는 위아래 짧은 가로선 한 쌍을 `findBrackets` 가 찾는다. 화면·인쇄에서는 왼쪽 괄호로 그림) · `[그림]` · 줄바꿈 = 문단/행.
@@ -182,5 +192,6 @@ Sheet 학습지  { id, title, entries[{passageId, itemIds[]}] | 단독 문항 } 
 - 선택지가 2줄 묶음 괄호 모양(언매 37번 같은 짝 문장)이면 줄 순서가 어긋남 → 원본 보기·고치기.
 - [A] 구간 괄호(세로선)는 "[A]" 글자만 그 줄에 남음. 표·그림 속 글자는 `[그림]` + 원본 조각(학습지에는 원본 조각으로 실림).
 - 스캔 PDF·캡처 이미지(글자 층 없음)는 아직 — 수학 랩의 영역 인식 + AI 전사 방식을 붙일 예정.
-- 동기화 없음(이 브라우저 IndexedDB만) — 백업 JSON으로 옮김.
+- 동기화 없음(이 브라우저 IndexedDB만) — 백업 JSON으로 옮김. 수백 회를 쌓으면 한 브라우저에 자료가 몰리므로 백업·보호([대시보드] 저장 공간)가 중요하다. 기기 간 동기화가 다음 큰 과제.
+- 난도 어림(`rule`)과 AI 난도는 실제 정답률과 견줘 본 적이 없다 — 정답률이 쌓이면 어림 식의 가중치를 맞춰야 한다. 정답률을 자동으로 가져오는 길(EBSi·LMS)은 아직 없고 붙여넣기만.
 - 해설지 형식은 EBS식만. 빠른 정답표만 있는 PDF도 정답은 붙음.

@@ -21,10 +21,12 @@ const VA_RULES = `[출제 원칙]
 - neg: 발문이 틀린 것·아닌 것을 고르라고 하면 true, 아니면 false.
 - type 은 아래 목록의 ID 만 쓴다.`;
 const VA_MC = '{"items":[{"stem":"발문","viewLabel":"","view":"","choices":["① …","② …","③ …","④ …","⑤ …"],"answer":3,"neg":false,"type":"R01","points":2,"explain":"정답 해설 한두 문장","evidence":["지문 그대로"],"wrongs":[[1,"낱말","이유"]]}]}';
+const VA_DIFF = { '': '', same: '원 문항과 같은 난도로 만든다.', easy: '원 문항보다 쉽게 만든다 — 근거가 지문에 더 직접 드러나고, 오답은 틀린 곳이 분명하게.', hard: '원 문항보다 어렵게 만든다 — 지문의 여러 문장을 엮어야 답이 나오고, 오답은 지문의 표현을 그대로 쓰면서 한 곳만 어긋나게(그럴듯한 오답).' };
 function vaPrompt(kind, p, src, n, to){
   const cat = p.cat || '독서', types = KT.typesOf(cat).map(t=>`${t.id} ${KT.name(t.id)} — ${t.d}`).join('\n');
   const base = `너는 수능 국어 출제 경험이 많은 출제자다. 아래 [지문]만을 근거로 변형 문항을 만든다.\n${VA_RULES}\n[유형 목록 — ${cat}]\n${types || '(유형 없음 — type 은 "")'}\n${GUARD}\n\n`;
-  const tail = `\n\n[지문]\n${passageText(p)}` + (src ? `\n\n[원 문항]\n${itemText(src, { explain: true })}${src.typeId ? `\n원 문항의 유형: ${KT.label(src.typeId)}` : ''}` : '');
+  const dnote = VA_DIFF[K.va.diff || ''] ? `\n[난도] ${VA_DIFF[K.va.diff]}${src && src.diff ? ` (원 문항 난도 ${src.diff}/5${src.rate != null ? ', 실제 정답률 ' + src.rate + '%' : ''})` : ''}` : '';
+  const tail = dnote + `\n\n[지문]\n${passageText(p)}` + (src ? `\n\n[원 문항]\n${itemText(src, { explain: true })}${src.typeId ? `\n원 문항의 유형: ${KT.label(src.typeId)}` : ''}` : '');
   if(kind === 'twin') return base + `[할 일] 원 문항과 같은 유형·같은 발문 방식의 쌍둥이 문항 ${n}개. 선지는 모두 새로 쓴다 — 원 문항의 선지를 그대로 쓰지 말고 지문의 다른 지점을 묻는다. 정답 번호는 원 문항과 다르게.\nJSON 하나만: ${VA_MC}` + tail;
   if(kind === 'shift') return base + `[할 일] 같은 지문으로 유형을 "${KT.label(to)}"(으)로 바꾼 새 문항 ${n}개. 그 유형의 판정 기준에 정확히 맞아야 한다. type 은 "${to}".\nJSON 하나만: ${VA_MC}` + tail;
   if(kind === 'view') return base + `[할 일] <보기>를 새로 쓴 문항 ${n}개. ${cat === '문학' ? '<보기>는 작품을 바라보는 새 감상 준거(비평·시대상·갈래 이론)이고 유형은 L07.' : '<보기>는 지문의 원리·개념을 적용할 새 줄글 사례이고 유형은 R06.'} viewLabel 은 "보기", view 에 <보기> 글(3~5문장)을 쓴다. 원 문항의 <보기>를 베끼지 않는다.\nJSON 하나만: ${VA_MC}` + tail;
@@ -106,7 +108,8 @@ async function vaRepair(kind, p, src, s, body){               // 실패한 문�
 function vaItemRecord(p, src, s, kind, k){
   const now = Date.now();
   return Object.assign({ id: uid() + 'v' + k, passageId: p.id, num: src ? src.num : k + 1, section: p.section || '', group: '', src: p.src, batch: 'v' + now.toString(36), createdAt: now + k, updatedAt: now,
-    variantOf: src ? src.id : p.id, vkind: kind, explain: '', wrong: '', type: '' }, s.it);
+    variantOf: src ? src.id : p.id, vkind: kind, explain: '', wrong: '', type: '',
+    diff: src && src.diff ? Math.max(1, Math.min(5, src.diff + (K.va.diff === 'hard' ? 1 : K.va.diff === 'easy' ? -1 : 0))) : 0, diffBy: src && src.diff ? 'rule' : '' }, s.it);      // 변형의 난도: 원 문항 기준으로 목표한 값(어림)
 }
 async function vaRun(){
   const p = K.passages.find(x=>x.id === K.va.pid); if(!p){ toast('지문을 먼저 고르세요.'); return; }
@@ -173,11 +176,12 @@ function renderVariant(){
     <div class="card"><div class="grid4">
       <div style="grid-column:span 2"><label for="va-p">지문·작품</label><select id="va-p" onchange="K.va.pid=this.value;K.va.picks={};renderVariant()">${K.passages.map(x=>`<option value="${esc(x.id)}" ${x.id === V.pid ? 'selected' : ''}>${esc((x.title || snippet(x.body, 24)) + ' — ' + ((x.src && x.src.name) || ''))}</option>`).join('')}</select></div>
       ${V.kind === 'shift' ? `<div><label for="va-to">바꿀 유형</label><select id="va-to" onchange="K.va.to=this.value">${KT.typesOf(p.cat).map(t=>`<option value="${t.id}" ${t.id === V.to ? 'selected' : ''}>${esc(KT.label(t.id))}</option>`).join('')}</select></div>` : ''}
+      ${V.kind !== 'newp' ? `<div><label for="va-diff">난도</label><select id="va-diff" onchange="K.va.diff=this.value">${[['', '지정 안 함'], ['same', '원 문항과 같게'], ['easy', '더 쉽게'], ['hard', '더 어렵게']].map(([v, l])=>`<option value="${v}" ${(V.diff || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>` : ''}
       ${V.kind !== 'ox' && V.kind !== 'newp' ? `<div><label for="va-n">문항마다 몇 개</label><select id="va-n" onchange="K.va.n=+this.value">${[1, 2, 3].map(v=>`<option ${v === +V.n ? 'selected' : ''}>${v}</option>`).join('')}</select></div>` : ''}</div>
       <label style="margin-top:.7rem">변형 종류</label><div class="row" id="va-kinds">${kinds.map(k=>`<span class="chip clk ${V.kind === k ? 'on' : ''}" data-kind="${k}" onclick="K.va.kind='${k}';renderVariant()">${esc(VKINDS[k])}</span>`).join('')}</div>
       <p class="hint" style="margin-top:.4rem">${esc(VA_HELP[V.kind])}</p>
       ${V.kind === 'newp' ? '' : `<label style="margin-top:.7rem">바탕 문항 <a href="#" onclick="itemsOf(K.va.pid).forEach(i=>K.va.picks[i.id]=true);renderVariant();return false" class="hint">모두 고르기</a></label>
-      <div id="va-items">${its.map(it=>`<label class="pick"><input type="checkbox" ${V.picks[it.id] ? 'checked' : ''} onchange="K.va.picks['${escJs(it.id)}']=this.checked;renderVariant()"> <b>${it.num}.</b> ${it.typeId ? `<span class="chip t">${esc(it.typeId)}</span>` : ''} ${esc(snippet(it.stem, 70))}</label>`).join('') || '<span class="hint">이 지문에 딸린 문항이 없습니다.</span>'}</div>`}
+      <div id="va-items">${its.map(it=>`<label class="pick"><input type="checkbox" ${V.picks[it.id] ? 'checked' : ''} onchange="K.va.picks['${escJs(it.id)}']=this.checked;renderVariant()"> <b>${it.num}.</b> ${it.typeId ? `<span class="chip t">${esc(it.typeId)}</span>` : ''}${it.diff ? ` <span class="dchip d${it.diff}">난도 ${it.diff}</span>` : ''} ${esc(snippet(it.stem, 70))}</label>`).join('') || '<span class="hint">이 지문에 딸린 문항이 없습니다.</span>'}</div>`}
       <div class="row" style="margin-top:.8rem"><button class="btn" id="va-run" onclick="vaRun()">✨ ${V.kind === 'newp' ? '새 지문 + 문항 만들기' : `변형 만들기${nPick ? ` (${nPick}문항)` : ''}`}</button>
         <button class="btn ghost" id="va-print" onclick="shOpenWith({passages:['${escJs(p.id)}'],title:(K.passages.find(x=>x.id===K.va.pid).title||'')+' 변형'})">🖨 이 지문 + 변형 출력</button>
         <a href="#" onclick="go('set','${escJs(p.id)}');return false" class="hint">이 지문 세트 보기 →</a><pre id="va-log" class="hint" style="margin:0;white-space:pre-wrap">${esc(V.log.slice(-4).join('\n'))}</pre></div></div>

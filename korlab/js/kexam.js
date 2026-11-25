@@ -18,7 +18,7 @@
       const p = it.passageId ? pOf.get(it.passageId) : null, h = p || it;
       return { id: it.id, num: it.num, section: it.section || '', cat: h.cat || '', sub: h.sub || '', title: h.title || '', author: h.author || '',
         typeId: it.typeId || '', subTypes: (it.subTypes || []).slice(), nature: it.nature || '', answer: KT.ansNo(it.answer), points: +it.points || 0,
-        review: it.review || null, note: it.note || '', ansBy: it.ansBy || '', ansAi: +it.ansAi || 0, gkey: p ? p.id : (it.group ? 'g:' + it.group + ':' + (it.section || '') : it.id), single: !p };
+        review: it.review || null, note: it.note || '', ansBy: it.ansBy || '', ansAi: +it.ansAi || 0, diff: +it.diff || 0, diffBy: it.diffBy || '', rate: it.rate == null ? null : +it.rate, gkey: p ? p.id : (it.group ? 'g:' + it.group + ':' + (it.section || '') : it.id), single: !p };
     });
   }
   const sections = (items, srcName)=>[...new Set(items.filter(i=>i.src && i.src.name === srcName && i.section).map(i=>i.section))];

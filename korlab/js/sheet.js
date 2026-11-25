@@ -4,10 +4,11 @@
  * 같은 구성으로 스터디피크 LMS 업로드 엑셀(ExamTemplate)과 유형 분류표도 만든다 — 번호·유형·정답이 인쇄물과 일치한다.
  * 그림이 들어 있던 지문·문항([그림] 자리)은 글 대신 PDF에서 잘라 둔 원본 조각으로 싣는다. */
 'use strict';
-const SH = { id: '', title: '', sub: '', src: '', form: 'sheet', picks: {}, off: {}, singles: {}, orig: true, vars: true, mcOnly: false, types: true, dur: 80, saved: [] };
+const SH = { id: '', title: '', sub: '', src: '', form: 'sheet', picks: {}, off: {}, singles: {}, orig: true, vars: true, mcOnly: false, types: true, diff: '', dur: 80, saved: [] };
 const SH_FORMS = { sheet: ['학습지 · 프린트', '제목과 이름 칸이 있는 2단 프린트. 수업용·숙제용.'], exam: ['시험지 · 모의고사', '수능형 머리말(국어 영역 · 성명 · 수험 번호)에 2단으로 이어지는 시험지.'], book: ['교재 · 해설 포함', '표지와 차례, 세트마다 정답·해설·근거가 바로 뒤에 붙는 교재.'] };
 const shIsMc = it=>!it.kind;                                // 5지선다(OX·서술형 변형이 아닌 것) — LMS 엑셀에 올릴 수 있는 문항
-const shKeep = it=>!SH.off[it.id] && (!SH.mcOnly || shIsMc(it));
+const SH_DIFF = { '': null, easy: [1, 2], mid: [3, 3], hard: [4, 5] };            // 난도로 골라 담기
+const shKeep = it=>!SH.off[it.id] && (!SH.mcOnly || shIsMc(it)) && (!SH_DIFF[SH.diff] || (it.diff >= SH_DIFF[SH.diff][0] && it.diff <= SH_DIFF[SH.diff][1]));
 /* 고른 것 → [{ p(지문 또는 null), items[] }] — 지문 세트 먼저(올린 순서), 그다음 지문 없는 단독 문항 */
 function shCompose(){
   const sets = K.passages.filter(p=>SH.picks[p.id]).sort((a, b)=>(a.createdAt - b.createdAt) || ((a.range || [0])[0] - (b.range || [0])[0]))
@@ -31,7 +32,7 @@ const shType = (it, cat)=>it.typeId ? KT.label(it.typeId) : (it.nature || (cat &
 /* 문항 하나의 해설 덩어리: 번호 · 정답 · 유형 · 해설 · 근거 · 오답 풀이 */
 function shSolHtml(no, it, cat){
   const ty = SH.types ? shType(it, cat) : '';
-  return `<div class="sol"><div class="solh"><b class="soln">${no}</b><b class="sola">${esc(shAns(it))}</b>${ty ? `<span class="solt">${esc(ty)}</span>` : ''}${it.variantOf ? `<span class="solt">${esc(VKINDS[it.vkind] || '변형')}</span>` : ''}</div>
+  return `<div class="sol"><div class="solh"><b class="soln">${no}</b><b class="sola">${esc(shAns(it))}</b>${ty ? `<span class="solt">${esc(ty)}</span>` : ''}${SH.types && it.diff ? `<span class="solt">난도 ${it.diff}${it.rate != null ? ' · 정답률 ' + it.rate + '%' : ''}</span>` : ''}${it.variantOf ? `<span class="solt">${esc(VKINDS[it.vkind] || '변형')}</span>` : ''}</div>
     ${it.kind === 'essay' ? `<div><b>모범 답안</b> ${esc(it.model || '')}</div>${(it.rubric || []).length ? `<div><b>채점 기준</b> ${it.rubric.map(esc).join(' / ')}</div>` : ''}` : ''}
     ${it.explain ? `<div>${esc(KPDF.plain(it.explain))}</div>` : ''}
     ${it.ev && (it.ev.quotes || []).length ? `<div class="sev"><b>근거</b> ${it.ev.quotes.map(q=>'“' + esc(q) + '”').join(' / ')}</div>` : ''}
@@ -79,7 +80,7 @@ function shOpenWith(opts){
   }
   if(opts.form) SH.form = opts.form;
   if(opts.title != null) SH.title = opts.title;
-  SH.orig = true; SH.vars = opts.vars !== false; SH.mcOnly = false;
+  SH.orig = true; SH.vars = opts.vars !== false; SH.mcOnly = false; SH.diff = '';
   go('sheet');
 }
 function renderSheet(){
@@ -96,7 +97,8 @@ function renderSheet(){
         <div style="grid-column:span 2"><label for="sh-title">제목 (시험 이름)</label><input id="sh-title" value="${esc(SH.title)}" placeholder="예) 독서 변형 연습 1회" onchange="SH.title=this.value.trim();shPreview()"></div>
         <div><label for="sh-sub">부제 · 날짜 · 반</label><input id="sh-sub" value="${esc(SH.sub)}" placeholder="예) 고3 A반 · 11월 4주" onchange="SH.sub=this.value.trim();shPreview()"></div>
         <div><label for="sh-src">출처로 좁히기</label><select id="sh-src" onchange="SH.src=this.value;renderSheet()">${optList(names, SH.src, '전체')}</select></div></div>
-      <div style="margin-top:.6rem">${tg('orig', '원 문항')}${tg('vars', '변형 문항')}${tg('mcOnly', '5지선다만', 'OX·서술형을 빼고 담습니다 — LMS 엑셀을 만들 때 켜세요')}${tg('types', '해설에 유형 표시')}</div>
+      <div style="margin-top:.6rem">${tg('orig', '원 문항')}${tg('vars', '변형 문항')}${tg('mcOnly', '5지선다만', 'OX·서술형을 빼고 담습니다 — LMS 엑셀을 만들 때 켜세요')}${tg('types', '해설에 유형·난도 표시')}
+        <select id="sh-diff" style="width:auto;display:inline-block" onchange="SH.diff=this.value;renderSheet()" aria-label="난도로 고르기">${[['', '난도 전체'], ['easy', '쉬운 문항만 (1~2)'], ['mid', '보통만 (3)'], ['hard', '어려운 문항만 (4~5)']].map(([v, l])=>`<option value="${v}" ${SH.diff === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <label style="margin-top:.6rem">담을 지문 <a href="#" class="hint" onclick="K.passages.filter(p=>!SH.src||(p.src&&p.src.name===SH.src)).forEach(p=>SH.picks[p.id]=true);renderSheet();return false">보이는 것 모두</a> · <a href="#" class="hint" onclick="SH.picks={};SH.off={};SH.singles={};renderSheet();return false">모두 풀기</a></label>
       <div id="sh-list" style="max-height:300px;overflow:auto">${list.map(p=>{
         const its = itemsOf(p.id).concat(variantsOf(p.id)), on = !!SH.picks[p.id];

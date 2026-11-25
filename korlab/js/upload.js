@@ -1,7 +1,8 @@
 /* 스터디피크 국어 랩 — 시험지 올리기: 문제지 PDF(+ 정답·해설 PDF) → 지문·문항으로 나눠 미리보기 → 저장
  * 글자·밑줄은 KPDF 가 PDF에서 그대로 읽고(AI 없음), 원본 조각은 쪽을 그려 잘라 둔다([원본 보기]용) */
 'use strict';
-const UP = { examFile: null, solFile: null, doc: null, seg: null, sol: null, busy: false };
+const UP = { examFile: null, solFile: null, doc: null, seg: null, sol: null, busy: false, nameAuto: false, meta: null };
+const ORIG_KEY = 'sp-korlab-orig';                           // 원본 조각을 얼마나 남길지: fig(그림 있는 곳만) · all · none
 function renderUpload(){
   const s = UP.seg;
   $('#view-upload').innerHTML = `
@@ -9,14 +10,27 @@ function renderUpload(){
     <div class="card"><div class="grid4">
       <div><label for="up-exam">문제지 PDF</label><input id="up-exam" type="file" accept=".pdf,application/pdf" onchange="UP.examFile=this.files[0]||null;upAutoName()"></div>
       <div><label for="up-sol">정답·해설 PDF (선택)</label><input id="up-sol" type="file" accept=".pdf,application/pdf" onchange="UP.solFile=this.files[0]||null"></div>
-      <div><label for="up-name">시험 이름 (출처)</label><input id="up-name" placeholder="예) 2025학년도 수능"></div>
-      <div><label for="up-kind">종류</label><select id="up-kind">${SRC_KINDS.map(k=>`<option>${k}</option>`).join('')}</select></div></div>
+      <div style="grid-column:span 2"><label for="up-name">시험 이름 (출처)</label><input id="up-name" placeholder="예) 2026학년도 9월 모의평가 (고3)" oninput="UP.nameAuto=false"></div></div>
+      <div class="grid4" style="margin-top:.7rem">
+      <div><label for="up-year">학년도</label><input id="up-year" inputmode="numeric" placeholder="예) 2026"></div>
+      <div><label for="up-month">시행 월</label><select id="up-month"><option value="0">(모름)</option>${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}">${m}월</option>`).join('')}</select></div>
+      <div><label for="up-grade">학년</label><select id="up-grade"><option value="">(모름)</option>${KT.GRADES.map(g=>`<option>${g}</option>`).join('')}</select></div>
+      <div><label for="up-kind">종류</label><select id="up-kind"><option value="">(모름)</option>${KT.EXAM_KINDS.map(k=>`<option>${k}</option>`).join('')}</select></div>
+      <div><label for="up-orig">원본 조각 저장</label><select id="up-orig" onchange="localStorage.setItem(ORIG_KEY,this.value)">${[['fig', '그림·옛한글 있는 곳만 (권장)'], ['all', '모든 지문·문항'], ['none', '저장 안 함']].map(([v, l])=>`<option value="${v}" ${(localStorage.getItem(ORIG_KEY) || 'fig') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>
+      <p class="hint" style="margin-top:.4rem">학년도·월·학년·종류는 PDF 첫 쪽과 이름에서 읽어 채웁니다 — [시험지 보관함]에서 이 값으로 찾으니 [읽기] 뒤에 한 번 확인하세요. 원본 조각은 시험지 1회분 전체를 남기면 약 12MB라, 수백 회를 쌓으려면 '그림 있는 곳만'을 권합니다.</p>
       <div class="row" style="margin-top:.8rem"><button class="btn" id="up-read" onclick="upRead()">읽기</button>
         <span class="hint" id="up-status">글자가 들어 있는 PDF(평가원·교육청 시험지, 한글에서 만든 PDF)를 읽습니다. 사진을 스캔한 PDF와 캡처 이미지는 다음 단계에서 지원합니다.</span></div></div>
     <div id="up-preview">${s ? upPreviewHtml() : ''}</div>`;
   if(UP.examFile && $('#up-name') && UP.name) $('#up-name').value = UP.name;
+  if(UP.meta) upFillMeta(UP.meta, true);
 }
-function upAutoName(){ const el = $('#up-name'); if(el && !el.value.trim() && UP.examFile) el.value = UP.examFile.name.replace(/\.pdf$/i, '').replace(/[_]+/g, ' ').trim(); }
+function upAutoName(){ const el = $('#up-name'); if(el && (!el.value.trim() || UP.nameAuto) && UP.examFile){ el.value = UP.examFile.name.replace(/\.pdf$/i, '').replace(/[_]+/g, ' ').trim(); UP.nameAuto = true; } }
+/* 읽어 낸 시험 정보를 칸에 채운다. 사용자가 이미 고른 칸은 건드리지 않는다(force 는 화면을 다시 그릴 때) */
+function upFillMeta(m, force){
+  const set = (id, v)=>{ const el = $(id); if(el && v && (force || !el.value || el.value === '0')) el.value = String(v); };
+  set('#up-year', m.year); set('#up-month', m.month); set('#up-grade', m.grade); set('#up-kind', m.kind);
+}
+function upMeta(){ return { year: ($('#up-year').value.match(/20\d\d/) || [''])[0], month: +$('#up-month').value || 0, grade: $('#up-grade').value, kind: $('#up-kind').value }; }
 async function loadPdfPages(file, onPage){
   if(!window.pdfjsLib) throw new Error('PDF 구성요소가 아직 로딩 중입니다. 잠시 후 다시 눌러 주세요.');
   const doc = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, cMapUrl: KCFG.cmap, cMapPacked: true }).promise;
@@ -27,7 +41,7 @@ async function loadPdfPages(file, onPage){
 async function upRead(){
   if(UP.busy) return;
   if(!UP.examFile){ toast('문제지 PDF를 먼저 고르세요.'); return; }
-  UP.busy = true; UP.name = $('#up-name').value.trim(); UP.kind = $('#up-kind').value;
+  UP.busy = true; UP.name = $('#up-name').value.trim();
   const st = t=>{ const el = $('#up-status'); if(el) el.textContent = t; };
   try{
     st('문제지를 읽는 중…');
@@ -35,6 +49,9 @@ async function upRead(){
     const chars = ex.pages.reduce((s, p)=>s + p.items.reduce((a, it)=>a + it.s.trim().length, 0), 0);
     if(chars < 200 * ex.pages.length / 4) throw new Error('이 PDF에는 글자 정보가 거의 없습니다(스캔본으로 보입니다). 지금은 글자가 들어 있는 PDF만 읽을 수 있습니다.');
     UP.doc = ex.doc; UP.seg = KPDF.segment(ex.pages); UP.sol = null;
+    const m = KT.examMeta(UP.name, ex.pages.slice(0, 1).map(p=>p.items.filter(i=>i.y < p.h * 0.14).map(i=>i.s).join(' ')).join(' '));      // 첫 쪽 맨 위 머리말("2026학년도 대학수학능력시험 9월 모의평가 문제지")에서만 — 본문 낱말에 속지 않게
+    upFillMeta(m); UP.meta = upMeta();
+    if(UP.nameAuto && UP.meta.year && UP.meta.kind){ UP.name = KT.examName(UP.meta); $('#up-name').value = UP.name; }     // 파일 이름 대신 표준 꼴 이름으로
     if(UP.solFile){
       st('정답·해설을 읽는 중…');
       const so = await loadPdfPages(UP.solFile);
@@ -112,6 +129,12 @@ function upClassify(){
     upGuessItem(it, it.cat);
   }
   if(S.items.some(i=>i.points === 3) && S.items.every(i=>!i.points || i.points === 3)) S.items.forEach(i=>{ if(!i.points) i.points = 2; });   // 수능형: [3점] 표시가 없는 문항은 2점
+  const grade = ($('#up-grade') || {}).value || '';
+  for(const it of S.items){                                    // 난도 어림(배점·유형·<보기>·지문 길이·선지 길이) — 실제 정답률이 들어오면 그것으로 바뀐다
+    const set = it.setIdx >= 0 ? S.sets[it.setIdx] : null;
+    it.diff = KT.diffGuess({ points: it.points, typeId: it.typeId, view: KPDF.plain(it.view), choices: (it.choices || []).map(KPDF.plain) }, { bodyLen: set ? KPDF.plain(set.body).length : 0, cat: set ? set.cat : it.cat, sub: set ? set.sub : it.sub, grade });
+    it.diffBy = 'rule';
+  }
   S.stats.typed = S.items.filter(i=>i.typeId || i.nature).length;
 }
 function upPreviewHtml(){
@@ -151,8 +174,9 @@ async function upSave(){
   UP.busy = true; const btn = $('#up-save'); if(btn) btn.disabled = true;
   try{
     const now = Date.now(), batch = 'k' + now.toString(36);
-    const name = ($('#up-name').value.trim() || UP.name || (UP.examFile && UP.examFile.name.replace(/\.pdf$/i, '')) || '올린 시험지'), kind = $('#up-kind').value;
-    const src = { name, kind, year: (name.match(/(20\d\d)/) || [])[1] || '', grade: '' };
+    const name = ($('#up-name').value.trim() || UP.name || (UP.examFile && UP.examFile.name.replace(/\.pdf$/i, '')) || '올린 시험지'), mt = upMeta();
+    if(srcNames().includes(name) && !confirm(`"${name}" 은(는) 이미 보관함에 있습니다. 같은 이름으로 또 저장하면 한 시험으로 합쳐져 번호가 겹칩니다.\n\n그래도 저장할까요? (취소하고 시험 이름을 바꾸는 것을 권합니다)`)){ UP.busy = false; if(btn) btn.disabled = false; return; }
+    const src = { name, kind: mt.kind, year: mt.year || (name.match(/(20\d\d)/) || [])[1] || '', month: mt.month, grade: mt.grade };
     const passages = [], items = [], owners = [];
     UP.seg.sets.forEach((s, k)=>{
       const id = uid() + 'p' + k;
@@ -164,14 +188,16 @@ async function upSave(){
       const id = uid() + 'i' + k, set = it.setIdx >= 0 ? UP.seg.sets[it.setIdx] : null;
       items.push({ id, passageId: set ? set._id : null, num: it.num, section: it.section || '', group: it.group || '', stem: it.stem, view: it.view || '', viewLabel: it.viewLabel || '', choices: it.choices || [],
         answer: it.answer || '', explain: it.explain || '', wrong: it.wrong || '', type: it.type || '', points: it.points || null,
-        typeId: it.typeId || '', subTypes: [], nature: it.nature || '', typeBy: it.typeBy || '', review: it.review || null, note: '', ...(set ? {} : { cat: it.cat || '', sub: it.sub || '', title: it.title || '' }), oldHangul: !!it.oldHangul, src, batch, createdAt: now + k, updatedAt: now });
+        typeId: it.typeId || '', subTypes: [], nature: it.nature || '', typeBy: it.typeBy || '', review: it.review || null, note: '', diff: it.diff || 0, diffBy: it.diff ? 'rule' : '', ...(set ? {} : { cat: it.cat || '', sub: it.sub || '', title: it.title || '' }), oldHangul: !!it.oldHangul, src, batch, createdAt: now + k, updatedAt: now });
       owners.push({ id, rects: it.rects });
     });
     await DB.putMany('passages', passages); await DB.putMany('items', items);
     let imgs = [];
-    try{ imgs = await upCrops(UP.doc, owners); if(imgs.length) await DB.putMany('images', imgs); }catch(e){ console.warn('원본 조각 저장 실패', e); }
+    const keep = (localStorage.getItem(ORIG_KEY) || 'fig'), figIds = new Set(passages.filter(p=>/\[그림\]/.test(p.body) || p.oldHangul).map(p=>p.id).concat(items.filter(i=>/\[그림\]/.test(i.stem + i.view + i.choices.join('')) || i.oldHangul).map(i=>i.id)));
+    const want = keep === 'none' ? [] : keep === 'all' ? owners : owners.filter(o=>figIds.has(o.id));
+    try{ if(want.length){ imgs = await upCrops(UP.doc, want); if(imgs.length) await DB.putMany('images', imgs); } }catch(e){ console.warn('원본 조각 저장 실패', e); }
     await loadAll();
-    UP.seg = null; UP.sol = null; UP.doc = null; UP.examFile = null; UP.solFile = null; UP.name = '';
+    UP.seg = null; UP.sol = null; UP.doc = null; UP.examFile = null; UP.solFile = null; UP.name = ''; UP.meta = null; UP.nameAuto = false;
     toast(`지문 ${passages.length}개 · 문항 ${items.length}개를 저장했습니다.`);
     K.f = { cat: '', q: '', src: name }; K.ex = { src: name, section: '' }; go('passages');
   }catch(e){ toast('⚠ 저장 실패: ' + (e.message || e)); if(btn) btn.disabled = false; }

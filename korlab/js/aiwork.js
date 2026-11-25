@@ -28,6 +28,7 @@ const CLS_RULES = `[판정 규칙]
 - 표에 없는 유형명·소분류는 절대 만들지 않는다. 맞는 것이 없어 보여도 가장 가까운 것을 고르고 review 를 true 로 한다.
 - 한 문항이 두 유형에 걸치면 대표 유형을 type 에, 나머지를 sub 배열에 적는다(같은 대분류 안에서만, 최대 1개).
 - 확신이 없으면 review:true, alt 에 대안 유형 ID 하나, why 에 근거를 한 문장으로.
+- diff: 난도를 1~5 정수로(1 쉬움: 지문에 그대로 있음 · 2 약간 쉬움 · 3 보통: 한 번 바꿔 읽어야 함 · 4 어려움: 여러 정보를 엮거나 매력적인 오답이 있음 · 5 최고난도: 정답률 35% 아래로 예상). 지문의 정보 밀도, 추론 단계 수, 오답 선지의 그럴듯함으로 판단한다.
 - <보기>가 줄글 사례면 R06, 그림·도표·그래프가 판단 자료면 R07. 문학에서 <보기>가 감상의 준거면 L07.
 - 언어와 매체 구역의 문법 문항은 대분류 "문법" + G유형. 매체 문항은 대분류 "매체".
 - 독서 지문이 (가)(나) 두 글이면 소분류 "주제복합", 문학 지문이 서로 다른 갈래의 작품을 묶었으면 "갈래 복합".
@@ -39,7 +40,7 @@ const CLS_RULES = `[판정 규칙]
 function classifyPrompt(body, single){
   return '너는 수능 국어 문항을 「엄태욱 마스터 22유형」으로 분류한다. 아래 표의 값만 쓴다.\n\n' + masterText() + '\n\n' + CLS_RULES + '\n\n' + GUARD + '\n\n'
     + (single ? 'JSON 하나만: {"items":[{"num":37,"cat":"문법","sub":"단어","title":"단원명","type":"G03","sub2":[],"nature":"","review":false,"alt":"","why":""}]}\n(지문 없는 단독 문항들이다. 문항마다 cat·sub·title 을 따로 정한다. sub2 가 보조 유형 배열이다.)'
-      : 'JSON 하나만: {"cat":"독서","sub":"과학/기술","title":"","author":"","items":[{"num":1,"type":"R01","sub2":[],"nature":"","review":false,"alt":"","why":""}]}\n(sub2 가 보조 유형 배열이다.)')
+      : 'JSON 하나만: {"cat":"독서","sub":"과학/기술","title":"","author":"","items":[{"num":1,"type":"R01","sub2":[],"nature":"","diff":3,"review":false,"alt":"","why":""}]}\n(sub2 가 보조 유형 배열이다.)')
     + '\n\n' + body;
 }
 /* AI의 문항 답을 목록에 대조해 적용. 사용자가 직접 정한 문항(typeBy:user)은 건드리지 않는다 → 바뀌었으면 true */
@@ -59,6 +60,7 @@ function applyType(it, cat, r){
   }
   const alt = KT.has(r.alt) && KT.catOfType(r.alt) === cat && r.alt !== it.typeId ? r.alt : '';
   it.review = bad.length ? { alt, why: bad.join(' / ') } : (r.review || alt ? { alt, why: String(r.why || '').slice(0, 200) } : null);
+  const d = Math.round(+r.diff); if(d >= 1 && d <= 5 && it.diffBy !== 'user' && it.diffBy !== 'rate'){ it.diff = d; it.diffBy = 'ai'; }      // 실제 정답률·직접 정한 난도는 건드리지 않는다
   it.typeBy = 'ai'; it.updatedAt = Date.now();
   return true;
 }

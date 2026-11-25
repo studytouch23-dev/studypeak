@@ -18,7 +18,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     const file = (b64, name) => new File([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], name, { type: 'application/pdf' });
     const out = {}, NAME = '2099 지어낸 모의';
     go('sheet'); out.empty = /아직 지문이 없습니다/.test($('#view-sheet').textContent);
-    go('upload'); UP.examFile = file(exam, NAME + '.pdf'); UP.solFile = file(sol, '해설.pdf'); upAutoName(); await upRead(); await upSave();
+    localStorage.setItem('sp-korlab-orig', 'all'); go('upload'); UP.examFile = file(exam, NAME + '.pdf'); UP.solFile = file(sol, '해설.pdf'); upAutoName(); await upRead(); await upSave();
     const p1 = K.passages.find(p => /열섬/.test(p.title)), p2 = K.passages.find(p => /봄/.test(p.title)), i1 = itemsOf(p1.id)[0], i5 = itemsOf(p2.id)[1], single = K.items.find(i => !i.passageId), now = Date.now();
     i1.ev = { quotes: ['녹지와 수면이 줄어든 곳일수록 열섬의 세기가 커진다.'], x: [], neg: true }; await DB.put('items', i1);
     i5.stem = i5.stem + ' [그림]'; await DB.put('items', i5);          // 그림이 있던 문항 흉내 → 원본 조각으로 실려야 함

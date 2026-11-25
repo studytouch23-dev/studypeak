@@ -17,6 +17,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   const r = await page.evaluate(async ({ exam, sol }) => {
     const file = (b64, name) => new File([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], name, { type: 'application/pdf' });
     const out = { menu: [...document.querySelectorAll('#sbnav button')].map(b => b.dataset.view).join() };
+    localStorage.setItem('sp-korlab-orig', 'all');             // 이 테스트는 원본 조각을 모두 남기는 설정으로
     go('upload');
     UP.examFile = file(exam, '2099 지어낸 모의.pdf'); UP.solFile = file(sol, '해설.pdf'); upAutoName();
     out.autoName = $('#up-name').value;
@@ -73,7 +74,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     return out;
   }, { exam, sol });
 
-  check('메뉴: 대시보드·지문·작품·시험지 올리기·문제 검색·변형·학습지·백업', r.menu === 'dash,passages,upload,items,export,variant,sheet,data', r.menu);
+  check('메뉴: 대시보드·지문·작품·시험지 올리기·문제 검색·변형·학습지·백업', r.menu === 'dash,exams,passages,upload,items,export,variant,sheet,data', r.menu);
   check('파일 이름으로 시험 이름 자동 입력', r.autoName === '2099 지어낸 모의', r.autoName);
   check('읽기: 지문 2 · 문항 6 · 정답 6 미리보기', /지문 2개 · 문항 6개/.test(r.status) && r.preview.sets === 3 && /지문 2\|문항 6\|정답 6/.test(r.preview.chips), r.status + ' / ' + r.preview.chips);
   check('미리보기 제목에 해설지의 영역·제목', /\[1~3\] 독서 · 과학\/기술 — 도시 열섬 현상/.test(r.preview.title), r.preview.title);

@@ -168,6 +168,21 @@ sup.evn{font-family:"Pretendard Variable",sans-serif;font-size:.62rem;font-weigh
   @page{@bottom-center{content:counter(page);font-size:9pt;font-family:sans-serif}}
   body{background:#fff}#layout,#toast,#busy{display:none !important}#print-root{display:block}
 }
+/* 시험지 보관함 · 대시보드 · 난도 */
+#gsearch{width:min(340px,42vw);font-weight:400;padding:.4rem .7rem;font-size:.86rem;background:var(--brand-50);border-color:transparent}
+#gsearch:focus{background:#fff}
+.facet{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;margin-bottom:.45rem}.facet>b{font-size:.76rem;color:var(--muted);width:3.4rem;flex:0 0 auto}
+.cal{border-collapse:collapse;width:100%;font-size:.8rem}.cal th{background:var(--brand-50);color:var(--brand-3);padding:.35rem .3rem;font-weight:700;white-space:nowrap}
+.cal td{border-top:1px solid var(--line-2);padding:.3rem .25rem;vertical-align:top;min-width:64px}.cal td.y{font-weight:800;color:var(--brand-3);white-space:nowrap}
+.cal .ex{display:block;border-radius:7px;padding:.12rem .4rem;margin:.1rem 0;background:var(--brand-100);color:var(--brand-3);font-weight:700;cursor:pointer;white-space:nowrap;border:0;font-size:.76rem;text-align:left;width:100%}
+.cal .ex:hover{background:var(--brand-200)}.cal .ex.k1{background:var(--gold-soft);color:#6b4f1d}.cal .ex.k2{background:#dbe7fb}.cal .ex small{font-weight:500;opacity:.75}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1rem;margin-bottom:1rem}.dgrid .card{margin:0}
+.bar{display:flex;align-items:center;gap:.5rem;font-size:.8rem;margin:.18rem 0}.bar>span{width:5.2rem;flex:0 0 auto;color:var(--ink-2)}.bar>i{height:.7rem;border-radius:99px;background:var(--brand);display:block;min-width:2px}.bar>b{font-weight:700;color:var(--brand-3)}
+.bar.w>span{width:11rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bar.w>i{max-width:38%}
+.todo{display:flex;justify-content:space-between;gap:.5rem;padding:.4rem .1rem;border-bottom:1px solid var(--line-2);font-size:.9rem;cursor:pointer}.todo:hover{background:var(--line-2)}.todo b{color:var(--brand-2)}
+.dchip{font-weight:800;border-radius:99px;padding:.05rem .5rem;font-size:.74rem;white-space:nowrap;border:1px solid transparent;display:inline-flex;align-items:center}
+.d1{background:#e8f5ee;color:#17603b}.d2{background:#eef6e0;color:#4a6b12}.d3{background:#fdf3d7;color:#8a5a00}.d4{background:#fde5d4;color:#a5420b}.d5{background:#fbdada;color:#a01c1c}
+.more{display:block;margin:.8rem auto 0}
 #toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:var(--brand-2);color:#fff;padding:.6rem 1.1rem;border-radius:99px;font-size:.88rem;font-weight:700;z-index:100;display:none;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:92vw}
 #busy{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:60;background:#111827;color:#fff;padding:.5rem .9rem;border-radius:10px;display:none;align-items:center;gap:.7rem;font-size:.86rem}
 @media(max-width:900px){
@@ -182,6 +197,7 @@ sup.evn{font-family:"Pretendard Variable",sans-serif;font-size:.62rem;font-weigh
     <div class="brand"><span class="logo">SP</span><span>스터디피크 국어 랩<small>MY KOREAN LAB</small></span></div>
     <nav id="sbnav">
       <button data-view="dash">대시보드</button>
+      <button data-view="exams">시험지 보관함 <span class="cnt" id="n-exams">0</span></button>
       <button data-view="passages">지문·작품 <span class="cnt" id="n-passages">0</span></button>
       <button data-view="upload">시험지 올리기</button>
       <button data-view="items">문제 검색 <span class="cnt" id="n-items">0</span></button>
@@ -193,9 +209,11 @@ sup.evn{font-family:"Pretendard Variable",sans-serif;font-size:.62rem;font-weigh
     <div class="sb-foot"><a href="../lab/">수학 랩으로 →</a><br>데이터는 이 브라우저에만 저장됩니다.</div>
   </aside>
   <div id="mainwrap">
-    <header id="topbar"><button id="menu-btn" aria-label="메뉴">☰</button><span id="topbar-title">대시보드</span></header>
+    <header id="topbar"><button id="menu-btn" aria-label="메뉴">☰</button><span id="topbar-title">대시보드</span><span style="flex:1"></span><input id="gsearch" type="search" placeholder="🔍 시험·작품·작가·문항 통합 검색 (Enter)" aria-label="통합 검색"></header>
     <main>
       <section class="view" id="view-dash"></section>
+      <section class="view" id="view-exams"></section>
+      <section class="view" id="view-search"></section>
       <section class="view" id="view-passages"></section>
       <section class="view" id="view-set"></section>
       <section class="view" id="view-upload"></section>
@@ -225,5 +243,6 @@ sup.evn{font-family:"Pretendard Variable",sans-serif;font-size:.62rem;font-weigh
 <script src="js/export.js"></script>
 <script src="js/variant.js"></script>
 <script src="js/sheet.js"></script>
+<script src="js/exams.js"></script>
 </body>
 </html>
