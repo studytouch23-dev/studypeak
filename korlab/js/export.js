@@ -30,6 +30,7 @@ function renderExport(){
         <button class="btn ghost" id="ex-solve" onclick="solveExam(K.ex.src)" title="정답표가 없으면 AI가 풀어 채우고, 있으면 AI 풀이와 견줘 다른 문항을 알려 줍니다">🤖 정답 풀기·대조</button>
         <button class="btn ghost" id="ex-class" onclick="exDownloadClass()">⬇ 유형 분류표 (엑셀 2시트)</button>
         <button class="btn ghost" id="ex-lms" onclick="exDownloadLms()">⬇ LMS 업로드 파일${fb ? ' (fallback)' : ''}</button>
+        <button class="btn ghost" id="ex-print" onclick="exToSheet()">🖨 이 시험을 시험지로 인쇄</button>
         <span class="hint">문항 ${ck.count} · 지문 그룹 ${ck.groups} · 배점 합계 ${ck.total}점</span></div>
       ${ruleN ? `<p class="hint" style="margin-top:.5rem">⚠ ${ruleN}문항은 발문 낱말만 보고 <b>어림한</b> 유형입니다(노란 칸). [🤖 AI로 유형 분류]를 누르면 지문과 선지를 읽고 다시 판정합니다. 직접 고른 칸은 AI가 건드리지 않습니다.</p>` : ''}
       ${fb ? `<p class="hint" style="margin-top:.3rem">화법과 작문·매체 문항(${ck.fallback.length}개)은 LMS에 등록된 유형이 없어 <b>독서 / 독서이론 + R코드</b>로 치환해 올립니다(fallback). 학생 리포트에서는 독서로 집계됩니다. 분류표에는 '—' 로 적습니다.</p>` : ''}</div>
@@ -101,6 +102,11 @@ async function exUseAlt(itemId){
 async function exClearFlag(itemId){
   const it = K.items.find(i=>i.id === itemId); if(!it || aiBusyBlock()) return;
   it.review = null; it.typeBy = 'user'; it.updatedAt = Date.now(); await DB.put('items', it); renderExport();
+}
+/* 이 시험(공통 + 고른 선택 과목)의 원 문항을 그대로 시험지 양식으로 */
+function exToSheet(){
+  const ids = new Set(exRows().map(r=>r.id)), its = K.items.filter(i=>ids.has(i.id));
+  shOpenWith({ items: its, form: 'exam', title: EX.name[exKey()] || K.ex.src, vars: false });
 }
 const exSafeName = s=>String(s || '시험').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
 async function exDownloadClass(){

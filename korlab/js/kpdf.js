@@ -135,11 +135,38 @@
     if(on) out += '{/' + on + '}';
     return out.replace(/\s+/g, ' ').replace(/\{\/b\} (?=(은|는|이|가|을|를|의|에|와|과|도|로|으로|에서|에게|이라는|라는)(?![가-힣]))/g, '{/b}').trim();
   }
+  /* [A] 구간 괄호: 세로선 두 토막 사이에 "[A]" 글자가 끼어 있고 위아래 끝에 짧은 가로선이 달린 모양.
+   * → { label, x, y0, y1, side(+1: 글이 오른쪽 / -1: 글이 왼쪽), item } — 선이 없는 "[A]"(발문 속 지칭)는 건드리지 않는다 */
+  function findBrackets(pg){
+    const out = [];
+    for(const it of pg.items){
+      const m = it.s.trim().match(/^\[([A-Za-z가-힣]{1,2})\]$/); if(!m) continue;
+      const cx = it.x + it.w / 2, top = it.y - it.h, near = pg.vlines.filter(v=>Math.abs(v.x - cx) < Math.max(10, it.w * 0.7));
+      const up = near.filter(v=>v.y1 <= it.y - it.h * 0.25 && v.y1 >= top - 14).sort((a, b)=>a.y0 - b.y0)[0];
+      const dn = near.filter(v=>v.y0 >= top + it.h * 0.25 && v.y0 <= it.y + 14 && (!up || Math.abs(v.x - up.x) < 1.5)).sort((a, b)=>b.y1 - a.y1)[0];
+      if(up && dn && Math.abs(up.x - dn.x) <= 1.5){
+        const x = up.x, tick = pg.hlines.find(h=>h.x1 - h.x0 < 16 && (Math.abs(h.y - up.y0) < 2 || Math.abs(h.y - dn.y1) < 2) && (Math.abs(h.x0 - x) < 1.5 || Math.abs(h.x1 - x) < 1.5));
+        out.push({ label: m[1], x, y0: up.y0, y1: dn.y1, side: tick ? (Math.abs(tick.x0 - x) < 1.5 ? 1 : -1) : 0, item: it });
+        continue;
+      }
+      // 두 줄짜리 괄호는 세로선이 글자에 가려 거의 없다 → 위아래 끝의 짧은 가로선 한 쌍으로 찾는다
+      const ticks = pg.hlines.filter(h=>h.x1 - h.x0 < 16 && h.x1 - h.x0 > 3 && (Math.abs(h.x0 - cx) < 10 || Math.abs(h.x1 - cx) < 10));
+      const tu = ticks.filter(h=>h.y <= it.y - it.h * 0.25 && h.y >= top - 14).sort((a, b)=>b.y - a.y)[0];
+      const td = ticks.filter(h=>h.y >= top + it.h * 0.25 && h.y <= it.y + 14).sort((a, b)=>a.y - b.y)[0];
+      if(tu && td && Math.abs(tu.x0 - td.x0) < 1.5 && Math.abs(tu.x1 - td.x1) < 1.5){
+        const right = Math.abs(tu.x0 - cx) <= Math.abs(tu.x1 - cx);                    // 가로선이 글자 쪽으로 뻗는다
+        out.push({ label: m[1], x: right ? tu.x0 : tu.x1, y0: tu.y, y1: td.y, side: right ? 1 : -1, item: it });
+      }
+    }
+    return out;
+  }
   function pageLines(pg, pageIdx){
     const g = findGutter(pg);
     const cols = g ? [[], []] : [[]];
     const wide = [];
+    const brackets = findBrackets(pg), skip = new Set(brackets.map(b=>b.item));
     for(const it of pg.items){
+      if(skip.has(it)) continue;                              // 괄호의 "[A]" 글자는 줄에 섞지 않고 구간 표시로 옮긴다
       if(g && it.x < g - 2 && it.x + it.w > g + 2 && it.s.trim()){ wide.push(it); continue; }   // 단을 가로지르는 글(머리말)
       cols[g && it.x >= g ? 1 : 0].push(it);
     }
@@ -174,6 +201,15 @@
       if(out.some(l=>l.col === col && l.y - l.h > im.y0 + 2 && l.y < im.y1 - 2 && l.x0 >= im.x0 - 2 && l.x1 <= im.x1 + 2)) continue;   // 글자 뒤 바탕 그림
       out.push({ page: pageIdx, col, y: im.y1, h: h, x0: im.x0, x1: im.x1, text: '[그림]', first: '[그림]', img: true });
     }
+    brackets.forEach((b, k)=>{                               // 괄호가 감싼 줄에 표시: br(이름) · brId · brStart · brEnd · brSide
+      const col = g && b.x >= g ? 1 : 0;
+      const inY = out.filter(l=>!l.img && l.col === col && l.y - l.h * 0.4 >= b.y0 - 2 && l.y - l.h * 0.4 <= b.y1 + 2);
+      let side = b.side; if(!side) side = inY.filter(l=>l.x0 >= b.x - 2).length >= inY.filter(l=>l.x1 <= b.x + 2).length ? 1 : -1;
+      const hit = inY.filter(l=>side > 0 ? (l.x0 >= b.x - 3 && l.x0 - b.x < 70) : l.x1 <= b.x + 3).sort((a, c)=>a.y - c.y);
+      if(!hit.length) return;
+      hit.forEach(l=>{ l.br = b.label; l.brId = pageIdx + ':' + k; l.brSide = side; });
+      hit[0].brStart = true; hit[hit.length - 1].brEnd = true;
+    });
     return { lines: out, gutter: g };
   }
 
@@ -203,15 +239,17 @@
   /* ── 4. 줄 이어 붙이기 ── */
   const tokNorm = t=>t.replace(/\{\/?[ub]\}/g, '').replace(/^[^0-9A-Za-z가-힣㉠-㉯ⓐ-ⓩ]+|[^0-9A-Za-z가-힣㉠-㉯ⓐ-ⓩ]+$/g, '');
   function buildVocab(lines){                               // 줄 안쪽(양 끝 제외)에 온전히 나온 어절
-    const v = new Map();
+    const v = new Map(), pre = new Set();
     for(const l of lines){
       if(l.img) continue;
       const ts = l.text.split(' ');
-      for(let i = 1; i < ts.length - 1; i++){ const t = tokNorm(ts[i]); if(t) v.set(t, (v.get(t) || 0) + 1); }
+      for(let i = 1; i < ts.length - 1; i++){ const t = tokNorm(ts[i]); if(t){ v.set(t, (v.get(t) || 0) + 1); if(/^[가-힣]{3,}$/.test(t)){ pre.add(t.slice(0, 2)); pre.add(t.slice(0, 3)); if(t.length > 4) pre.add(t.slice(0, 4)); } } }
     }
+    v.pre = pre;                                             // 어절의 앞 2~3글자 — 낱말 가운데서 줄이 끊겼는지(간|주되는) 가늠하는 데 쓴다
     return v;
   }
   const TAIL_RE = /^(은|는|이|가|을|를|의|에|와|과|도|만|로|으로|에서|에게|에는|에도|부터|까지|보다|처럼|이다|이며|이고|이라|이란|이나|하다|한다|하며|하고|하여|해서|했다|하는|하지|한|할|함|된다|되어|되는|되고|된|될|됨|지만|므로|면서|다는|라는|라고|다고|었다|았다|였다|였고|있다|없다|적|적인|적으로|들|들이|들은|들을|들의)$/;
+  const JOSA_RE = /^(은|는|을|를|의|에|에는|에서|에게|에도|에서는|에서도|에게는|으로|으로써|으로서|로써|로서|부터|까지|처럼|마다|조차|밖에|이다|이며|이고|이라|이란|이라는|이라고|라는|라고|다고|다는|지만|므로|면서)$/;
   function needSpace(a, b, vocab){                          // 줄 끝 어절 a + 다음 줄 첫 어절 b 사이를 띄울까 → [띄움?, 확실?]
     const A = tokNorm(a), B = tokNorm(b);
     if(!A || !B) return [true, true];
@@ -219,41 +257,64 @@
     if(/^\([一-龥A-Za-z]/.test(b0) && /[가-힣]$/.test(a0)) return [false, false];       // 화민성속 + (化民成俗) 처럼 풀이 괄호는 앞말에 붙임
     if(/[.,?!:;)\]”’』」〉>]$/.test(a0) || /^[(\[“‘『「〈<①-⑩㉠-㉯ⓐ-ⓩ]/.test(b0)) return [true, true];
     if(vocab.has(A + B)) return [false, true];
+    if(JOSA_RE.test(B) && /[가-힣A-Za-z0-9]$/.test(a0)) return [false, true];      // 어절 첫머리에 올 수 없는 조사·어미(에는·으로·라는 …)는 앞말에 붙임 — 따옴표 뒤에 따로 나온 적이 있어도
     const hasA = vocab.has(A), hasB = vocab.has(B);
     if(TAIL_RE.test(B) && !hasB) return [false, false];     // 조사·어미로만 된 조각은 앞말에 붙임
+    if(!hasB && vocab.pre && /^[가-힣]{1,3}$/.test(A) && /^[가-힣]/.test(B) && vocab.pre.has((A + B).slice(0, A.length + 1)) && !vocab.pre.has(B.slice(0, 2)))
+      return [false, false];                                // 간|주되는 · 표|현하는: 이어 붙인 앞머리(간주·표현)로 시작하는 어절이 문서에 있고, 뒷조각으로 시작하는 어절은 없음
     return [true, hasA && hasB];                            // 그 밖에는 띄움(양쪽 어절이 문서에 따로 나오면 확실)
   }
   function joinLines(lines, vocab, mode){                   // mode 'flow': 문단 구분 없이 한 덩어리(발문·선지), 'para': 문단·행 구분 유지(지문·보기)
     if(!lines.length) return '';
     const key = l=>l.page + ':' + l.col, left = new Map(), right = new Map();
     for(const l of lines){ const k = key(l); left.set(k, Math.min(left.has(k) ? left.get(k) : 1e9, l.x0)); right.set(k, Math.max(right.get(k) || 0, l.x1)); }
-    // 덩어리 모양: 대부분의 줄이 왼쪽 끝에서 시작(들여쓰기 문단) / 대부분이 안쪽에서 시작(내어쓰기 — 대화 "학생 1 : …", 목록)
+    // 괄호([A]) 안의 줄은 괄호 자리만큼 안으로 들어가 있다 → 그만큼 되돌려 놓고 문단 모양을 본다
+    const bg = new Map();
+    for(const l of lines) if(l.brId){ const b = bg.get(l.brId) || { x0: 1e9, x1: 0 }; b.x0 = Math.min(b.x0, l.x0); b.x1 = Math.max(b.x1, l.x1); bg.set(l.brId, b); }
+    lines = lines.map(l=>{
+      if(!l.brId) return l;
+      const b = bg.get(l.brId), k = key(l), dl = l.brSide > 0 ? Math.max(0, b.x0 - left.get(k)) : 0, dr = l.brSide < 0 ? Math.max(0, right.get(k) - b.x1) : 0;
+      return dl || dr ? { ...l, x0: l.x0 - dl, x1: l.x1 + dr } : l;
+    });
+    const T = l=>(l.brStart ? '{[:' + l.br + '}' : '') + l.text + (l.brEnd ? '{/[}' : '');
     const isIn = l=>l.x0 - left.get(key(l)) > l.h * 0.55;
-    const txt = lines.filter(l=>!l.img), hanging = txt.length >= 3 && txt.filter(isIn).length > txt.length / 2;
-    // 시처럼 오른쪽 끝까지 찬 줄이 거의 없는 덩어리는 줄마다 끊는다(가장 긴 행 하나가 '꽉 찬 줄'로 보이는 것 방지)
-    const full = txt.filter(l=>right.get(key(l)) - l.x1 <= 1.5).length, verse = txt.length >= 4 && full / txt.length < 0.3;
-    let out = lines[0].text;
-    for(let i = 1; i < lines.length; i++){
-      const p = lines[i-1], l = lines[i];
-      let br = false;
-      if(mode === 'para' && verse) br = true;
-      else if(mode === 'para'){
-        const sameCol = key(p) === key(l);
-        const prevShort = right.get(key(p)) - p.x1 > p.h * 1.3;
-        const indented = hanging ? !isIn(l) : (isIn(l) && !(isIn(p) && sameCol && !prevShort));
-        const gap = sameCol && l.y - p.y > Math.max(p.h, l.h) * 2.3;
-        if(l.img || p.img){ out += '\n' + l.text; continue; }
-        const label = PART_RE.test(tokStrip(l.text)) || PART_RE.test(tokStrip(p.text)) || VIEW_RE.test(tokStrip(l.text)) || VIEW_RE.test(tokStrip(p.text));
-        br = (hanging ? false : prevShort) || indented || gap || label;
+    const SPEAKER_RE = /^[가-힣A-Za-z0-9]{1,6}(\s?\d{1,2})?\s*[:：]\s*\S/;
+    const joinBlock = lines=>{
+      // 덩어리 모양: 대부분의 줄이 왼쪽 끝에서 시작(들여쓰기 문단) / 대부분이 안쪽에서 시작(내어쓰기 — 대화 "학생 1 : …", 목록)
+      const txt = lines.filter(l=>!l.img), flush = txt.filter(l=>!isIn(l));
+      const talk = flush.length >= 3 && flush.filter(l=>SPEAKER_RE.test(tokStrip(l.text))).length >= flush.length * 0.6;      // 왼쪽 끝에서 시작하는 줄이 거의 "말하는 이 :" → 대화
+      const hanging = txt.length >= 3 && (txt.filter(isIn).length > txt.length / 2 || talk);
+      // 시처럼 오른쪽 끝까지 찬 줄이 거의 없는 덩어리는 줄마다 끊는다(가장 긴 행 하나가 '꽉 찬 줄'로 보이는 것 방지)
+      const full = txt.filter(l=>right.get(key(l)) - l.x1 <= 1.5).length, verse = txt.length >= 4 && full / txt.length < 0.3 && !talk;
+      let out = T(lines[0]);
+      for(let i = 1; i < lines.length; i++){
+        const p = lines[i-1], l = lines[i];
+        let br = false;
+        if(mode === 'para' && verse) br = true;
+        else if(mode === 'para'){
+          const sameCol = key(p) === key(l);
+          const prevShort = right.get(key(p)) - p.x1 > p.h * 1.3;
+          const indented = hanging ? !isIn(l) : (isIn(l) && !(isIn(p) && sameCol && !prevShort));
+          const gap = sameCol && l.y - p.y > Math.max(p.h, l.h) * 2.3;
+          if(l.img || p.img){ out += '\n' + T(l); continue; }
+          const label = PART_RE.test(tokStrip(l.text)) || PART_RE.test(tokStrip(p.text)) || VIEW_RE.test(tokStrip(l.text)) || VIEW_RE.test(tokStrip(p.text));
+          br = (hanging ? false : prevShort) || indented || gap || label;
+        }
+        if(br || l.img || p.img){ out += '\n' + T(l); continue; }
+        const a = p.text.split(' ').pop(), b = l.text.split(' ')[0];
+        const [sp, sure] = needSpace(a, b, vocab);
+        out += (l.brStart || p.brEnd ? ' ' : (sure ? (sp ? ' ' : '') : (sp ? J1 : J0))) + T(l);
       }
-      if(br || l.img || p.img){ out += '\n' + l.text; continue; }
-      const a = p.text.split(' ').pop(), b = l.text.split(' ')[0];
-      const [sp, sure] = needSpace(a, b, vocab);
-      out += (sure ? (sp ? ' ' : '') : (sp ? J1 : J0)) + l.text;
-    }
-    return out.replace(/\{\/([ub])\}([ \uE000\uE001]?)\{\1\}/g, '$2');                 // 줄을 넘어 이어지는 밑줄은 하나로
+      return out;
+    };
+    // (가)·(나) 로 나뉜 지문은 덩어리마다 모양을 따로 본다(대화 + 줄글, 시 + 수필처럼 섞여 있어도 각각 맞게)
+    const blocks = []; let cur = [];
+    if(mode === 'para') for(const l of lines){ if(PART_RE.test(tokStrip(l.text))){ if(cur.length) blocks.push(cur); blocks.push([l]); cur = []; } else cur.push(l); }
+    else cur = lines;
+    if(cur.length) blocks.push(cur);
+    return blocks.map(joinBlock).join('\n').replace(/\{\/([ub])\}([ \uE000\uE001]?)\{\1\}/g, '$2');                 // 줄을 넘어 이어지는 밑줄은 하나로
   }
-  const tokStrip = t=>t.replace(/\{\/?[ub]\}/g, '').trim();
+  const tokStrip = t=>t.replace(/\{\/?[ub]\}|\{\[:[^{}]{1,4}\}|\{\/\[\}/g, '').trim();
   const plain = t=>String(t || '').replace(/\uE000/g, '').replace(/\uE001/g, ' ');
   const joinCount = t=>(String(t || '').match(/[\uE000\uE001]/g) || []).length;
 

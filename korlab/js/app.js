@@ -13,7 +13,7 @@ const KCFG = Object.assign({ cmap: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.j
 const DB = SP.openDB('sp-korlab', 1, ['passages', 'items', 'images', 'sheets']);
 const K = { passages: [], items: [], view: 'dash', cur: null, f: { cat: '', q: '', src: '' }, fi: { q: '', cat: '', kind: '', type: '' }, showOrig: false, showEv: true, editing: false, ex: { src: '', section: '' }, va: { pid: '', picks: {}, kind: 'twin', n: 1, results: [], log: [] } };
 const SRC_KINDS = ['수능·모의평가', '학력평가', '내신 기출', '교과서', 'EBS', '자체 제작', '기타'];
-const VIEW_TITLES = { dash: '대시보드', passages: '지문·작품', set: '지문·작품', upload: '시험지 올리기', items: '문제 검색', variant: '변형 만들기', export: '분류표·LMS 엑셀', sheet: '학습지', data: '백업·설정' };
+const VIEW_TITLES = { dash: '대시보드', passages: '지문·작품', set: '지문·작품', upload: '시험지 올리기', items: '문제 검색', variant: '변형 만들기', export: '분류표·LMS 엑셀', sheet: '출력·교재 만들기', data: '백업·설정' };
 
 const LMSOPT_KEY = 'sp-korlab-lmsopt';
 function loadLmsOpt(){ const o = lsJson(LMSOPT_KEY, {}) || {}; for(const k in KT.OPT_CHOICES) if(KT.OPT_CHOICES[k].includes(o[k])) KT.opt[k] = o[k]; }
@@ -31,6 +31,7 @@ async function loadAll(){
   if(mp.length) await DB.putMany('passages', mp); if(mi.length) await DB.putMany('items', mi);
   K.passages = ps0.sort((a, b)=>(b.createdAt - a.createdAt) || ((a.range || [0])[0] - (b.range || [0])[0]));
   K.items = is0.sort((a, b)=>(a.createdAt - b.createdAt) || (a.num - b.num));
+  if(typeof shLoadSaved === 'function') await shLoadSaved();
   $('#n-passages').textContent = K.passages.length; $('#n-items').textContent = K.items.length;
 }
 const itemsOf = pid=>K.items.filter(i=>i.passageId === pid && !i.variantOf).sort((a, b)=>a.num - b.num);      // 원래 문항만
@@ -46,16 +47,29 @@ function kHtml(text, opts){
   let t = String(text || '');
   if(opts.spans && opts.spans.length) t = KEV.mark(t, opts.spans);       // 형광펜·X 자리(원문 기준이라 맨 먼저)
   t = opts.joins ? t.replace(/\uE000/g, '\uE010').replace(/\uE001/g, ' \uE010') : KPDF.plain(t);
-  return t.split('\n').map(line=>{
+  // [A] 구간 {[:A}…{/[} 은 따로 떨어진 덩어리로 그린다. 문단 가운데서 시작·끝나면 그 자리에서 나누고(\uE015 = 이어지는 조각, 들여쓰기 없음)
+  t = t.replace(/(\n?)[ \uE010]*\{\[:([^{}\n]{1,4})\}/g, (m, nl, lab, at)=>'\n\uE012' + lab + '\uE013' + (nl || at === 0 ? '' : '\uE015'))
+    .replace(/\{\/\[\}[ \uE010]*(\n?)/g, (m, nl)=>'\uE014\n' + (nl ? '' : '\uE015')).replace(/^\n/, '').replace(/\n\uE015?$/, '');
+  let open = false; const out = [];
+  for(let line of t.split('\n')){
+    let lab = null, end = false, cont = false;
+    const m = line.match(/^\uE012([^\uE013]*)\uE013/); if(m){ lab = m[1]; line = line.slice(m[0].length); }
+    if(line[0] === '\uE015'){ cont = true; line = line.slice(1); }
+    if(line.endsWith('\uE014')){ end = true; line = line.slice(0, -1); }
     let h = esc(line).replace(/\{u\}/g, '<u>').replace(/\{\/u\}/g, '</u>').replace(/\{b\}/g, '<span class="bx">').replace(/\{\/b\}/g, '</span>')
       .replace(/\[그림\]/g, '<span class="figph">그림 — [원본 보기]에서 확인</span>').replace(/\uE010/g, '<span class="jm" title="줄이 바뀌던 자리 — 띄어쓰기 추정">·</span>');
     h = KEV.html(h);
     const prose = opts.passage && KPDF.plain(stripTok(line)).length > 45;
-    return `<p class="pl${prose ? ' prose' : ''}">${h || '&nbsp;'}</p>`;
-  }).join('');
+    if(lab != null){ if(open) out.push('</div>'); out.push(`<div class="brk"><span class="brl">[${esc(lab)}]</span>`); open = true; }
+    out.push(`<p class="pl${prose ? ' prose' : ''}${cont ? ' cont' : ''}">${h || '&nbsp;'}</p>`);
+    if(end && open){ out.push('</div>'); open = false; }
+  }
+  if(open) out.push('</div>');
+  return out.join('');
 }
+const BR_TOK = /\{\[:[^{}\n]{1,4}\}|\{\/\[\}/g;                 // [A] 구간 표시
 const stripTok = t=>t.replace(/\{hn#\d+#\d+\}|\{h\d+#[\d,]+\}|\{\/h\}|\{\/?x\}/g, '');
-const snippet = (t, n)=>KPDF.plain(t).replace(/\{\/?[ub]\}/g, '').replace(/\s+/g, ' ').trim().slice(0, n || 80);
+const snippet = (t, n)=>KPDF.plain(t).replace(BR_TOK, ' ').replace(/\{\/?[ub]\}/g, '').replace(/\s+/g, ' ').trim().slice(0, n || 80);
 
 function go(view, arg){
   K.view = view; if(view === 'set') K.cur = arg;
@@ -94,7 +108,7 @@ function renderDash(){
       <div class="stat"><span class="hint">띄어쓰기 확인할 곳</span><b>${unsure}</b></div>
     </div>${byArea.length ? `<div class="row" style="margin-top:.8rem">${byArea.map(([a, n])=>`<span class="chip">${a} ${n}</span>`).join('')}</div>` : ''}</div>
     <div class="card"><h3>시작하기</h3>
-      <div class="row"><button class="btn" onclick="go('upload')">① 시험지 올리기</button><button class="btn ghost" onclick="go('export')">② 유형 분류 · LMS 엑셀</button><button class="btn ghost" onclick="go('passages')">③ 지문에서 근거·변형</button></div>
+      <div class="row"><button class="btn" onclick="go('upload')">① 시험지 올리기</button><button class="btn ghost" onclick="go('export')">② 유형 분류 · LMS 엑셀</button><button class="btn ghost" onclick="go('passages')">③ 지문에서 근거·변형</button><button class="btn ghost" onclick="go('sheet')">④ 🖨 출력·교재 만들기</button></div>
       <p class="hint" style="margin-top:.7rem">시험지 PDF(+ 정답·해설 PDF)를 올리면 지문·문항으로 나뉘고, <b>22유형</b>(독서 R01~R09 · 문학 L01~L08 · 문법 G01~G05)으로 먼저 분류됩니다.
       [분류표·LMS 엑셀]에서 AI 분류로 다듬고 유형 분류표와 스터디피크 LMS 업로드 파일을 내려받습니다. 세트 화면에서는 정답 근거 형광펜과 변형 문제를 만듭니다.<br>
       다음 단계: 학습지·한글 파일, 스캔본·캡처 읽기, 기기 간 동기화.</p></div>
@@ -173,6 +187,7 @@ async function importBackup(file){
 async function wipeAll(){
   if(!confirm('국어 랩의 지문·문항을 모두 지울까요? 되돌릴 수 없습니다. 먼저 백업을 내려받으세요.')) return;
   for(const s of ['passages', 'items', 'images', 'sheets']) await DB.clear(s);
+  if(typeof SH === 'object'){ SH.picks = {}; SH.off = {}; SH.singles = {}; SH.id = ''; }
   await loadAll(); toast('모두 지웠습니다.'); go('dash');
 }
 window.addEventListener('DOMContentLoaded', async ()=>{

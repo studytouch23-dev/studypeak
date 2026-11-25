@@ -3,13 +3,14 @@
  * 표시 토큰: {hC#N,N}…{/h} 형광펜(C 색 번호, N 문항 번호들) · {hn#C#N} 번호 배지 · {x}…{/x} 틀린 낱말 */
 (function(root, factory){ const o = factory(); if(typeof module === 'object' && module.exports) module.exports = o; else root.KEV = o; })(typeof self !== 'undefined' ? self : this, function(){
   'use strict';
-  const TOKEN = /^\{\/?[ub]\}/, SKIP = /[\s\uE000\uE001 ]/, PUNCT = /[“”"'‘’`´·․ㆍ.,…~～\-–—〔〕]/;       // 〔 〕: AI에게 밑줄을 보여 줄 때 쓰는 괄호 — 그대로 베껴 와도 찾게
+  const TOKEN = /^\{(?:\/?[ub]|\[:[^{}]{1,4}|\/\[)\}/;                    // 밑줄·상자·[A] 구간 표시
+  const SKIP = /[\s\uE000\uE001 ]/, PUNCT = /[“”"'‘’`´·․ㆍ.,…~～\-–—〔〕]/;       // 〔 〕: AI에게 밑줄을 보여 줄 때 쓰는 괄호 — 그대로 베껴 와도 찾게
   /* 견줄 글자만 남긴 글과, 그 글자가 원문 어디에 있었는지 */
   function compact(raw){
     raw = String(raw || '');
     let text = ''; const map = [];
     for(let i = 0; i < raw.length; i++){
-      if(raw[i] === '{'){ const m = raw.slice(i, i + 4).match(TOKEN); if(m){ i += m[0].length - 1; continue; } }
+      if(raw[i] === '{'){ const m = raw.slice(i, i + 8).match(TOKEN); if(m){ i += m[0].length - 1; continue; } }
       if(SKIP.test(raw[i]) || PUNCT.test(raw[i])) continue;
       text += raw[i]; map.push(i);
     }
@@ -34,7 +35,7 @@
     let out = '', open = '', xopen = false;
     const close = ()=>{ if(xopen){ out += '{/x}'; xopen = false; } if(open){ out += '{/h}'; open = ''; } };
     for(let i = 0; i < raw.length; i++){
-      const tk = raw[i] === '{' ? (raw.slice(i, i + 4).match(TOKEN) || [''])[0] : '';
+      const tk = raw[i] === '{' ? (raw.slice(i, i + 8).match(TOKEN) || [''])[0] : '';
       if(tk || raw[i] === '\n'){ close(); out += tk || '\n'; i += (tk ? tk.length : 1) - 1; continue; }
       if(badge.has(i)){ close(); for(const s of badge.get(i)) out += `{hn#${s.color}#${s.num}}`; }
       const act = hl.filter(s=>s.s <= i && i < s.e), want = act.length ? `{h${act[0].color}#${[...new Set(act.map(s=>s.num))].join(',')}}` : '', wx = xs.some(s=>s.s <= i && i < s.e);
