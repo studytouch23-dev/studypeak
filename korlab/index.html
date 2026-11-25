@@ -116,23 +116,56 @@ sup.evn{font-family:"Pretendard Variable",sans-serif;font-size:.62rem;font-weigh
 .errbox ul,.warnbox ul{margin:.3rem 0 0 1.1rem}
 .pick{display:block;font-weight:400;padding:.25rem .2rem;border-radius:8px;cursor:pointer}.pick:hover{background:var(--line-2)}.pick input{width:auto;margin-right:.3rem}
 .vres{border:1px solid var(--line);border-radius:12px;padding:.7rem .8rem;margin-bottom:.6rem}.vres.fail{border-color:#fecaca}.vres.warn{border-color:#fde68a}
-/* 학습지 (화면 미리보기와 인쇄가 같은 모양) */
-.sheet{font-family:"Noto Serif KR","Nanum Myeongjo","AppleMyungjo","Batang",serif;font-size:10.5pt;line-height:1.75;color:#000}
-.sheet .stitle{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:10px;font-family:"Pretendard Variable",sans-serif}.sheet .stitle b{font-size:14pt}
-.sheet .sset{column-count:2;column-gap:22px;column-rule:1px solid #bbb;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid #000}
-.sheet .shead{font-family:"Pretendard Variable",sans-serif;font-weight:700;margin-bottom:5px}
-.sheet .spassage{border:1px solid #000;padding:6px 9px;margin-bottom:9px}.sheet .spassage .pl{margin:0}.sheet .spassage .pl.prose{text-indent:1em;text-align:justify}
-.sheet .sq{break-inside:avoid;margin:0 0 11px}.sheet .sstem{padding-left:1.5em;text-indent:-1.5em;font-weight:600}.sheet .sch{padding-left:2.4em;text-indent:-1.3em}
-.sheet .sview{border:1px solid #000;margin:5px 0 5px 1em;padding:8px 8px 5px;position:relative;font-size:9.8pt}.sheet .svl{position:absolute;top:-.8em;left:50%;transform:translateX(-50%);background:#fff;padding:0 .5em;font-size:9pt}.sheet .sview .pl{margin:0}
+/* 출력물 (화면 미리보기와 인쇄가 같은 모양) — 본문은 시험지처럼 명조·양쪽 맞춤, 머리말·표는 네이비 */
+.sheet{--nv:#1c3260;--nv2:#12213f;--gd:#b08d57;font-family:"Noto Serif KR","Nanum Myeongjo","AppleMyungjo","Batang",serif;font-size:10.3pt;line-height:1.78;color:#111;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.sheet .shd{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:2.5px solid var(--nv);padding-bottom:6px;margin-bottom:3px;font-family:"Pretendard Variable",sans-serif;position:relative}
+.sheet .shd::after{content:"";position:absolute;left:0;right:0;bottom:-6px;border-bottom:1px solid var(--gd)}
+.sheet .shd b{font-size:15pt;color:var(--nv2);letter-spacing:-.02em}.sheet .shk{font-size:7.5pt;font-weight:800;letter-spacing:.18em;color:var(--gd)}.sheet .shs{font-size:9pt;color:#333;white-space:nowrap}
+.sheet .xhd{text-align:center;border-bottom:2.5px solid #000;padding-bottom:8px;font-family:"Pretendard Variable",sans-serif}
+.sheet .xsub{font-size:10pt;font-weight:700}.sheet .xtitle{font-size:22pt;font-weight:800;letter-spacing:.35em;margin:2px 0 6px;color:var(--nv2)}
+.sheet .xinfo{display:flex;justify-content:flex-end;align-items:center;gap:6px;font-size:9pt}.sheet .xinfo i{display:inline-block;border:1px solid #000;height:20px;width:90px}.sheet .xinfo i.w{width:150px}
+.sheet .xend{margin-top:10px;border-top:1px solid #000;padding-top:4px;font-family:"Pretendard Variable",sans-serif;font-size:8.5pt}
+.sheet .sbody{margin-top:14px}
+.sheet.exam .sbody{column-count:2;column-gap:24px;column-rule:1px solid #000}
+.sheet.work .sset,.sheet.book .sset{column-count:2;column-gap:22px;column-rule:1px solid #c5d2ea;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--nv)}
+.sheet.exam .sset{margin-bottom:14px}.sheet .sset.single{border-bottom-style:dashed}
+.sheet .shead{font-family:"Pretendard Variable",sans-serif;font-weight:700;margin-bottom:5px}.sheet .shead b{color:var(--nv)}
+.sheet .spassage{border:1px solid #000;padding:7px 10px;margin-bottom:10px}.sheet .spassage .pl{margin:0}.sheet .spassage .pl.prose{text-indent:1em;text-align:justify}.sheet .spassage .pl.prose.cont{text-indent:0}
+.sheet .sq{break-inside:avoid;margin:0 0 12px}.sheet .sstem{padding-left:1.5em;text-indent:-1.5em;font-weight:600}.sheet .sch{padding-left:2.4em;text-indent:-1.3em}
+.sheet .sview{border:1px solid #000;margin:6px 0 6px 1em;padding:9px 8px 5px;position:relative;font-size:9.7pt}.sheet .svl{position:absolute;top:-.8em;left:50%;transform:translateX(-50%);background:#fff;padding:0 .5em;font-size:9pt}.sheet .sview .pl{margin:0}
 .sheet .slines{height:6.5em;margin:6px 0 0 1em;background:repeating-linear-gradient(#fff,#fff 1.55em,#999 1.55em,#999 calc(1.55em + 1px))}
-.sheet .simg img{max-width:100%;display:block;margin:3px 0}.sheet .sox{font-weight:400;white-space:nowrap}
-.sheet .sans{break-before:page;font-family:"Pretendard Variable",sans-serif;font-size:9.5pt;line-height:1.55}.sheet .sans h2{font-size:12pt;margin:0 0 6px}
-.sheet .sans table{border-collapse:collapse;width:100%}.sheet .sans th,.sheet .sans td{border:1px solid #999;padding:3px 6px;vertical-align:top;text-align:left}.sheet .sans th{background:#eee;white-space:nowrap}.sheet .sev{color:#444;margin-top:2px}
-.sheet .bx{border:1px solid #000}.sheet u{text-underline-offset:3px}
-.sheet-preview{max-width:860px;overflow:auto}
+.sheet .simg img{max-width:100%;display:block;margin:3px 0}.sheet .sox{font-weight:400;white-space:nowrap}.sheet .sorig{font-family:"Pretendard Variable",sans-serif;font-size:8pt;color:#666;font-weight:400}
+.sheet .bx{border:1px solid #000}.sheet u{text-underline-offset:3px}.sheet .brk>.brl{background:#fff}
+/* 정답·해설지 / 교재의 해설 */
+.sheet.ans,.sheet .ssol{font-family:"Pretendard Variable",sans-serif;font-size:9.4pt;line-height:1.6}
+.sheet .qh{font-family:"Pretendard Variable",sans-serif;font-size:10.5pt;color:var(--nv2);margin:14px 0 6px;padding-left:8px;border-left:4px solid var(--gd)}
+.sheet .quick{display:grid;grid-template-columns:repeat(10,1fr);gap:0;border-top:1px solid var(--nv);border-left:1px solid var(--nv)}
+.sheet .quick span{display:flex;flex-direction:column;text-align:center;border-right:1px solid var(--nv);border-bottom:1px solid var(--nv)}
+.sheet .quick i{font-style:normal;font-size:8pt;background:var(--nv);color:#fff;font-weight:700}.sheet .quick b{font-size:11pt;padding:2px 0}
+.sheet .aset{margin-bottom:10px}.sheet .aseth{background:#e3eaf6;color:var(--nv2);font-weight:800;padding:3px 8px;border-left:4px solid var(--nv);margin-bottom:5px;break-after:avoid}
+.sheet .sol{break-inside:avoid;padding:4px 2px 6px;border-bottom:1px dotted #9aa9c4}.sheet .solh{display:flex;align-items:center;gap:7px;margin-bottom:2px}
+.sheet .soln{display:inline-block;min-width:1.7em;text-align:center;background:var(--nv);color:#fff;border-radius:4px;padding:0 4px}.sheet .sola{font-size:11.5pt;color:var(--nv2)}
+.sheet .solt{font-size:8pt;border:1px solid #9aa9c4;border-radius:99px;padding:0 7px;color:#33466b;font-weight:700}
+.sheet .sev{color:#5b4a2a;background:#f6efe3;border-radius:4px;padding:1px 6px;margin-top:2px}.sheet .swr{color:#444;margin-top:2px}
+.sheet .ssol{background:#f2f5fb;border:1px solid #c5d2ea;border-radius:6px;padding:8px 10px;margin:0 0 18px}.sheet .ssolh{font-weight:800;color:var(--nv2);margin-bottom:3px}
+/* 교재: 표지·차례 */
+.sheet .cover{break-after:page;min-height:230mm;display:flex;flex-direction:column;justify-content:center;font-family:"Pretendard Variable",sans-serif;border-left:10px solid var(--nv);padding-left:22px}
+.sheet .cover .ck{font-size:9pt;font-weight:800;letter-spacing:.25em;color:var(--gd)}.sheet .cover h1{font-size:30pt;margin:6px 0 4px;color:var(--nv2);letter-spacing:-.03em;line-height:1.2}.sheet .cover p{margin:0 0 26px;color:#444}
+.sheet .toc{list-style:none;padding:0;margin:0;max-width:150mm;counter-reset:t}.sheet .toc li{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dotted #9aa9c4;padding:4px 0;counter-increment:t}
+.sheet .toc li span::before{content:counter(t,decimal-leading-zero) "  ";color:var(--gd);font-weight:800}.sheet .toc i{font-style:normal;color:#555;white-space:nowrap}
+.sheet .bset{font-family:"Pretendard Variable",sans-serif;font-size:12pt;color:var(--nv2);margin:0 0 6px;column-span:all;display:flex;justify-content:space-between;align-items:baseline;border-left:4px solid var(--gd);padding-left:8px}.sheet .bset span{font-size:8.5pt;color:#555;font-weight:500}
+.sheet-preview{max-width:880px;overflow:auto;padding:26px 30px}
+.pvtabs{display:flex;gap:.6rem;align-items:baseline;margin:.2rem 0 .5rem}
+.forms{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:.6rem}
+.form{text-align:left;background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:.7rem .85rem;display:flex;flex-direction:column;gap:.15rem}
+.form b{font-size:.95rem;color:var(--brand-3)}.form span{font-size:.78rem;color:var(--muted)}
+.form.on{border-color:var(--brand-2);background:var(--brand-50);box-shadow:inset 0 0 0 1px var(--brand-2)}
+.shrow{padding:.15rem 0;border-bottom:1px solid var(--line-2)}.shitems{display:flex;flex-wrap:wrap;gap:.25rem;padding:0 0 .35rem 1.6rem}
+.vsep{width:1px;height:22px;background:var(--line);margin:0 .2rem}
 #print-root{display:none}
 @media print{
-  @page{size:A4;margin:13mm 11mm}
+  @page{size:A4;margin:13mm 11mm 14mm}
+  @page{@bottom-center{content:counter(page);font-size:9pt;font-family:sans-serif}}
   body{background:#fff}#layout,#toast,#busy{display:none !important}#print-root{display:block}
 }
 #toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:var(--brand-2);color:#fff;padding:.6rem 1.1rem;border-radius:99px;font-size:.88rem;font-weight:700;z-index:100;display:none;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:92vw}
@@ -154,7 +187,7 @@ sup.evn{font-family:"Pretendard Variable",sans-serif;font-size:.62rem;font-weigh
       <button data-view="items">문제 검색 <span class="cnt" id="n-items">0</span></button>
       <button data-view="export">분류표·LMS 엑셀</button>
       <button data-view="variant">변형 만들기</button>
-      <button data-view="sheet">학습지</button>
+      <button data-view="sheet">출력·교재 만들기</button>
       <button data-view="data">백업·설정</button>
     </nav>
     <div class="sb-foot"><a href="../lab/">수학 랩으로 →</a><br>데이터는 이 브라우저에만 저장됩니다.</div>
