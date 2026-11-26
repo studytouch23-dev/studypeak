@@ -54,4 +54,17 @@ async function makePdf(browser, html){
   await page.close();
   return buf;
 }
-module.exports = { EXAM, SOLUTION, makePdf };
+/* 스캔본 흉내: 글자 층이 있는 PDF를 쪽마다 그림으로 바꿔 다시 PDF로 — 글자 정보가 하나도 없는 PDF가 된다. page: pdf.js 가 올라와 있는 국어 랩 화면 */
+async function makeScanPdf(browser, page, pdfBuf){
+  const urls = await page.evaluate(async b64 => {
+    const doc = await pdfjsLib.getDocument({ data: Uint8Array.from(atob(b64), c => c.charCodeAt(0)), cMapUrl: KCFG.cmap, cMapPacked: true }).promise, out = [];
+    for(let i = 1; i <= doc.numPages; i++){
+      const pg = await doc.getPage(i), vp = pg.getViewport({ scale: 2 }), c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); await pg.render({ canvasContext: g, viewport: vp }).promise;
+      out.push(c.toDataURL('image/jpeg', 0.85));
+    }
+    return out;
+  }, pdfBuf.toString('base64'));
+  return makePdf(browser, '<style>@page{size:A4;margin:0}body{margin:0}img{display:block;width:210mm;height:296mm}img:not(:last-child){break-after:page}</style>' + urls.map(u => `<img src="${u}">`).join(''));
+}
+module.exports = { EXAM, SOLUTION, makePdf, makeScanPdf };

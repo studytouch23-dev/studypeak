@@ -4,7 +4,7 @@
 (function(root, factory){ const o = factory(); if(typeof module === 'object' && module.exports) module.exports = o; else root.KEV = o; })(typeof self !== 'undefined' ? self : this, function(){
   'use strict';
   const TOKEN = /^\{(?:\/?[ub]|\[:[^{}]{1,4}|\/\[)\}/;                    // 밑줄·상자·[A] 구간 표시
-  const SKIP = /[\s\uE000\uE001 ]/, PUNCT = /[“”"'‘’`´·․ㆍ.,…~～\-–—〔〕]/;       // 〔 〕: AI에게 밑줄을 보여 줄 때 쓰는 괄호 — 그대로 베껴 와도 찾게
+  const SKIP = /[⁇\s\uE000\uE001 ]/, PUNCT = /[“”"'‘’`´·․ㆍ.,…~～\-–—〔〕]/;       // 〔 〕: AI에게 밑줄을 보여 줄 때 쓰는 괄호 — 그대로 베껴 와도 찾게
   /* 견줄 글자만 남긴 글과, 그 글자가 원문 어디에 있었는지 */
   function compact(raw){
     raw = String(raw || '');

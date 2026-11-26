@@ -89,13 +89,15 @@ async function examSave(old){
 async function examDropImages(name){
   const { ps, is } = examRecords(name);
   if(!confirm(`"${name}" 의 원본 조각(PDF에서 잘라 둔 그림)을 지울까요?\n글·문항·정답은 그대로 남습니다. 그림이 들어 있던 문항은 [원본 보기]와 인쇄에서 그림이 나오지 않게 됩니다.`)) return;
-  let n = 0; for(const r of ps.concat(is)){ if(await DB.get('images', r.id)){ await DB.del('images', r.id); n++; } }
+  let n = 0; const ids = new Set(ps.concat(is).flatMap(r=>[r.id].concat(r.scanPages || [])));
+  for(const id of ids){ if(await DB.get('images', id)){ await DB.del('images', id); n++; } }
   toast(`원본 조각 ${n}개를 지웠습니다.`); storageFill();
 }
 async function examDelete(name){
   if(aiBusyBlock()) return;
   const { ps, is } = examRecords(name), pid = new Set(ps.map(p=>p.id)), more = K.items.filter(i=>i.passageId && pid.has(i.passageId) && !is.includes(i));
   if(!confirm(`"${name}" 을(를) 통째로 지울까요?\n지문 ${ps.length}개 · 문항 ${is.length + more.length}개(변형 포함)가 지워집니다. 되돌릴 수 없습니다.`)) return;
+  for(const id of new Set(ps.concat(is, more).flatMap(r=>r.scanPages || []))) await DB.del('images', id);      // 스캔본의 쪽 그림
   for(const r of ps){ await DB.del('passages', r.id); await DB.del('images', r.id); }
   for(const r of is.concat(more)){ await DB.del('items', r.id); await DB.del('images', r.id); }
   K.xf.edit = ''; await loadAll(); renderExams(); toast('시험을 지웠습니다.');
@@ -158,7 +160,7 @@ function renderSearch(){
   if(!q){ el.innerHTML = '<h2>통합 검색</h2><div class="card empty">위의 검색 칸에 낱말을 넣고 Enter 를 누르세요.</div>'; return; }
   const exs = K.exams.filter(e=>e.name.toLowerCase().includes(q));
   const head = K.passages.filter(p=>[p.title, p.author, p.sub, p.theme, p.genre].join(' ').toLowerCase().includes(q)), hs = new Set(head);
-  const body = K.passages.filter(p=>!hs.has(p) && KPDF.plain(p.body).toLowerCase().includes(q));
+  const body = K.passages.filter(p=>!hs.has(p) && KPDF.plain(p.body).replace(UQ_RE, '').toLowerCase().includes(q));
   const its = K.items.filter(i=>[i.stem, i.view, (i.choices || []).join(' '), i.title || '', i.typeId || '', KT.name(i.typeId)].join(' ').toLowerCase().includes(q));
   const pRow = p=>`<div class="todo" onclick="go('set','${escJs(p.id)}')"><span>${catChip(p)} <b>${esc(p.title || snippet(p.body, 30))}</b> <span class="hint">${esc((p.src && p.src.name) || '')}${p.range && p.range[0] ? ` [${p.range[0]}~${p.range[1]}]` : ''}</span></span><b>→</b></div>`;
   el.innerHTML = `

@@ -7,7 +7,7 @@ function renderPassages(){
   const meta = p=>exOf.get((p.src && p.src.name) || '') || {};
   const base = K.passages.filter(p=>{ const e = meta(p);
     return (!f.src || (p.src && p.src.name === f.src)) && (!f.grade || e.grade === f.grade) && (!f.year || e.year === f.year) && (!f.month || String(e.month) === f.month)
-      && (!q || [p.title, p.author, p.sub, p.genre, p.theme, KPDF.plain(p.body)].join(' ').toLowerCase().includes(q)); });
+      && (!q || [p.title, p.author, p.sub, p.genre, p.theme, KPDF.plain(p.body).replace(UQ_RE, '')].join(' ').toLowerCase().includes(q)); });
   const list = base.filter(p=>(!f.cat || (f.cat === '-' ? !p.cat : p.cat === f.cat)) && (!f.sub || p.sub === f.sub));
   const cnt = a=>base.filter(p=>p.cat === a).length, none = base.filter(p=>!p.cat).length, shown = list.slice(0, f.n || 60);
   const years = [...new Set(K.exams.map(e=>e.year).filter(Boolean))].sort((a, b)=>b - a), months = [...new Set(K.exams.map(e=>e.month).filter(Boolean))].sort((a, b)=>a - b), grades = KT.GRADES.filter(g=>K.exams.some(e=>e.grade === g));
@@ -67,10 +67,17 @@ function itemHtml(it, opts){
     ${opts.explain && (it.explain || it.wrong) ? `<div class="exp">${it.explain ? `<b>정답 해설</b> ${inl(kHtml(it.explain, { joins: opts.joins }))}` : ''}${it.wrong ? `<br><b>오답 피하기</b> ${inl(kHtml(it.wrong, { joins: opts.joins }))}` : ''}</div>` : ''}
     ${opts.orig ? `<div class="orig" data-orig="${esc(it.id)}"></div>` : ''}</div>`;
 }
+/* 원본 그림: PDF에서 잘라 둔 조각, 없으면 스캔본의 쪽 그림(scanPages) */
+async function origImgs(id){
+  const rec = await DB.get('images', id); if(rec && rec.imgs && rec.imgs.length) return rec.imgs;
+  const owner = K.pMap.get(id) || K.items.find(i=>i.id === id), out = [];
+  for(const pid of (owner && owner.scanPages) || []){ const r = await DB.get('images', pid); if(r && r.imgs) out.push(...r.imgs); }
+  return out;
+}
 async function fillOrig(root){                               // [원본 보기]: PDF에서 잘라 둔 조각
   for(const el of $$('[data-orig]', root)){
-    const rec = await DB.get('images', el.dataset.orig);
-    el.innerHTML = rec && rec.imgs.length ? rec.imgs.map(u=>`<img src="${esc(u)}" alt="원본">`).join('') : '<span class="hint">원본 그림이 없습니다.</span>';
+    const imgs = await origImgs(el.dataset.orig);
+    el.innerHTML = imgs.length ? imgs.map(u=>`<img src="${esc(u)}" alt="원본">`).join('') : '<span class="hint">원본 그림이 없습니다.</span>';
   }
 }
 function renderSet(){
@@ -80,10 +87,11 @@ function renderSet(){
   if(K.editing){ renderSetEdit(p, its); return; }
   const hasEv = its.some(i=>i.ev && ((i.ev.quotes || []).length || (i.ev.x || []).length)), sp = K.showEv && hasEv ? evSpans(p, its) : { body: [], per: new Map() };
   const o = { joins: true, explain: true, orig: K.showOrig, cat: p.cat || '' }, pid = escJs(p.id);
+  const uqN = uqCount(p.body) + its.reduce((n, i)=>n + uqCount(i.stem + i.view + (i.choices || []).join('')), 0);       // 스캔본에서 AI가 확신하지 못한 낱말 수
   el.dataset.focus = '';
   el.innerHTML = `
     <div class="spread" style="margin-bottom:.6rem"><div class="row"><a href="#" onclick="go('passages');return false" class="hint">← 지문·작품</a>
-      <b style="font-size:1.1rem">${esc(p.title || snippet(p.body, 30))}</b>${catChip(p)}${p.author ? `<span class="chip">${esc(p.author)}</span>` : ''}
+      <b style="font-size:1.1rem">${esc(p.title || snippet(p.body, 30))}</b>${catChip(p)}${p.ocr ? `<span class="chip w" title="스캔본을 AI가 옮겨 적은 글입니다 — [원본 보기]의 쪽 그림과 대조하세요">스캔본 · AI가 옮김${uqN ? ' · 확인할 낱말 ' + uqN : ''}</span>` : ''}${p.author ? `<span class="chip">${esc(p.author)}</span>` : ''}
       <span class="chip">${esc((p.src && p.src.name) || '')}${p.range && p.range[0] ? ` [${p.range[0]}~${p.range[1]}]` : ''}</span></div>
       <div class="row"><button class="btn ghost sm" onclick="K.showOrig=!K.showOrig;renderSet()">${K.showOrig ? '원본 닫기' : '원본 보기'}</button>
         <button class="btn ghost sm" onclick="K.editing=true;renderSet()">고치기</button>
@@ -113,7 +121,7 @@ function renderSetEdit(p, its){
   $('#view-set').innerHTML = `
     <div class="spread" style="margin-bottom:.8rem"><b style="font-size:1.1rem">고치기 — ${esc(p.title || '')}</b>
       <div class="row"><button class="btn" onclick="saveSetEdit()">저장</button><button class="btn ghost" onclick="K.editing=false;renderSet()">취소</button></div></div>
-    <p class="hint">밑줄은 <code>{u}글{/u}</code>, 상자는 <code>{b}글{/b}</code>, [A] 구간은 <code>{[:A}글{/[}</code>, 그림 자리는 <code>[그림]</code> 으로 적습니다. 저장하면 이 세트의 띄어쓰기 추정 표시는 모두 확정됩니다.
+    <p class="hint">밑줄은 <code>{u}글{/u}</code>, 상자는 <code>{b}글{/b}</code>, [A] 구간은 <code>{[:A}글{/[}</code>, 그림 자리는 <code>[그림]</code> 으로 적습니다. 스캔본의 <code>⁇</code> 는 AI가 확신하지 못한 낱말 표시이니 원본과 대조한 뒤 지우세요. 저장하면 이 세트의 띄어쓰기 추정 표시는 모두 확정됩니다.
       제목은 LMS 응시 화면에서 학생에게 보입니다 — 문학은 <b>작가 「작품」</b>만, 풀이 힌트는 넣지 마세요.</p>
     <div class="card"><div class="grid4">
       <div><label for="ed-title">지문 제목</label><input id="ed-title" value="${esc(p.title)}"></div>

@@ -2,7 +2,8 @@
 
 > 상태(2026-11-25): **쌓기 → 분류 → 근거 → 변형 → 엑셀·출력(학습지·시험지·교재)**까지 한 바퀴 완성. 색은 네이비(수학 랩의 초록과 구별). 국어 유형표(엄태욱 마스터 22종)와 LMS 규격을 받아 반영함.
 > 맨 아래 **진행 상황·코드 지도**를 먼저 볼 것. 유형·소분류 문자열은 `korlab/js/ktype.js` 한 곳에만 있다 — LMS 등록 값이라 고치지 말 것.
-> 남은 것: 한글(HWPX)·수능형 모의고사 양식, 스캔본·캡처 읽기, 기기 간 동기화, 옛한글.
+> 스캔본(글자 층이 없는 PDF)도 AI가 쪽 그림을 읽어 같은 DB로 들어간다(2026-11-26, `kscan.js`).
+> 남은 것: 한글(HWPX)·수능형 모의고사 양식, 캡처 이미지(JPG·PNG) 올리기, 기기 간 동기화, 옛한글.
 > 수학 랩(`lab/`)과 같은 메커니즘(올리기 → AI 변환 → 분류 → 변형 생성 → 검증 → 학습지·HWPX·LMS)을
 > 국어의 단위인 **"지문 + 문항 세트"**에 맞게 다시 설계한 것.
 
@@ -143,6 +144,7 @@ Sheet 학습지  { id, title, entries[{passageId, itemIds[]}] | 단독 문항 } 
 | `shared/ai.js` (`SPAI`) | Claude 호출 `SPAI.json(content, maxTokens, {model})`·`settings`(수학 랩과 같은 localStorage 키: 기본 모델 = 가벼운 모델, `strongModel` = 센 모델)·`start/done/cancel` |
 | `shared/xlsx.js` (`SPX`) | 작은 xlsx 쓰개(JSZip). `''` 는 **빈 문자열 셀(inlineStr)** 로 쓴다 — LMS가 자기닫힘 빈 셀을 건너뛰어 열이 밀리는 것을 막음. `null` 은 셀 없음 |
 | `korlab/js/kpdf.js` (`KPDF`) | **PDF 읽기 엔진, 순수 함수 — Node 에서도 돈다.** `extractPage` → `segment`(세트·문항·단독 문항, 줄 잇기) · `parseSolutionText`(EBS식 해설지) |
+| `korlab/js/kscan.js` (`KSCAN`) | **스캔본 읽기 — 순수 함수.** `prompt`(한 쪽을 덩어리 목록 head·passage·item 으로 옮겨 적게 하는 지시문) · `clean`(AI 답 다듬기) · `assemble`(쪽·단을 넘는 지문·문항을 이어 `KPDF.segment` 와 같은 꼴 + 쪽 번호 `pages`) · `contentBox`·`findGutter`·`findCut`(쪽 그림에서 글 테두리·단 사이·위아래 자를 자리) · `answerPrompt`·`cleanAnswers`(스캔한 정답표). 쪽 그림 만들기·AI 호출은 `upload.js` 의 `scanPageImages`·`scanCall`·`upScanRun` |
 | `korlab/js/ktype.js` (`KT`) | **유형 체계 — 순수 함수.** 22유형(`TYPES`, 판정 기준 포함)·대분류·LMS 소분류(`subs`)·화작·매체 "성격"과 fallback 치환표(`NATURES`·`fallbackOf`)·Level/시간(`level`) · 규칙 분류 `guess`(발문 규칙 + 해설지 이름 규칙) · `catOf`/`subOf`/`catGuess` · 문학 제목 `credits`/`litTitle` · `titleIssues`. 확인 필요 표기 4건은 `KT.opt`(설정에서 바꿈) |
 | `korlab/js/kev.js` (`KEV`) | **인용문 대조 — 순수 함수.** `compact`/`find`(띄어쓰기·표시 무시하고 글자만 견줌) · `mark`(형광펜·X 토큰 박기) · `html` |
 | `korlab/js/kexam.js` (`KX`) | **시험 → 표 → 엑셀 — 순수 함수.** `rows`(시험 + 선택 과목, 변형 제외) · `groups` · `classSheets`(분류표 2시트) · `lmsSheets`(ExamTemplate + 숨김 `_Lookup`, 화작·매체 fallback) · `check`(업로드 전 점검·검토 요망·보조 유형·fallback) · `lmsFileName`(ASCII) |
@@ -155,6 +157,7 @@ Sheet 학습지  { id, title, entries[{passageId, itemIds[]}] | 단독 문항 } 
 | `korlab/js/export.js` | [분류표·LMS 엑셀] 화면: 문항 표(바로 저장되는 select·input), 점검·검토 요망 표, 내려받기 2종 |
 | `korlab/js/variant.js` | ✨ **변형 6종** `vaRun`: `vaPrompt` → `vaShape`(형식 + 근거 대조) → `vaVerify`(블라인드: 가벼운 모델 → 어긋나면 센 모델) → `vaRepair`(한 번) → 통과만 자동 저장, 나머지는 보류 목록 |
 | `korlab/js/sheet.js` | **출력·교재 만들기**: `shCompose`/`shNumbered`(고른 지문 세트 + 단독 문항, 번호 다시 매김, 문항 단위 켜고 끄기 `SH.off`) → `shHtml('q'｜'a'｜'book')`(문제지 / 정답·해설지(빠른 정답 + 해설·근거·오답 풀이) / 교재(표지·차례 + 세트별 해설)) → `shPreview`·`shPrint`(`#print-root` + `window.print`, 문서 제목 = PDF 파일 이름) · `shRows` → `shDownloadLms`(5지선다만)·`shDownloadClass` · `shOpenWith`(다른 화면에서 고른 채 넘어오기) · `shSave`/`shLoad`(sheets 저장소) |
+| `tests/smoke84.js` | 스캔본 읽기(엔진 + 화면, AI 스텁). 글자 층 없는 PDF 는 `kor-fixture.js` 의 `makeScanPdf` 로 만든다 |
 | `tests/smoke78~83.js` | 78 PDF 엔진 · 79 올리기·세트·다듬기·백업 · 80 유형 체계·엑셀 엔진(Node) · 81 분류·엑셀·근거·변형(AI 스텁) · 82 출력·교재 · 83 시험지 보관함·대시보드·통합 검색·난도 |
 | `tools/fix-pua.py` | 소스 안의 보이지 않는 사용자 영역 글자를 `\uE000` 꼴 이스케이프로 되돌림 — 편집 뒤 커밋 전에 한 번 |
 
@@ -191,7 +194,9 @@ Sheet 학습지  { id, title, entries[{passageId, itemIds[]}] | 단독 문항 } 
 - 옛한글(한양 PUA)은 표준 글자로 못 바꿈 → `oldHangul` 표시 + 원본 보기로 확인.
 - 선택지가 2줄 묶음 괄호 모양(언매 37번 같은 짝 문장)이면 줄 순서가 어긋남 → 원본 보기·고치기.
 - [A] 구간 괄호(세로선)는 "[A]" 글자만 그 줄에 남음. 표·그림 속 글자는 `[그림]` + 원본 조각(학습지에는 원본 조각으로 실림).
-- 스캔 PDF·캡처 이미지(글자 층 없음)는 아직 — 수학 랩의 영역 인식 + AI 전사 방식을 붙일 예정.
+- **스캔본**: 글자 층이 없으면(`upRead` 가 쪽당 글자 수로 판단) 안내 카드 → [🤖 스캔본 읽기 시작] → 쪽마다 [쪽 전체(작게), 단마다 위에서 아래로 3조각] 그림 7장을 센 모델에 보내 옮겨 적게 한다(세 쪽씩 나란히, 429·5xx 는 쉬었다 다시, 중지·키 오류 뒤에는 읽은 쪽을 두고 [이어서 읽기]).
+  - 저장하면 쪽 그림이 `images` 에 `scan-<batch>-<쪽>` 으로 한 번씩 들어가고, 지문·문항은 `ocr:true` + `scanPages` 로 가리킨다 → [원본 보기]가 쪽 그림을 보여 준다. AI가 확신하지 못한 낱말은 `⁇`(U+2047) — 검수 화면에서만 빨간 ? 로 보이고 출력·AI·검색에서는 걷어 낸다.
+  - **한계**: AI가 옮긴 글이라 틀린 글자가 섞인다(뭉개진 글자를 비슷한 글자로 읽고, 확신 표시 `⁇` 는 잘 붙이지 않는다. 그림 해상도가 정확도를 가른다 — 실제 스캔 한 쪽을 단마다 2조각으로 보내면 틀린 낱말 5개, 3조각이면 0개였다) → 원본 대조가 필수. 그림·도표는 `[그림]` 자리만 잡고 조각으로 잘라 두지 않는다(쪽 그림 전체가 원본) → 출력물에 그림이 실리지 않는다. 스캔한 해설지는 정답표만 읽는다(해설 글은 안 읽음). 실제 API 로 브라우저에서 한 회차를 끝까지 돌려 본 적은 없다(스텁 + 같은 지시문·그림으로 모델에 따로 물어 확인) — 사용료·걸리는 시간·사용량 한도는 실제로 돌려 봐야 안다. 캡처 이미지(JPG·PNG) 파일은 아직 못 올린다(PDF만).
 - 동기화 없음(이 브라우저 IndexedDB만) — 백업 JSON으로 옮김. 수백 회를 쌓으면 한 브라우저에 자료가 몰리므로 백업·보호([대시보드] 저장 공간)가 중요하다. 기기 간 동기화가 다음 큰 과제.
 - 난도 어림(`rule`)과 AI 난도는 실제 정답률과 견줘 본 적이 없다 — 정답률이 쌓이면 어림 식의 가중치를 맞춰야 한다. 정답률을 자동으로 가져오는 길(EBSi·LMS)은 아직 없고 붙여넣기만.
 - 해설지 형식은 EBS식만. 빠른 정답표만 있는 PDF도 정답은 붙음.

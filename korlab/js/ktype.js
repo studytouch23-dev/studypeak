@@ -252,6 +252,7 @@
   const EXAM_KINDS = ['수능', '모의평가', '학력평가', '사설 모의고사', '내신 기출', 'EBS', '교과서', '자체 제작', '기타'];
   const GRADES = ['고3', '고2', '고1', '중등', '기타'];
   const MONTHS = [3, 4, 5, 6, 7, 9, 10, 11];
+  const BRAND = /바탕|이감|상상|한수|히든카이스|이로운|이해원|하프타임|더프|대성|메가/;
   function examMeta(name, text){
     // 이름에 적힌 것이 먼저, 빈 칸만 PDF 머리말에서 채운다. 머리말은 글자가 하나씩 떨어져 나오기도 해서("2026 학 년 도") 빈칸을 걷어 내고 찾는다
     const parse = str=>{
@@ -260,23 +261,31 @@
       if(y) o.year = y[1];
       const m = q.replace(/20\d\d(학년도|년)?/g, ' ').match(/(1[0-2]|[1-9])월/); if(m) o.month = +m[1];
       const g = q.match(/고([123])|고등학교([123])학년|([123])학년/); if(g) o.grade = '고' + (g[1] || g[2] || g[3]);
+      const br = q.match(BRAND), su = /대학수학능력시험|수능/.test(q) && !/수능특강|수능완성|수능형/.test(q);
       if(/모의평가|모평/.test(q)) o.kind = '모의평가';
-      else if(/대학수학능력시험|수능/.test(q) && !/수능특강|수능완성|수능형/.test(q)) o.kind = '수능';
       else if(/전국연합학력평가|학력평가|학평|교육청/.test(q)) o.kind = '학력평가';
-      else if(/바탕|이감|상상|한수|히든카이스|이로운|이해원|하프타임|더프|대성|메가|사설|파이널|모의고사/.test(q)) o.kind = '사설 모의고사';
+      else if(br || (su && /모의고사/.test(q))) o.kind = '사설 모의고사';      // "2027학년도 대학수학능력시험 바탕 12회 모의고사" 는 수능이 아니라 수능 대비 사설
+      else if(su) o.kind = '수능';
+      else if(/사설|파이널|모의고사/.test(q)) o.kind = '사설 모의고사';
       else if(/중간고사|기말고사|지필평가|내신|\d학기/.test(q)) o.kind = '내신 기출';
       else if(/수능특강|수능완성|EBS/i.test(q)) o.kind = 'EBS';
+      if(o.kind === '사설 모의고사'){                             // 상표와 회차("바탕 12회 모의고사") — 사설은 이것이 없으면 서로 구별되지 않는다
+        const rd = q.replace(/20\d\d(학년도|년)?/g, ' ').match(/(\d{1,2}(?:-\d{1,2})?)회/);
+        if(br) o.label = [br[0], /파이널/.test(q) ? '파이널' : '', rd ? rd[1] + '회' : '', '모의고사'].filter(Boolean).join(' ');
+        o.su = su;
+      }
       return o;
     };
     const a = parse(String(name || '')), b = parse(String(text || '').slice(0, 1500));
     const out = { year: a.year || b.year, month: a.month || b.month, grade: a.grade || b.grade, kind: a.kind || b.kind };
+    if(out.kind === '사설 모의고사'){ out.label = a.label || b.label || ''; if(a.su || b.su) out.grade = out.grade || '고3'; }
     if(out.kind === '수능'){ out.month = out.month || 11; out.grade = out.grade || '고3'; }
     if(out.kind === '모의평가') out.grade = out.grade || '고3';
     return out;
   }
   /* 시험 이름 표준 꼴: "2026학년도 9월 모의평가 (고3)" — 찾기 쉽게 같은 규칙으로 */
   function examName(m){
-    const k = m.kind === '수능' ? '대학수학능력시험' : m.kind || '시험';
+    const k = m.kind === '수능' ? '대학수학능력시험' : (m.kind === '사설 모의고사' && m.label) || m.kind || '시험';
     return [m.year ? m.year + '학년도' : '', m.month && m.kind !== '수능' ? m.month + '월' : '', k, m.grade ? '(' + m.grade + ')' : ''].filter(Boolean).join(' ');
   }
   /* ── 난도 1~5 (1 쉬움 · 3 보통 · 5 최고난도) ──
