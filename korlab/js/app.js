@@ -11,9 +11,8 @@
 const { $, $$, esc, escJs, uid, toast, downloadBlob, lsJson, fmtDate } = SP;
 const KCFG = Object.assign({ cmap: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/', worker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js' }, window.KCFG || {});
 const DB = SP.openDB('sp-korlab', 1, ['passages', 'items', 'images', 'sheets']);
-const K = { passages: [], items: [], view: 'dash', cur: null, f: { cat: '', q: '', src: '' }, fi: { q: '', cat: '', kind: '', type: '' }, showOrig: false, showEv: true, editing: false, ex: { src: '', section: '' }, va: { pid: '', picks: {}, kind: 'twin', n: 1, results: [], log: [] } };
-const SRC_KINDS = ['수능·모의평가', '학력평가', '내신 기출', '교과서', 'EBS', '자체 제작', '기타'];
-const VIEW_TITLES = { dash: '대시보드', passages: '지문·작품', set: '지문·작품', upload: '시험지 올리기', items: '문제 검색', variant: '변형 만들기', export: '분류표·LMS 엑셀', sheet: '출력·교재 만들기', data: '백업·설정' };
+const K = { passages: [], items: [], exams: [], pMap: new Map(), byP: new Map(), byPv: new Map(), view: 'dash', cur: null, f: { cat: '', q: '', src: '', grade: '', year: '', month: '', sub: '', n: 60 }, xf: { grade: '', kind: '', year: '', month: '', q: '', tab: 'list', n: 50, edit: '' }, gq: '', fi: { q: '', cat: '', kind: '', type: '', diff: '' }, showOrig: false, showEv: true, editing: false, ex: { src: '', section: '' }, va: { pid: '', picks: {}, kind: 'twin', n: 1, results: [], log: [] } };
+const VIEW_TITLES = { dash: '대시보드', passages: '지문·작품', set: '지문·작품', upload: '시험지 올리기', items: '문제 검색', exams: '시험지 보관함', search: '통합 검색', variant: '변형 만들기', export: '분류표·LMS 엑셀', sheet: '출력·교재 만들기', data: '백업·설정' };
 
 const LMSOPT_KEY = 'sp-korlab-lmsopt';
 function loadLmsOpt(){ const o = lsJson(LMSOPT_KEY, {}) || {}; for(const k in KT.OPT_CHOICES) if(KT.OPT_CHOICES[k].includes(o[k])) KT.opt[k] = o[k]; }
@@ -29,15 +28,45 @@ async function loadAll(){
   const ps0 = await DB.all('passages'), is0 = await DB.all('items');
   const mp = ps0.filter(migrateRecord), mi = is0.filter(i=>!i.passageId && migrateRecord(i));
   if(mp.length) await DB.putMany('passages', mp); if(mi.length) await DB.putMany('items', mi);
+  const ms = ps0.concat(is0).filter(migrateSrc);                // 예전 저장분: 시험 정보(월·학년·종류)를 이름에서 읽어 채움
+  if(ms.length){ await DB.putMany('passages', ms.filter(r=>ps0.includes(r))); await DB.putMany('items', ms.filter(r=>!ps0.includes(r))); }
   K.passages = ps0.sort((a, b)=>(b.createdAt - a.createdAt) || ((a.range || [0])[0] - (b.range || [0])[0]));
   K.items = is0.sort((a, b)=>(a.createdAt - b.createdAt) || (a.num - b.num));
+  // 찾아보기: 지문 id → 지문 / 지문 id → 딸린 문항(원 문항·변형) — 시험지가 수백 회여도 화면이 느려지지 않게
+  K.pMap = new Map(K.passages.map(p=>[p.id, p])); K.byP = new Map(); K.byPv = new Map();
+  for(const it of K.items){ if(!it.passageId) continue; const m = it.variantOf ? K.byPv : K.byP; if(!m.has(it.passageId)) m.set(it.passageId, []); m.get(it.passageId).push(it); }
+  for(const a of K.byP.values()) a.sort((x, y)=>x.num - y.num);
+  for(const a of K.byPv.values()) a.sort((x, y)=>(x.num - y.num) || (x.createdAt - y.createdAt));
+  K.exams = buildExams();
   if(typeof shLoadSaved === 'function') await shLoadSaved();
+  $('#n-exams').textContent = K.exams.length;
   $('#n-passages').textContent = K.passages.length; $('#n-items').textContent = K.items.length;
 }
-const itemsOf = pid=>K.items.filter(i=>i.passageId === pid && !i.variantOf).sort((a, b)=>a.num - b.num);      // 원래 문항만
-const variantsOf = pid=>K.items.filter(i=>i.passageId === pid && i.variantOf).sort((a, b)=>(a.num - b.num) || (a.createdAt - b.createdAt));
-const catOfItem = it=>{ const p = it.passageId ? K.passages.find(x=>x.id === it.passageId) : null; return p ? p.cat || '' : it.cat || ''; };
-const srcNames = ()=>[...new Set(K.passages.map(p=>p.src && p.src.name).concat(K.items.map(i=>i.src && i.src.name)).filter(Boolean))];
+const itemsOf = pid=>(K.byP && K.byP.get(pid)) || [];          // 원래 문항만(번호순)
+const variantsOf = pid=>(K.byPv && K.byPv.get(pid)) || [];
+const catOfItem = it=>{ const p = it.passageId ? K.pMap.get(it.passageId) : null; return p ? p.cat || '' : it.cat || ''; };
+const srcNames = ()=>(K.exams || []).map(e=>e.name);
+/* 예전 종류 이름 → 지금 목록 */
+const OLD_KIND = { '수능·모의평가': '모의평가', '학력평가': '학력평가', '내신 기출': '내신 기출', '교과서': '교과서', 'EBS': 'EBS', '자체 제작': '자체 제작', '기타': '기타' };
+function migrateSrc(r){
+  const s = r.src; if(!s || s.month != null) return false;
+  const m = KT.examMeta(s.name);
+  r.src = { name: s.name || '', kind: m.kind || OLD_KIND[s.kind] || (KT.EXAM_KINDS.includes(s.kind) ? s.kind : ''), year: m.year || s.year || '', month: m.month || 0, grade: m.grade || (KT.GRADES.includes(s.grade) ? s.grade : '') };
+  return true;
+}
+/* 시험지 목록: 출처 이름별로 묶은 요약(지문·문항 수, 정답·분류 진행, 평균 난도) — 올린 순서 최신부터 */
+function buildExams(){
+  const m = new Map();
+  const get = r=>{ const s = r.src || {}, name = s.name || ''; if(!name) return null; let e = m.get(name);
+    if(!e){ e = { name, kind: s.kind || '', year: s.year || '', month: +s.month || 0, grade: s.grade || '', passages: 0, items: 0, answers: 0, typed: 0, review: 0, variants: 0, diffSum: 0, diffN: 0, rated: 0, sections: new Set(), createdAt: r.createdAt || 0 }; m.set(name, e); }
+    if((r.createdAt || 0) < e.createdAt) e.createdAt = r.createdAt; return e; };
+  for(const p of K.passages){ const e = get(p); if(e) e.passages++; }
+  for(const it of K.items){ const e = get(it); if(!e) continue;
+    if(it.variantOf){ e.variants++; continue; }
+    e.items++; if(it.answer) e.answers++; if(it.typeId || it.nature) e.typed++; if(it.review) e.review++; if(it.section) e.sections.add(it.section);
+    if(it.diff){ e.diffSum += it.diff; e.diffN++; } if(it.rate != null) e.rated++; }
+  return [...m.values()].sort((a, b)=>b.createdAt - a.createdAt);
+}
 const joinsOf = p=>KPDF.joinCount(p.body) + KPDF.joinCount(p.summary) + itemsOf(p.id).reduce((s, i)=>s + itemJoins(i), 0);
 const itemJoins = i=>KPDF.joinCount(i.stem) + KPDF.joinCount(i.view) + KPDF.joinCount(i.explain) + KPDF.joinCount(i.wrong) + (i.choices || []).reduce((a, c)=>a + KPDF.joinCount(c), 0);
 
@@ -73,12 +102,14 @@ const snippet = (t, n)=>KPDF.plain(t).replace(BR_TOK, ' ').replace(/\{\/?[ub]\}/
 
 function go(view, arg){
   K.view = view; if(view === 'set') K.cur = arg;
-  $$('#sbnav button').forEach(b=>b.classList.toggle('active', b.dataset.view === (view === 'set' ? 'passages' : view)));
+  $$('#sbnav button').forEach(b=>b.classList.toggle('active', b.dataset.view === (view === 'set' ? 'passages' : view === 'search' ? 'exams' : view)));
   $$('.view').forEach(v=>v.classList.toggle('active', v.id === 'view-' + view));
   $('#topbar-title').textContent = VIEW_TITLES[view] || '';
   $('#sidebar').classList.remove('open');
   if(view === 'dash') renderDash();
   if(view === 'passages') renderPassages();
+  if(view === 'exams') renderExams();
+  if(view === 'search') renderSearch();
   if(view === 'set') renderSet();
   if(view === 'upload') renderUpload();
   if(view === 'items') renderItems();
@@ -90,30 +121,8 @@ function go(view, arg){
 }
 $('#sbnav').addEventListener('click', e=>{ const b = e.target.closest('button[data-view]'); if(b) go(b.dataset.view); });
 $('#menu-btn').addEventListener('click', ()=>$('#sidebar').classList.toggle('open'));
+$('#gsearch').addEventListener('keydown', e=>{ if(e.key === 'Enter'){ K.gq = e.target.value.trim(); if(K.gq) go('search'); } });
 function busy(label){ const b = $('#busy'); if(label){ $('#busy-label').textContent = label; b.style.display = 'flex'; } else b.style.display = 'none'; }
-
-function renderDash(){
-  const byArea = KT.CATS.map(a=>[a, K.passages.filter(p=>p.cat === a).length]).filter(x=>x[1]);
-  const orig = K.items.filter(i=>!i.variantOf), typedN = orig.filter(i=>i.typeId || i.nature).length, reviewN = orig.filter(i=>i.review).length;
-  const unsure = K.passages.reduce((s, p)=>s + joinsOf(p), 0) + K.items.filter(i=>!i.passageId).reduce((s, i)=>s + itemJoins(i), 0);
-  $('#view-dash').innerHTML = `
-    <h2>지문 하나로 쌓고, 바꾸고, 검증하는 국어 문제 DB</h2>
-    <p class="vd">시험지 PDF를 올리면 지문과 문항을 자동으로 나눠 저장합니다. 글자는 PDF 그대로, 밑줄·상자도 함께 옮깁니다.</p>
-    <div class="card"><div class="grid4">
-      <div class="stat"><span class="hint">지문·작품</span><b>${K.passages.length}</b></div>
-      <div class="stat"><span class="hint">문항 (변형 ${K.items.length - orig.length})</span><b>${orig.length}</b></div>
-      <div class="stat"><span class="hint">유형 분류된 문항</span><b>${typedN}</b></div>
-      <div class="stat"><span class="hint">검토 요망</span><b>${reviewN}</b></div>
-      <div class="stat"><span class="hint">정답 있는 문항</span><b>${orig.filter(i=>i.answer).length}</b></div>
-      <div class="stat"><span class="hint">띄어쓰기 확인할 곳</span><b>${unsure}</b></div>
-    </div>${byArea.length ? `<div class="row" style="margin-top:.8rem">${byArea.map(([a, n])=>`<span class="chip">${a} ${n}</span>`).join('')}</div>` : ''}</div>
-    <div class="card"><h3>시작하기</h3>
-      <div class="row"><button class="btn" onclick="go('upload')">① 시험지 올리기</button><button class="btn ghost" onclick="go('export')">② 유형 분류 · LMS 엑셀</button><button class="btn ghost" onclick="go('passages')">③ 지문에서 근거·변형</button><button class="btn ghost" onclick="go('sheet')">④ 🖨 출력·교재 만들기</button></div>
-      <p class="hint" style="margin-top:.7rem">시험지 PDF(+ 정답·해설 PDF)를 올리면 지문·문항으로 나뉘고, <b>22유형</b>(독서 R01~R09 · 문학 L01~L08 · 문법 G01~G05)으로 먼저 분류됩니다.
-      [분류표·LMS 엑셀]에서 AI 분류로 다듬고 유형 분류표와 스터디피크 LMS 업로드 파일을 내려받습니다. 세트 화면에서는 정답 근거 형광펜과 변형 문제를 만듭니다.<br>
-      다음 단계: 학습지·한글 파일, 스캔본·캡처 읽기, 기기 간 동기화.</p></div>
-    ${typedN ? `<div class="card"><h3>유형 분포 (전체 DB)</h3><div class="row">${KT.TYPES.map(t=>[t, orig.filter(i=>i.typeId === t.id).length]).filter(x=>x[1]).map(([t, n])=>`<span class="chip" title="${esc(KT.name(t.id))}">${t.id} ${n}</span>`).join('')}</div></div>` : ''}`;
-}
 
 function renderData(){
   const st = SPAI.settings();
@@ -160,7 +169,8 @@ function cleanRecord(r, strKeys){                            // 남이 준 백�
   const o = { id: cleanId(r.id) || uid(), createdAt: +r.createdAt || Date.now(), updatedAt: +r.updatedAt || Date.now() };
   for(const k of strKeys) o[k] = r[k] == null ? '' : String(r[k]);
   const s = r.src && typeof r.src === 'object' ? r.src : {};
-  o.src = { name: String(s.name || ''), kind: String(s.kind || ''), year: String(s.year || ''), grade: String(s.grade || '') };
+  o.src = { name: String(s.name || ''), kind: String(s.kind || ''), year: String(s.year || '').replace(/[^\d]/g, '').slice(0, 4), grade: KT.GRADES.includes(s.grade) ? s.grade : '' };
+  if(s.month != null) o.src.month = Math.max(0, Math.min(12, +s.month || 0));      // 없으면 불러온 뒤 이름에서 읽어 채운다(migrateSrc)
   return o;
 }
 async function importBackup(file){
@@ -174,6 +184,7 @@ async function importBackup(file){
       if(!o.passageId){ cleanCat(o, i); if(i.clsBy === 'user' || i.clsBy === 'ai') o.clsBy = i.clsBy; }                         // 분류값은 목록에 있는 것만 받는다
       o.typeId = KT.has(i.typeId) ? i.typeId : ''; o.subTypes = strArr(i.subTypes, 4).filter(KT.has); o.nature = KT.NATURES.some(n=>n.n === i.nature) ? i.nature : '';
       o.typeBy = ['rule', 'ai', 'user'].includes(i.typeBy) ? i.typeBy : ''; o.review = i.review && typeof i.review === 'object' ? { alt: String(i.review.alt || ''), why: String(i.review.why || '') } : null;
+      if(+i.diff >= 1 && +i.diff <= 5){ o.diff = Math.round(+i.diff); o.diffBy = ['rule', 'ai', 'rate', 'user'].includes(i.diffBy) ? i.diffBy : 'rule'; } if(i.rate != null && +i.rate >= 0 && +i.rate <= 100) o.rate = +i.rate;
       if(i.ansBy === 'ai') o.ansBy = 'ai'; if(+i.ansAi >= 1 && +i.ansAi <= 5) o.ansAi = +i.ansAi;
       if(i.ev && typeof i.ev === 'object') o.ev = { quotes: strArr(i.ev.quotes, 12), x: (Array.isArray(i.ev.x) ? i.ev.x : []).slice(0, 12).filter(Array.isArray).map(v=>[+v[0] || 0, String(v[1] || '')]), neg: !!i.ev.neg };
       if(i.variantOf || i.vkind){ if(i.variantOf) o.variantOf = cleanId(i.variantOf); o.vkind = String(i.vkind || '').replace(/[^a-z]/g, ''); o.kind = ['ox', 'essay'].includes(i.kind) ? i.kind : '';

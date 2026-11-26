@@ -40,8 +40,13 @@ function renderExport(){
       ${ck.flags.map(f=>{ const r = { id: f.id }; return `<tr><td>${f.num}</td><td>${esc(KT.label(f.type) || f.type)}</td><td>${esc(KT.label(f.alt) || f.alt || '—')}</td><td>${esc(f.why)}</td>
         <td style="white-space:nowrap">${f.alt ? `<a href="#" onclick="exUseAlt('${escJs(r.id)}');return false">대안으로</a> · ` : ''}<a href="#" onclick="exClearFlag('${escJs(r.id)}');return false">이대로 확정</a></td></tr>`; }).join('')}</table></div></div>` : ''}
     ${ck.aux.length ? `<div class="card"><h3>복합 유형 — LMS 파일에서는 대표 유형만 들어갑니다</h3><p class="hint">${ck.aux.map(a=>`${a.num}번 ${a.main} + ${a.subs.join(' + ')}`).join(' · ')}</p></div>` : ''}
-    <div class="card"><h3>문항 표</h3><div class="tblwrap"><table class="tbl" id="ex-table"><tr><th>번호</th><th>대분류</th><th>소분류</th><th>지문 제목</th><th>작성자</th><th>유형 / 성격</th><th>보조</th><th>정답</th><th>배점</th></tr>
+    <div class="card"><h3>문항 표</h3><div class="tblwrap"><table class="tbl" id="ex-table"><tr><th>번호</th><th>대분류</th><th>소분류</th><th>지문 제목</th><th>작성자</th><th>유형 / 성격</th><th>보조</th><th>정답</th><th>배점</th><th>난도</th></tr>
       ${gs.map(g=>g.rows.map((r, k)=>exRowHtml(r, k === 0, g.rows.length)).join('')).join('')}</table></div></div>
+    <div class="card" id="ex-rates"><h3>난도 — 실제 정답률 넣기</h3>
+      <p class="hint" style="margin-bottom:.5rem">표의 난도는 처음에 배점·유형·지문 길이로 <b>어림</b>한 값입니다(노란 칸). EBSi의 문항별 정답률·오답률 표나 스터디피크 LMS의 응시 결과를 복사해 아래에 붙여 넣으면 실제 정답률로 바뀝니다. 한 줄에 <b>문항 번호와 정답률</b>이 있으면 됩니다(예: <code>14 36.4%</code>). 정답률 80% 이상 → 난도 1, 65~80 → 2, 50~65 → 3, 35~50 → 4, 35 미만 → 5.</p>
+      <textarea id="ex-rate-text" rows="4" placeholder="1 92.1%&#10;2 81.0%&#10;…&#10;14 36.4%"></textarea>
+      <div class="row" style="margin-top:.5rem"><button class="btn sm" id="ex-rate-apply" onclick="exApplyRates(false)">정답률로 넣기</button><button class="btn ghost sm" onclick="exApplyRates(true)">오답률 표입니다 (100에서 뺌)</button>
+        <span class="hint">난도 평균 ${rs.filter(r=>r.diff).length ? (rs.reduce((a, r)=>a + (r.diff || 0), 0) / rs.filter(r=>r.diff).length).toFixed(1) : '—'} · 실제 정답률 ${rs.filter(r=>r.rate != null).length}문항 / ${rs.length}</span></div></div>
     ${dist.length ? `<div class="card"><h3>유형 분포</h3><div class="tblwrap"><table class="tbl"><tr><th>카테고리</th><th>유형</th><th>문항 수</th><th>배점 합계</th><th>문항번호</th></tr>
       ${dist.map(d=>`<tr><td>${d.cat}</td><td>${esc(d.id + ' ' + d.name)}</td><td>${d.n}</td><td>${d.pts}</td><td>${d.nums.join(', ')}</td></tr>`).join('')}</table></div></div>` : ''}`;
 }
@@ -56,7 +61,8 @@ function exRowHtml(r, first, span){
       : r.cat ? `<select onchange="exSetNature('${id}',this.value)" aria-label="${r.num}번 성격">${optList(KT.naturesOf(r.cat).map(n=>n.n), r.nature, '(성격 미정)')}</select><span class="hint"> → ${esc((KX.lmsRow(r).type || '').slice(0, 3) || '?')}</span>` : '<span class="hint">대분류부터</span>'}</td>
     <td>${typed ? `<select onchange="exSetType('${id}',null,this.value)" aria-label="${r.num}번 보조 유형">${typeOpts(r.cat, r.subTypes[0] || '').replace('(미정)', '—')}</select>` : ''}</td>
     <td class="${it.ansBy === 'ai' ? 'rule' : ''}"><select onchange="exSetField('${id}','answer',this.value)" aria-label="${r.num}번 정답">${optList([...KPDF.CIRC.slice(0, 5)], r.answer ? KPDF.CIRC[r.answer - 1] : '', '?')}</select></td>
-    <td><select onchange="exSetField('${id}','points',this.value)" aria-label="${r.num}번 배점">${optList(['2', '3'], String(r.points || ''), '?')}</select></td></tr>`;
+    <td><select onchange="exSetField('${id}','points',this.value)" aria-label="${r.num}번 배점">${optList(['2', '3'], String(r.points || ''), '?')}</select></td>
+    <td class="${r.diffBy === 'rule' ? 'rule' : ''}" style="white-space:nowrap"><select onchange="exSetField('${id}','diff',this.value)" aria-label="${r.num}번 난도">${optList(['1', '2', '3', '4', '5'], String(r.diff || ''), '?')}</select>${r.rate != null ? ` <span class="hint">${r.rate}%</span>` : ''}</td></tr>`;
 }
 /* 표에서 고친 것은 바로 저장한다. 지문에 딸린 문항이면 지문을, 단독 문항이면 그 문항을 고친다 */
 /* AI 작업이 도는 동안에는 저장을 막는다 — 작업이 쥐고 있는 옛 사본이 방금 고친 것을 덮어쓰지 않게 */
@@ -92,8 +98,18 @@ async function exSetNature(itemId, nature){
 }
 async function exSetField(itemId, field, value){
   const it = K.items.find(i=>i.id === itemId); if(!it || aiBusyBlock()) return;
-  if(field === 'points') it.points = +value || null; else { it.answer = value; delete it.ansBy; delete it.ansAi; }      // 사람이 고른 정답으로 확정
+  if(field === 'diff'){ it.diff = +value || 0; it.diffBy = it.diff ? 'user' : ''; }
+  else if(field === 'points') it.points = +value || null; else { it.answer = value; delete it.ansBy; delete it.ansAi; }      // 사람이 고른 정답으로 확정
   it.updatedAt = Date.now(); await DB.put('items', it); renderExport();
+}
+/* 붙여 넣은 정답률(또는 오답률) → 지금 보이는 시험·선택 과목의 문항에 넣는다 */
+async function exApplyRates(wrong){
+  if(aiBusyBlock()) return;
+  const map = KT.parseRates($('#ex-rate-text').value, wrong), rs = exRows(); let n = 0;
+  for(const r of rs){ const v = map[r.num]; if(v == null) continue; const it = K.items.find(i=>i.id === r.id); if(!it) continue;
+    it.rate = v; it.diff = KT.rateToDiff(v); it.diffBy = 'rate'; it.updatedAt = Date.now(); await DB.put('items', it); n++; }
+  if(!n){ toast('읽을 수 있는 줄이 없습니다 — 한 줄에 "문항 번호 정답률"이 있어야 합니다.'); return; }
+  await loadAll(); renderExport(); toast(`정답률 ${n}문항을 넣었습니다 — 난도가 실제 값으로 바뀌었습니다.`);
 }
 async function exUseAlt(itemId){
   const it = K.items.find(i=>i.id === itemId); if(!it || !it.review || !KT.has(it.review.alt) || aiBusyBlock()) return;

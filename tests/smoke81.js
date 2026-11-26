@@ -26,7 +26,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     // ── 분류표·LMS 엑셀: 규칙으로 어림한 상태 ──
     go('export');
     const ex = $('#view-export');
-    out.ex0 = { rows: ex.querySelectorAll('#ex-table tr[data-num]').length, rule: ex.querySelectorAll('#ex-table td.rule').length, err: !!$('#ex-errors'), errTxt: ($('#ex-errors') || {}).textContent || '',
+    out.ex0 = { rows: ex.querySelectorAll('#ex-table tr[data-num]').length, rule: ex.querySelectorAll('#ex-table td.rule select[aria-label$="유형"], #ex-table td.rule select[aria-label$="성격"]').length, err: !!$('#ex-errors'), errTxt: ($('#ex-errors') || {}).textContent || '',
       name: $('#ex-name').value, file: $('#ex-file').value, single: [byNum(6).cat, byNum(6).sub, byNum(6).title].join('/') };
     await exSetType(byNum(1).id, 'R02', null);                 // 직접 고른 칸 → AI가 건드리지 않아야 함
     out.user = [byNum(1).typeId, byNum(1).typeBy].join();
@@ -46,7 +46,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
     out.cls = { calls: calls.filter(c => c.kind === 'cls').length, models: [...new Set(calls.map(c => c.model))].join(), master: /R06 <보기> 적용 — 줄글 사례 — /.test(calls[0].t) && /화법과 작문: 말하기 방식·전략 파악/.test(calls[0].t),
       i1: [byNum(1).typeId, byNum(1).typeBy].join(), i2: [byNum(2).typeId, byNum(2).subTypes.join('+'), byNum(2).typeBy].join(), i3: [byNum(3).typeId, byNum(3).review && byNum(3).review.why].join(' / '),
       p1: [P1().title, P1().author, P1().sub].join('/'), p2: [P2().title, P2().author, P2().cat, P2().sub].join('/'), i4: JSON.stringify(byNum(4).review), i5: [byNum(5).typeId, byNum(5).nature].join(),
-      i6: [byNum(6).cat, byNum(6).sub, byNum(6).title, byNum(6).typeId].join('/'), ok: !!$('#ex-ok'), flags: ex.querySelectorAll('#ex-flags tr').length - 1, rule: ex.querySelectorAll('#ex-table td.rule').length };
+      i6: [byNum(6).cat, byNum(6).sub, byNum(6).title, byNum(6).typeId].join('/'), ok: !!$('#ex-ok'), flags: ex.querySelectorAll('#ex-flags tr').length - 1, rule: ex.querySelectorAll('#ex-table td.rule select[aria-label$="유형"], #ex-table td.rule select[aria-label$="성격"]').length };
     await exUseAlt(byNum(4).id); await exClearFlag(byNum(3).id);
     out.flag = { i4: [byNum(4).typeId, byNum(4).typeBy, byNum(4).review].join(), i3: [byNum(3).review, byNum(3).typeBy].join(), left: !!$('#ex-flags') };
     // 표에서 고치기: 대분류를 바꾸면 소분류·유형이 그 대분류 것으로
@@ -199,7 +199,7 @@ const check = (n, ok, x) => { console.log((ok?'PASS':'FAIL'), n, x!==undefined?(
   check('정답 풀기·대조: 점검에 "정답표는 ③, AI 풀이는 ②" · "AI가 풀어 채운 정답" 안내, 표에서 고르면 확정', /1번: 정답표는 ③, AI 풀이는 ②/.test(r.solve.warns) && /AI가 풀어 채운 정답 \(1문항\): 3번/.test(r.solve.warns) && r.solve.yellow === 1 && r.solve.confirmed === '②,', r.solve.yellow + ' ' + r.solve.confirmed);
   check('출처 이름 바꾸기: 지문과 문항이 같은 시험으로 함께 이동', r.rename === '2,4', r.rename);
   check('백업 왕복: 분류·근거·변형 유지, 목록 밖 유형은 버림', r.backup.same && r.backup.type === 'R06+R05' && r.backup.ev === 1 && r.backup.cat === '문학/현대시/지어낸 시' && r.backup.bad === '|R01|' && r.backup.variants >= 6 && r.backup.verify === 'pass' && /저장된 열/.test(r.backup.essay), JSON.stringify(r.backup));
-  check('대시보드 유형 분포 · 문제 검색(유형·변형)', /유형 분포/.test(r.dash) && /R06 1/.test(r.dash) && r.search === 1 && r.searchVar >= 6, r.search + ' ' + r.searchVar);
+  check('대시보드 유형 분포 · 문제 검색(유형·변형)', /유형 분포/.test(r.dash) && /R06 <보기> 적/.test(r.dash) && /난도 분포/.test(r.dash) && r.search === 1 && r.searchVar >= 6, r.search + ' ' + r.searchVar);
   check('페이지 오류 없음', errors.length === 0, errors.join(' / '));
   await lab.close();
   console.log(fails ? `\n${fails}개 실패` : '\n전체 통과');

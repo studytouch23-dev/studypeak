@@ -247,7 +247,70 @@
     return { cat: '독서', sub: '' };
   }
   const UNIT = { '음운': '음운의 변동', '단어': '단어의 짜임과 품사', '문장': '문장의 짜임과 문법 요소', '담화': '담화의 특성', '국어사': '국어의 변천' };     // 문법 지문 제목이 없을 때 쓰는 단원명
+  /* ── 시험 정보: 이름·첫 쪽 글자에서 학년도·시행 월·학년·종류를 읽는다 ──
+   * 종류(kind): 수능 · 모의평가(평가원 6·9월) · 학력평가(교육청 3·4·5·7·10월 등) · 사설 모의고사 · 내신 기출 · EBS · 교과서 · 자체 제작 · 기타 */
+  const EXAM_KINDS = ['수능', '모의평가', '학력평가', '사설 모의고사', '내신 기출', 'EBS', '교과서', '자체 제작', '기타'];
+  const GRADES = ['고3', '고2', '고1', '중등', '기타'];
+  const MONTHS = [3, 4, 5, 6, 7, 9, 10, 11];
+  function examMeta(name, text){
+    // 이름에 적힌 것이 먼저, 빈 칸만 PDF 머리말에서 채운다. 머리말은 글자가 하나씩 떨어져 나오기도 해서("2026 학 년 도") 빈칸을 걷어 내고 찾는다
+    const parse = str=>{
+      const q = sq(str), o = { year: '', month: 0, grade: '', kind: '' };
+      const y = q.match(/(20\d\d)학년도/) || q.match(/(20\d\d)년/) || q.match(/(20\d\d)/);
+      if(y) o.year = y[1];
+      const m = q.replace(/20\d\d(학년도|년)?/g, ' ').match(/(1[0-2]|[1-9])월/); if(m) o.month = +m[1];
+      const g = q.match(/고([123])|고등학교([123])학년|([123])학년/); if(g) o.grade = '고' + (g[1] || g[2] || g[3]);
+      if(/모의평가|모평/.test(q)) o.kind = '모의평가';
+      else if(/대학수학능력시험|수능/.test(q) && !/수능특강|수능완성|수능형/.test(q)) o.kind = '수능';
+      else if(/전국연합학력평가|학력평가|학평|교육청/.test(q)) o.kind = '학력평가';
+      else if(/바탕|이감|상상|한수|히든카이스|이로운|이해원|하프타임|더프|대성|메가|사설|파이널|모의고사/.test(q)) o.kind = '사설 모의고사';
+      else if(/중간고사|기말고사|지필평가|내신|\d학기/.test(q)) o.kind = '내신 기출';
+      else if(/수능특강|수능완성|EBS/i.test(q)) o.kind = 'EBS';
+      return o;
+    };
+    const a = parse(String(name || '')), b = parse(String(text || '').slice(0, 1500));
+    const out = { year: a.year || b.year, month: a.month || b.month, grade: a.grade || b.grade, kind: a.kind || b.kind };
+    if(out.kind === '수능'){ out.month = out.month || 11; out.grade = out.grade || '고3'; }
+    if(out.kind === '모의평가') out.grade = out.grade || '고3';
+    return out;
+  }
+  /* 시험 이름 표준 꼴: "2026학년도 9월 모의평가 (고3)" — 찾기 쉽게 같은 규칙으로 */
+  function examName(m){
+    const k = m.kind === '수능' ? '대학수학능력시험' : m.kind || '시험';
+    return [m.year ? m.year + '학년도' : '', m.month && m.kind !== '수능' ? m.month + '월' : '', k, m.grade ? '(' + m.grade + ')' : ''].filter(Boolean).join(' ');
+  }
+  /* ── 난도 1~5 (1 쉬움 · 3 보통 · 5 최고난도) ──
+   * 가장 믿을 만한 것은 실제 정답률. 없을 때는 문항의 겉모습(배점·유형·<보기>·지문 길이·선지 길이)으로 어림한다 — 어림은 어림일 뿐이라 화면에 '어림'으로 표시한다. */
+  const DIFF_NAMES = ['', '쉬움', '약간 쉬움', '보통', '어려움', '최고난도'];
+  const rateToDiff = r=>r >= 80 ? 1 : r >= 65 ? 2 : r >= 50 ? 3 : r >= 35 ? 4 : 5;      // 정답률(%) → 난도
+  const TYPE_W = { R01: -.4, R02: -.1, R03: 0, R04: .3, R05: .3, R06: .8, R07: 1, R08: -.7, R09: .5, L01: -.3, L02: -.2, L03: 0, L04: .2, L05: .2, L06: -.1, L07: .6, L08: -.6, G01: -.2, G02: .3, G03: .4, G04: .8, G05: .2 };
+  function diffGuess(item, ctx){
+    ctx = ctx || {};
+    let s = 2.6;
+    if(+item.points === 3) s += .9;
+    s += TYPE_W[item.typeId] || 0;
+    const view = sq(item.view).length, ch = (item.choices || []).map(c=>sq(c).length), avg = ch.length ? ch.reduce((a, b)=>a + b, 0) / ch.length : 0;
+    if(view > 150) s += .3;
+    if(avg > 55) s += .4; else if(avg && avg < 18) s -= .4;
+    const body = +ctx.bodyLen || 0; if(body > 2000) s += .3; else if(body && body < 900) s -= .2;
+    if(ctx.sub === '과학/기술' || ctx.sub === '사회/경제/법') s += .3; if(ctx.sub === '주제복합' || ctx.sub === '갈래 복합') s += .2; if(ctx.sub === '독서이론') s -= .4;
+    if(ctx.cat === '화법과 작문' || ctx.cat === '매체') s -= .4;
+    if(ctx.grade === '고1') s -= .3;
+    return Math.max(1, Math.min(5, Math.round(s)));
+  }
+  /* 붙여 넣은 표 글자에서 "문항 번호 — 정답률(%)" 을 읽는다. 예) "14 36.4%" · "3번 82" · "오답률 63.6" 이 섞인 줄은 kind 로 알려 준다 */
+  function parseRates(text, wrong){
+    const out = {};
+    for(const line of String(text || '').split(/\n/)){
+      const m = line.match(/(?:^|[^\d.])(\d{1,2})\s*번?\s*[:\-–\s\t,|]+.*?(\d{1,3}(?:\.\d+)?)\s*%?/); if(!m) continue;
+      const nums = line.match(/\d{1,3}(?:\.\d+)?/g) || [], n = +nums[0], r = +nums[nums.length - 1];
+      if(nums.length < 2 || !(n >= 1 && n <= 99) || !(r >= 0 && r <= 100)) continue;
+      out[n] = Math.round((wrong ? 100 - r : r) * 10) / 10;
+    }
+    return out;
+  }
   const ansNo = a=>{ const s = String(a == null ? '' : a).trim(), k = '①②③④⑤'.indexOf(s[0]); return k >= 0 && s ? k + 1 : (/^[1-5]$/.test(s) ? +s : 0); };
   return { opt, OPT_CHOICES, CATS, subs, TYPES, has, name, label, typesOf, catOfType, typed, NATURES, naturesOf, fallbackOf, level,
-    catOf, subOf, credits, titleFromCredits, litTitle, titleIssues, guess, catGuess, ansNo, UNIT };
+    catOf, subOf, credits, titleFromCredits, litTitle, titleIssues, guess, catGuess, ansNo, UNIT,
+    EXAM_KINDS, GRADES, MONTHS, examMeta, examName, DIFF_NAMES, rateToDiff, diffGuess, parseRates };
 });
