@@ -1,7 +1,7 @@
 /* 스터디피크 국어 랩 — AI 작업 ①: 22유형 분류 · 정답 근거(형광펜) 찾기
  * 원칙: AI의 답은 그대로 믿지 않는다. 유형·소분류는 KT 목록에 있는 값만 받고, 근거 인용문은 지문에 실제로 있는 것만 받는다(KEV 대조). */
 'use strict';
-const aiText = t=>KPDF.plain(t).replace(/\{\/?b\}/g, '').replace(/\{u\}/g, '〔').replace(/\{\/u\}/g, '〕').replace(/\{\[:([^{}\n]{1,4})\}/g, '⟦$1 구간 시작⟧').replace(/\{\/\[\}/g, '⟦구간 끝⟧');     // AI에게 보일 글: 밑줄은 〔 〕
+const aiText = t=>KPDF.plain(t).replace(UQ_RE, '').replace(/\{\/?b\}/g, '').replace(/\{u\}/g, '〔').replace(/\{\/u\}/g, '〕').replace(/\{\[:([^{}\n]{1,4})\}/g, '⟦$1 구간 시작⟧').replace(/\{\/\[\}/g, '⟦구간 끝⟧');     // AI에게 보일 글: 밑줄은 〔 〕
 function itemText(it, o){
   o = o || {};
   const a = KT.ansNo(it.answer);

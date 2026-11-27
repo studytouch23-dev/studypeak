@@ -1017,6 +1017,8 @@ body:has(#cartbar.show) .main, body:has(#cartbar.show) main{padding-bottom:130px
       Anthropic API 키를 저장하면 PDF에서 잘라낸 이미지 문항을 AI가 읽어 <b>편집 가능한 텍스트와 수식($...$ LaTeX)</b>으로 변환하고 단원 태그·난이도까지 추천합니다.
       키는 <b>이 브라우저에만</b> 저장되며 비용은 본인 API 계정에 과금됩니다. 키 발급: console.anthropic.com → API Keys
     </p>
+    <div id="ai-team" style="display:none;margin-bottom:.7rem;padding:.6rem .8rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:.88rem">
+      ✅ <b>학원 팀 키 사용 중</b> — 이 계정의 AI 작업은 학원(스터디피크) API 계정으로 결제됩니다. 아래에 키를 넣을 필요가 없고, 넣어 둔 키가 있어도 쓰이지 않습니다.</div>
     <div class="grid2">
       <div class="field"><label>Anthropic API 키</label><input id="ai-key" type="password" placeholder="sk-ant-api03-..."></div>
       <div class="field"><label>모델</label>
@@ -5032,11 +5034,17 @@ async function genResultToBulk(){ // 생성 결과 → 일괄 등록 분할로 �
 }
 
 /* ═══ AI 변환 (이미지 문항 → 텍스트·수식, 사용자 API 키) ═══ */
+/* 팀 키: 학원(대표)이 Supabase 의 team_config 표에 넣어 둔 API 키. 팀원 목록(team_members)에 이메일이 있는 로그인 계정에만 내려온다(RLS).
+   메모리에만 두고 localStorage·계정 설정에는 절대 쓰지 않는다 — 팀원에서 빠지면 다음에 열 때부터 내려오지 않는다. 받기: sbLoadTeam */
+var TEAM = { key:'', wsid:'', pending:null };
 function aiSettings(){
-  return { key: localStorage.getItem('sp-lab-apikey')||'', model: localStorage.getItem('sp-lab-aimodel')||'claude-haiku-5-5',
+  const ownKey = localStorage.getItem('sp-lab-apikey')||'', ownWsid = localStorage.getItem('sp-lab-wsid')||'';
+  return { key: TEAM.key || ownKey, team: !!TEAM.key, ownKey, ownWsid,
+    model: localStorage.getItem('sp-lab-aimodel')||'claude-haiku-5-5',
     figModel: localStorage.getItem('sp-lab-figmodel')||'claude-sonnet-5-5',   // 그림 읽기는 더 정확한 모델(기본 Sonnet)
-    wsid: localStorage.getItem('sp-lab-wsid')||'' };
+    wsid: TEAM.key ? TEAM.wsid : ownWsid };
 }
+const TEAM_PAY = ' (학원 팀 키를 쓰는 계정입니다 — 직접 충전하지 말고 대표 선생님께 알려 주세요.)';
 function aiHeaders(){ // 공통 API 헤더. 워크스페이스 ID가 저장돼 있으면 함께 전송
   const {key, wsid} = aiSettings();
   const h = { 'content-type':'application/json', 'x-api-key':key,
@@ -5072,7 +5080,7 @@ function saveAiSettings(quiet){
   const wsid = $('#ai-wsid').value.replace(/\s+/g,'');
   if(wsid) localStorage.setItem('sp-lab-wsid', wsid);
   else localStorage.removeItem('sp-lab-wsid');
-  if(!quiet) $('#ai-status').textContent = aiSettings().key ? '✅ 저장됨 — AI 변환을 사용할 수 있습니다. [연결 테스트]로 확인해 보세요.' : '키를 입력하세요.';
+  if(!quiet) $('#ai-status').textContent = aiSettings().team ? '✅ 저장됨 — AI는 학원 팀 키로 동작합니다.' : aiSettings().key ? '✅ 저장됨 — AI 변환을 사용할 수 있습니다. [연결 테스트]로 확인해 보세요.' : '키를 입력하세요.';
 }
 function clearAiSettings(){
   localStorage.removeItem('sp-lab-apikey');
@@ -5187,6 +5195,7 @@ function extractJson(txt){
 }
 const AI_JSON_SYSTEM = '너는 요청받은 JSON 객체 하나만 출력한다. 풀이·검산·설명은 JSON 안의 문자열 칸(work, solution 등)에만 쓰고, JSON 앞뒤에는 아무 글자도 쓰지 않는다. 코드블록(```)도 쓰지 않는다.';
 async function aiJsonCall(content, maxTokens, modelOverride, _retry){ // 공용: content 배열 → JSON 응답 (재시도·오류 안내 포함)
+  if(TEAM.pending) await TEAM.pending;
   const {key} = aiSettings(), model = modelOverride || aiSettings().model;
   if(!key) throw new Error('API 키가 없습니다 — [백업·데이터 → AI 변환 설정]에서 키를 저장하세요.');
   const sig = AI_BATCH.running && AI_BATCH.ctrl ? AI_BATCH.ctrl.signal : undefined;
@@ -5216,7 +5225,7 @@ async function aiJsonCall(content, maxTokens, modelOverride, _retry){ // 공용:
     errLog('AI 호출 오류', 'HTTP '+r.status+': '+detail);
     if(r.status===401) throw new Error('API 키가 올바르지 않습니다 (401). 키를 다시 확인하세요.');
     if(r.status===400 && /workspace/i.test(detail)) throw new Error('워크스페이스 설정 필요 (400) — [백업·데이터 → AI 변환 설정]에서 해결하세요.\n'+AI_WS_HELP);
-    if(/credit balance|billing|purchase credits/i.test(detail)) throw new Error('API 오류 '+r.status+' — API 크레딧(충전 잔액)이 다 떨어졌습니다. console.anthropic.com → Plans & Billing 에서 충전한 뒤 다시 시도하세요. (Claude Max 구독은 API 크레딧과 별개예요 — 맥의 Claude Code 스크립트로 하면 Max로 처리됩니다)');
+    if(/credit balance|billing|purchase credits/i.test(detail)) throw new Error('API 오류 '+r.status+' — API 크레딧(충전 잔액)이 다 떨어졌습니다. console.anthropic.com → Plans & Billing 에서 충전한 뒤 다시 시도하세요. (Claude Max 구독은 API 크레딧과 별개예요 — 맥의 Claude Code 스크립트로 하면 Max로 처리됩니다)'+(aiSettings().team ? TEAM_PAY : ''));
     throw new Error('API 오류 '+r.status+': '+detail);
   }
   const data = await r.json();
@@ -8152,8 +8161,9 @@ function twinBookToSheet(batchKey){
 /* AI 연결 테스트: 작은 텍스트 요청으로 키·네트워크·모델을 즉석 진단 */
 async function testAiConnection(){
   const st = $('#ai-status');
+  if(TEAM.pending) await TEAM.pending;
   saveAiSettings(true);                       // 화면의 입력값을 먼저 저장하고 테스트 ([저장] 생략 실수 방지)
-  const {key, model, wsid} = aiSettings();
+  const {key, model, wsid, team} = aiSettings();
   if(!key){ st.textContent = '❌ 키를 먼저 입력하세요.'; return; }
   if(/^sk-ant-admin/.test(key)){ st.textContent = '❌ 이 키는 관리용(Admin) 키라 AI 변환에 쓸 수 없습니다. console.anthropic.com → API Keys에서 일반 API 키(sk-ant-api03-...)를 새로 발급해 넣으세요.'; return; }
   st.textContent = '⏳ 연결 테스트 중…'+(wsid?` (워크스페이스 ID ${wsid.slice(0,14)}… 포함)`:'');
@@ -8176,10 +8186,10 @@ async function testAiConnection(){
       if(r.status===400 && /workspace/i.test(detail)) throw new Error(wsid
         ? `워크스페이스 ID(${wsid})를 보냈는데도 거부되었습니다 (400).\n· ID가 console.anthropic.com → Settings → Workspaces에 보이는 wrkspc_... 값과 정확히 같은지 확인하세요(복사 시 앞뒤 글자 누락 주의).\n· 그래도 안 되면 API Keys → [Create Key]에서 Workspace를 선택해 새 키를 만들어 넣는 것이 가장 확실합니다.\n· 서버 응답: ${detail.slice(0,140)}`
         : '워크스페이스 설정 필요 (400).\n'+AI_WS_HELP);
-      if(r.status===400 && /credit|balance/i.test(detail)) throw new Error('크레딧 부족 (400): '+detail+' — console.anthropic.com → Billing에서 크레딧을 충전하세요.');
+      if(r.status===400 && /credit|balance/i.test(detail)) throw new Error('크레딧 부족 (400): '+detail+(team ? TEAM_PAY : ' — console.anthropic.com → Billing에서 크레딧을 충전하세요.'));
       throw new Error('API 오류 '+r.status+': '+detail);
     }
-    st.textContent = '✅ 연결 성공! 모델 '+model+' 호출이 정상 동작합니다. AI 변환을 사용할 수 있어요.';
+    st.textContent = '✅ 연결 성공! 모델 '+model+' 호출이 정상 동작합니다. AI 변환을 사용할 수 있어요.'+(team ? ' (학원 팀 키)' : '');
   }catch(e){
     st.textContent = '❌ '+(e.message||e);
   }
@@ -10204,11 +10214,34 @@ async function sbInit(){ // 시작 시: 전에 로그인한 적 있으면 조용
       if(SB.user) localStorage.setItem('sp-lab-cloud','1');
       sbUI();
       if(SB.user && ev === 'SIGNED_IN') sbPull(true).catch(()=>{});      // 새 기기·새 로그인은 처음부터 전부
+      if(SB.user && ev === 'SIGNED_IN') sbLoadTeam(); else if(!SB.user) sbLoadTeam();
     });
     SB.listening = true;
     const { data } = await c.auth.getSession();
-    if(data && data.session){ SB.user = data.session.user; sbUI(); sbPull().catch(()=>{}); sbSyncSettingsNow(); }
+    if(data && data.session){ SB.user = data.session.user; sbUI(); sbPull().catch(()=>{}); sbSyncSettingsNow(); sbLoadTeam(); }
   }catch(e){ /* 오프라인 등 — 로컬만으로 계속 동작 */ }
+}
+/* 팀 키 받기: 로그인한 계정이 팀원이면 team_config 한 줄이 읽힌다(아니면 0줄 — RLS). 표가 없거나 오류면 조용히 내 키로 */
+function sbLoadTeam(){
+  const run = (async ()=>{
+    await null;                                                   // 아래의 TEAM.pending = run 이 먼저 실행되게(읽을 것이 없으면 기다림 없이 끝나므로)
+    let key = '', wsid = '';
+    try{
+      if(SB.user && SB.client){
+        const { data, error } = await SB.client.from('team_config').select('api_key,workspace_id').eq('id', 'main');
+        const row = !error && Array.isArray(data) && data[0];
+        if(row && /^sk-ant-(?!admin)/.test(String(row.api_key||'').trim())){ key = String(row.api_key).trim(); wsid = String(row.workspace_id||'').replace(/\s+/g, ''); }
+      }
+    }catch(e){}
+    if(TEAM.pending === run){ TEAM.key = key; TEAM.wsid = wsid; TEAM.pending = null; teamUI(); }   // 그사이 다시 불렸으면 뒤의 것이 이긴다
+  })();
+  TEAM.pending = run;
+  return run;
+}
+function teamUI(){
+  const on = !!TEAM.key, b = $('#ai-team');
+  if(b) b.style.display = on ? 'block' : 'none';
+  for(const id of ['#ai-key', '#ai-wsid']){ const el = $(id); if(el){ el.disabled = on; el.style.opacity = on ? .5 : ''; } }
 }
 /* Supabase 영어 오류 → 쉬운 우리말 */
 function sbErrKo(e){
@@ -10264,7 +10297,7 @@ async function sbSendLink(){
 }
 async function sbLogout(){
   try{ const c = await sbLoad(); await c.auth.signOut(); }catch(e){}
-  SB.user = null;
+  SB.user = null; TEAM.key = ''; TEAM.wsid = ''; TEAM.pending = null; teamUI();
   localStorage.removeItem('sp-lab-cloud'); localStorage.removeItem('sp-lab-cloudsince');
   sbUI(); toast('로그아웃했습니다 — 이 기기에 저장된 문제는 그대로 남아 있습니다.');
 }
@@ -10332,8 +10365,9 @@ async function sbSyncSettingsNow(){
 }
 function fillSettingsUI(){
   const ai = aiSettings();
-  if($('#ai-key')) $('#ai-key').value = ai.key || '';
-  if($('#ai-wsid')) $('#ai-wsid').value = ai.wsid || '';
+  if($('#ai-key')) $('#ai-key').value = ai.ownKey || '';              // 팀 키는 화면 칸에 넣지 않는다(저장·동기화로 새어 나가지 않게)
+  if($('#ai-wsid')) $('#ai-wsid').value = ai.ownWsid || '';
+  teamUI();
   if($('#ai-model')) $('#ai-model').value = ai.model;
   if($('#ai-figmodel')) $('#ai-figmodel').value = ai.figModel;
   if($('#b-autotype')) $('#b-autotype').checked = spTypeAutoOn();

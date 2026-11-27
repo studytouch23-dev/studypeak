@@ -75,7 +75,7 @@ function kHtml(text, opts){
   opts = opts || {};
   let t = String(text || '');
   if(opts.spans && opts.spans.length) t = KEV.mark(t, opts.spans);       // 형광펜·X 자리(원문 기준이라 맨 먼저)
-  t = opts.joins ? t.replace(/\uE000/g, '\uE010').replace(/\uE001/g, ' \uE010') : KPDF.plain(t);
+  t = opts.joins ? t.replace(/\uE000/g, '\uE010').replace(/\uE001/g, ' \uE010') : KPDF.plain(t).replace(UQ_RE, '');      // ⁇ = 스캔본에서 AI가 확신하지 못한 낱말 표시(검수 화면에서만 보임)
   // [A] 구간 {[:A}…{/[} 은 따로 떨어진 덩어리로 그린다. 문단 가운데서 시작·끝나면 그 자리에서 나누고(\uE015 = 이어지는 조각, 들여쓰기 없음)
   t = t.replace(/(\n?)[ \uE010]*\{\[:([^{}\n]{1,4})\}/g, (m, nl, lab, at)=>'\n\uE012' + lab + '\uE013' + (nl || at === 0 ? '' : '\uE015'))
     .replace(/\{\/\[\}[ \uE010]*(\n?)/g, (m, nl)=>'\uE014\n' + (nl ? '' : '\uE015')).replace(/^\n/, '').replace(/\n\uE015?$/, '');
@@ -86,7 +86,7 @@ function kHtml(text, opts){
     if(line[0] === '\uE015'){ cont = true; line = line.slice(1); }
     if(line.endsWith('\uE014')){ end = true; line = line.slice(0, -1); }
     let h = esc(line).replace(/\{u\}/g, '<u>').replace(/\{\/u\}/g, '</u>').replace(/\{b\}/g, '<span class="bx">').replace(/\{\/b\}/g, '</span>')
-      .replace(/\[그림\]/g, '<span class="figph">그림 — [원본 보기]에서 확인</span>').replace(/\uE010/g, '<span class="jm" title="줄이 바뀌던 자리 — 띄어쓰기 추정">·</span>');
+      .replace(/\[그림\]/g, '<span class="figph">그림 — [원본 보기]에서 확인</span>').replace(/\uE010/g, '<span class="jm" title="줄이 바뀌던 자리 — 띄어쓰기 추정">·</span>').replace(UQ_RE, '<span class="uq" title="스캔본에서 AI가 확신하지 못한 낱말 — 원본과 대조하세요">?</span>');
     h = KEV.html(h);
     const prose = opts.passage && KPDF.plain(stripTok(line)).length > 45;
     if(lab != null){ if(open) out.push('</div>'); out.push(`<div class="brk"><span class="brl">[${esc(lab)}]</span>`); open = true; }
@@ -96,9 +96,11 @@ function kHtml(text, opts){
   if(open) out.push('</div>');
   return out.join('');
 }
+const UQ_RE = /⁇/g;
+const uqCount = t=>(String(t || '').match(UQ_RE) || []).length;
 const BR_TOK = /\{\[:[^{}\n]{1,4}\}|\{\/\[\}/g;                 // [A] 구간 표시
 const stripTok = t=>t.replace(/\{hn#\d+#\d+\}|\{h\d+#[\d,]+\}|\{\/h\}|\{\/?x\}/g, '');
-const snippet = (t, n)=>KPDF.plain(t).replace(BR_TOK, ' ').replace(/\{\/?[ub]\}/g, '').replace(/\s+/g, ' ').trim().slice(0, n || 80);
+const snippet = (t, n)=>KPDF.plain(t).replace(UQ_RE, '').replace(BR_TOK, ' ').replace(/\{\/?[ub]\}/g, '').replace(/\s+/g, ' ').trim().slice(0, n || 80);
 
 function go(view, arg){
   K.view = view; if(view === 'set') K.cur = arg;
@@ -168,6 +170,7 @@ const strArr = (a, n)=>(Array.isArray(a) ? a : []).slice(0, n || 50).map(String)
 function cleanRecord(r, strKeys){                            // 남이 준 백업도 안전하게: id 는 [\w.-], 글 칸은 글자, 나머지 모양은 앱이 만드는 대로만
   const o = { id: cleanId(r.id) || uid(), createdAt: +r.createdAt || Date.now(), updatedAt: +r.updatedAt || Date.now() };
   for(const k of strKeys) o[k] = r[k] == null ? '' : String(r[k]);
+  if(r.ocr) o.ocr = true; if(Array.isArray(r.scanPages)) o.scanPages = r.scanPages.slice(0, 12).map(cleanId).filter(Boolean);
   const s = r.src && typeof r.src === 'object' ? r.src : {};
   o.src = { name: String(s.name || ''), kind: String(s.kind || ''), year: String(s.year || '').replace(/[^\d]/g, '').slice(0, 4), grade: KT.GRADES.includes(s.grade) ? s.grade : '' };
   if(s.month != null) o.src.month = Math.max(0, Math.min(12, +s.month || 0));      // 없으면 불러온 뒤 이름에서 읽어 채운다(migrateSrc)
