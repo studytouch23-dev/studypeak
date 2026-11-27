@@ -35,6 +35,7 @@ returns boolean language sql stable security definer set search_path = public, a
   );
 $$;
 revoke all on function public.is_team_member() from public;
+revoke execute on function public.is_team_member() from anon;   -- Supabase 가 새 함수에 기본으로 주는 권한도 거둔다(로그인한 계정만 부른다)
 grant execute on function public.is_team_member() to authenticated;
 
 drop policy if exists "team members read key" on public.team_config;
