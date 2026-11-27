@@ -491,6 +491,7 @@ body:has(#cartbar.show) .main, body:has(#cartbar.show) main{padding-bottom:130px
   <h2 class="vt">문제 저장소가 아닌, 나만의 수학 연구소</h2>
   <p class="vd">쌓여 있는 수학 자료를 문제 단위 DB로 만들고, 필요한 문제만 골라 시험지로 다시 출력하세요. 모든 데이터는 이 브라우저에만 저장되는 <b>비공개 개인 DB</b>입니다.</p>
 
+  <div class="work-banner" style="display:none"></div>
   <div class="grid4" style="margin-bottom:1rem">
     <div class="stat si"><span class="sic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/></svg></span><span class="sl">등록된 문제</span><b id="st-problems">0</b><span class="ss">내 문제 DB</span></div>
     <div class="stat si"><span class="sic b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5Z"/></svg></span><span class="sl">사용 중인 단원</span><b id="st-units">0</b><span class="ss">과목 › 대단원</span></div>
@@ -675,6 +676,7 @@ body:has(#cartbar.show) .main, body:has(#cartbar.show) main{padding-bottom:130px
   <h2 class="vt">문제 등록</h2>
   <p class="vd">한 문제씩 정성껏 등록하거나, 문제지를 통째로 붙여넣어 일괄 분할하세요. 수식은 <code>$...$</code>(인라인), <code>$$...$$</code>(블록) 으로 쓰면 자동 렌더링됩니다.</p>
 
+  <div class="work-banner" style="display:none"></div>
   <div class="row" style="margin-bottom:1rem">
     <button class="btn" id="mode-single" onclick="setAddMode('single')">단건 등록</button>
     <button class="btn ghost" id="mode-bulk" onclick="setAddMode('bulk')">일괄 등록 (붙여넣기 분할)</button>
@@ -2528,6 +2530,7 @@ function issueHtml(x){ // 경고 문구 속 $…$: 화면에서 그려지면 수
   }).join('');
 }
 function rerenderBulk(){
+  workSaveSoon();
   $('#bulk-preview').innerHTML = state.bulkDrafts.map((d,i)=>
     `<div class="pitem"><div style="font-weight:900;color:var(--gold-2)">${d.num||i+1}</div>
       <div class="body">
@@ -2599,6 +2602,7 @@ async function saveBulk(){
   }
   state.bulkDrafts=[]; state.solPool=[]; state.solPoolDone=false; $('#bulk-text').value=''; $('#bulk-preview-card').style.display='none';
   $('#bulk-status').textContent='';
+  workDiscard();                                            // 등록을 마쳤으니 자동 저장해 둔 작업은 지운다
   refreshCounts();
   logJob('DB 등록', srcName||'일괄 등록', n+'문항 저장'+(dup?` · 중복 ${dup}개 제외`:''));
   toast(n+'개 문제 저장 (미검수 상태)'+(dup?` · 완전 동일 문항 ${dup}개 제외`:'')+' — 위의 [🧺 학습지·교재·모의고사 만들기]로 바로 묶을 수 있어요');
@@ -3898,6 +3902,98 @@ async function pdfedFinish(){
     $('#pdfed-finish').disabled = false;
   }
 }
+
+/* ═══ 작업 자동 저장 — 분할 결과(미리보기)를 창이 닫혀도 잃지 않게 ═══
+   문제지를 문항으로 나눈 뒤 [전체 저장]을 누르기 전까지의 상태(자른 그림·AI 변환 결과·해설 짝·공통 출처)를 이 브라우저의
+   별도 IndexedDB('sp-math-lab-work', 한 칸 'bulk')에 둔다. 창이 닫히거나 새로 고쳐져도 [▶ 이어서 하기]로 그대로 돌아온다.
+   - 쓰기: rerenderBulk 마다 workSaveSoon(2.5초에 한 번) · 탭이 가려질 때 바로 · 지우기: saveBulk 뒤, [버리기]
+   - 문제 DB(sp-math-lab)와 다른 DB 라 버전·동기화에 영향이 없다(클라우드로는 올라가지 않는다 — 같은 PC·같은 브라우저에서만 이어짐). */
+const WORK = { db:null, timer:null, last:0, live:false, pending:null, gap:2500 };
+function workOpen(){
+  if(WORK.db) return Promise.resolve(WORK.db);
+  return new Promise((res, rej)=>{
+    const r = indexedDB.open('sp-math-lab-work', 1);
+    r.onupgradeneeded = ()=>{ if(!r.result.objectStoreNames.contains('work')) r.result.createObjectStore('work', { keyPath:'id' }); };
+    r.onsuccess = ()=>{ WORK.db = r.result; res(WORK.db); };
+    r.onerror = ()=>rej(r.error);
+  });
+}
+async function workTx(mode, fn){
+  const d = await workOpen();
+  return new Promise((res, rej)=>{ const t = d.transaction('work', mode), q = fn(t.objectStore('work')); t.oncomplete = ()=>res(q && q.result); t.onerror = ()=>rej(t.error); t.onabort = ()=>rej(t.error); });
+}
+function workMeta(w){ // 띠에 보일 요약: 이름 · 문항 수 · AI 변환 진행
+  const ds = w.drafts || [], src = (ds.find(d=>d.src) || {}).src || '';
+  const done = ds.filter(d=>d.aiDone).length, todo = ds.filter(d=>d.img && !(d.text||'').trim()).length;      // 변환된 문항 / 아직 그림뿐인 문항
+  return { at: w.at, n: ds.length, done, todo, name: (w.form && w.form.srcname) || String(src).replace(/\.pdf$/i, '') || '붙여넣은 문제' };
+}
+function workSnapshot(){
+  const clean = d=>{ const o = {}; for(const k in d) if(k[0] !== '_' && typeof d[k] !== 'function') o[k] = d[k]; return o; };   // _redrawing 같은 임시 표시는 뺀다
+  const v = id=>{ const el = $(id); return el ? el.value : ''; };
+  return { id:'bulk', at: Date.now(), drafts: state.bulkDrafts.map(clean), solPool: state.solPool || [], solPoolDone: !!state.solPoolDone,
+    form: { subject: v('#b-subject'), srcname: v('#b-srcname'), grade: v('#b-grade'), diff: v('#b-diff') } };
+}
+function workSaveSoon(){ // 변환 중에는 문항마다 불린다 → 마지막 쓰기에서 WORK.gap 만큼은 띄운다
+  if(!state.bulkDrafts.length && !WORK.live) return;         // 아직 이 창에서 만든 작업이 없으면(시작 직후 등) 저장해 둔 것을 건드리지 않는다
+  clearTimeout(WORK.timer);
+  WORK.timer = setTimeout(workSaveNow, Math.max(200, WORK.gap - (Date.now() - WORK.last)));
+}
+async function workSaveNow(){
+  clearTimeout(WORK.timer); WORK.timer = null; WORK.last = Date.now();
+  try{
+    if(state.bulkDrafts.length){ WORK.live = true; WORK.pending = null; await workTx('readwrite', st=>st.put(workSnapshot())); }
+    else if(WORK.live){ WORK.live = false; await workTx('readwrite', st=>st.delete('bulk')); }     // 미리보기를 다 지웠으면 자동 저장분도 지운다
+  }catch(e){ errLog('작업 자동 저장', e.message || String(e)); }
+  workBanner();
+}
+async function workDiscard(ask){
+  if(ask && !confirm('저장해 둔 작업을 버릴까요?\n문항으로 나눈 결과와 AI 변환 결과가 지워지고 되돌릴 수 없습니다. (이미 DB 에 저장한 문제는 그대로입니다.)')) return;
+  clearTimeout(WORK.timer); WORK.timer = null; WORK.live = false; WORK.pending = null;
+  try{ await workTx('readwrite', st=>st.delete('bulk')); }catch(e){}
+  workBanner();
+}
+async function workInit(){ // 시작할 때: 끝내지 못한 작업이 있으면 띠로 알린다
+  try{
+    const w = await workTx('readonly', st=>st.get('bulk'));
+    if(w && (w.drafts || []).length && !state.bulkDrafts.length){ WORK.pending = workMeta(w); toast('⏸ 끝내지 못한 작업이 있습니다 — 위의 [▶ 이어서 하기]를 누르세요'); }
+  }catch(e){}
+  workBanner();
+}
+function workBanner(){
+  const m = state.bulkDrafts.length ? null : WORK.pending;
+  const when = m ? new Date(m.at).toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
+  $$('.work-banner').forEach(el=>{
+    el.style.display = m ? 'block' : 'none';
+    el.innerHTML = m ? `<div class="card" style="border:1.5px solid var(--gold-2);background:#fffbeb;margin-bottom:1rem"><div class="spread" style="gap:.8rem;flex-wrap:wrap">
+      <span>⏸ <b>끝내지 못한 작업이 있습니다</b> — <b style="color:var(--green)">${esc(m.name)}</b> · ${m.n}문항${(m.done || m.todo) ? ` · AI 변환 ${m.done}/${m.done + m.todo}` : ''} <span class="hint">(${esc(when)} 자동 저장)</span></span>
+      <span class="row" style="gap:.4rem"><button class="btn" onclick="workResume()">▶ 이어서 하기</button><button class="btn ghost" onclick="workDiscard(true)">버리기</button></span></div>
+      <div class="hint" style="margin-top:.3rem">창이 닫히기 전의 분할 결과를 그대로 엽니다. 새 문제지를 올려 나누면 이 작업은 새것으로 바뀝니다.</div></div>` : '';
+  });
+}
+async function workResume(){
+  let w = null; try{ w = await workTx('readonly', st=>st.get('bulk')); }catch(e){}
+  if(!w || !(w.drafts || []).length){ WORK.pending = null; workBanner(); toast('이어서 할 작업이 없습니다.'); return; }
+  if(state.bulkDrafts.length && !confirm('지금 화면의 분할 결과를 저장해 둔 작업으로 바꿉니다. 계속할까요?')) return;
+  state.bulkDrafts = w.drafts; state.solPool = w.solPool || []; state.solPoolDone = !!w.solPoolDone;
+  WORK.live = true; WORK.pending = null;
+  go('add'); setAddMode('bulk');
+  const f = w.form || {}, set = (id, val)=>{ const el = $(id); if(el && val != null && val !== '' && (el.tagName !== 'SELECT' || [...el.options].some(o=>o.value === val))) el.value = val; };
+  set('#b-subject', f.subject); set('#b-srcname', f.srcname); set('#b-grade', f.grade); set('#b-diff', f.diff);
+  $('#bulk-preview-card').style.display = 'block';
+  rerenderBulk(); workBanner();
+  const todo = state.bulkDrafts.filter(d=>d.img && !(d.text||'').trim()).length;
+  $('#bulk-status').textContent = `▶ 저장해 둔 작업을 열었습니다 — ${state.bulkDrafts.length}문항`+(todo ? ` · 아직 변환되지 않은 ${todo}문항은 [🤖 AI 텍스트 변환]을 누르면 이어서 변환합니다` : '');
+  $('#bulk-preview-card').scrollIntoView({ block:'start', behavior:'smooth' });
+  logJob('작업 이어서', workMeta(w).name, `${state.bulkDrafts.length}개 문항`+(todo ? ` · 변환 남음 ${todo}` : ''));
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden && WORK.timer) workSaveNow(); });     // 탭이 가려지거나 닫히려 할 때는 기다리지 않고 바로 쓴다
+window.addEventListener('pagehide', ()=>{ if(WORK.timer) workSaveNow(); });
+window.addEventListener('beforeunload', e=>{                  // 작업 중에 창을 닫으려 하면 브라우저가 한 번 더 묻는다
+  const editing = !!($('#pdfed-bg') && $('#pdfed-bg').classList.contains('show'));
+  if(!(state.bulkDrafts || []).length && !AI_BATCH.running && !editing) return;
+  if(WORK.timer) workSaveNow();
+  e.preventDefault(); e.returnValue = '';
+});
 
 /* 작업 내역 (업로드·변환·등록·출력 이력) */
 function logJob(kind, name, detail){
@@ -10784,6 +10880,8 @@ function dashGo(f){
   persistCart();
   refreshCounts();
   renderJobLog();
+  ['#b-subject', '#b-srcname', '#b-grade', '#b-diff'].forEach(id=>{ const el = $(id); if(el) el.addEventListener('change', ()=>{ if(state.bulkDrafts.length) workSaveSoon(); }); });
+  workInit();                                              // 끝내지 못한 분할 작업이 있으면 [▶ 이어서 하기] 띠
   fillSettingsUI();
   window.__settingsReady = true;
   sbInit();                                                // 클라우드 로그인 상태면 세션 복원 + 변경분 내려받기
